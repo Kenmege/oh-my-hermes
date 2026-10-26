@@ -825,7 +825,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   `read_file`, `12 matches` for
   `search_files` (`3 files` when it listed files, `50+ matches` when Hermes
   stopped counting, and Hermes' warning on the line under it when it gave
-  one, such as why nothing matched). Loading skills and reading tool details
+  one, such as why nothing matched). An `omh_memory` recall that found
+  records lists them from its own result, a line each, type then summary
+  (`decision  rotate refresh tokens per session`), so a found recall prints
+  your memory's summaries into the local transcript; as the call lands, one
+  band of the `dag-ulw` aura sweeps those lines once, where the composer's
+  aura moves (truecolor, motion on), and in scrollback they are plain.
+  Loading skills and reading tool details
   (`skill_view`, `tool_describe`) are plumbing: a run of them is one row,
   `● Loaded 4 skills + tool details · github-development-workflows, dag-ulw,
   hermes-agent, omh-routing/skill-common-rail.md  2.8s`, and any other call

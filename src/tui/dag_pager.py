@@ -9,7 +9,9 @@ time; failing that, when the pager first drew that payload), never how long
 ago it was last redrawn.
 It draws what `panels.dag_page_lines` draws (the boxes, Dependencies, Node
 details) at its own `Focus`: the highlighted node, the folded ones and
-whether Node details are shown. Nothing it does is sent anywhere: no key
+whether Node details are shown. A running node's box takes the dag-ulw aura
+where it moves (`aura`, the phase the app's tick stands at), so the page is
+drawn again each tick while one runs. Nothing it does is sent anywhere: no key
 here reaches the gateway, a child or a chat.
 
 Keys: Tab / n the next box, Shift-Tab / p the one before, in reading order
@@ -45,6 +47,10 @@ def _no_read_time() -> float | None:
     return None
 
 
+def _no_aura() -> int | None:
+    return None
+
+
 @dataclass
 class DagPager(Pager):
     FOOTER_ROWS: ClassVar[int] = 2
@@ -54,14 +60,16 @@ class DagPager(Pager):
     read_at: Callable[[], float | None] = _no_read_time  # when the newest payload was read, on `clock`'s timeline
     depth: str = TRUECOLOR
     clock: Callable[[], float] = time.time
+    aura: Callable[[], int | None] = _no_aura  # the dag-ulw aura's phase now, None where it does not move
     node: str = ""  # the highlighted box's node id; "" until the first frame picks one
     folded: frozenset[str] = frozenset()
     details: bool = True
     # The boxes of the last drawing, (node id, first line, last line) in reading order, and what it was drawn for.
     _boxes: tuple[tuple[str, int, int], ...] = field(default=(), init=False, repr=False, compare=False)
     _drawn: tuple[Any, ...] | None = field(default=None, init=False, repr=False, compare=False)
-    # The last drawing of an active graph, when its payload was read, and that payload: kept once the graph is gone.
-    _live: tuple[list[Line], tuple[tuple[str, int, int], ...], float, Any] | None = field(
+    # The last drawing of an active graph, when its payload was read, that payload, and the aura phase it was drawn
+    # at: kept once the graph is gone.
+    _live: tuple[list[Line], tuple[tuple[str, int, int], ...], float, Any, int | None] | None = field(
         default=None, init=False, repr=False, compare=False)
     _follow: bool = field(default=True, init=False, repr=False, compare=False)  # scroll to the highlight next frame
 
@@ -128,13 +136,20 @@ class DagPager(Pager):
         from ..plugin_bundle.omh.hud_text import elapsed_text
 
         payload = self.payload()
-        focus = (cols, theme, self.depth, self.node, self.folded, self.details)
+        # Only a running box takes the aura: a graph with none is drawn once, not every tick.
+        phase = self.aura() if _running(payload) else None
+        focus = (cols, theme, self.depth, self.node, self.folded, self.details, phase)
         if self._drawn is not None and self._drawn[0] is payload and self._drawn[1:] == focus:
             return
-        drawn = dag_page_lines(payload, cols, theme, self.depth, Focus(self.node, self.folded, self.details))
+        drawn = dag_page_lines(payload, cols, theme, self.depth, Focus(self.node, self.folded, self.details), phase)
         if drawn is None:
             if self._live is not None:
-                lines, boxes, read_at, _payload = self._live
+                lines, boxes, read_at, last, painted = self._live
+                still = None if painted is None else dag_page_lines(
+                    last, cols, theme, self.depth, Focus(self.node, self.folded, self.details))
+                if still is not None:  # nothing runs on a page that is not live: its boxes stand still
+                    lines, boxes = still[0], tuple(still[1].boxes)
+                    self._live = (lines, boxes, read_at, last, None)
                 note = f"not live · last update {elapsed_text(self.clock() - read_at)} ago"
                 self.lines = [(Span(note, theme.muted),), *lines]
                 self._boxes = tuple((node_id, top + 1, bottom + 1) for node_id, top, bottom in boxes)
@@ -148,21 +163,29 @@ class DagPager(Pager):
             running = [node_id for node_id in ids if _state(payload, node_id) in RUNNING_STATES]
             self.node = (running or ids)[0]
             self._follow = True
-            lines, view = dag_page_lines(payload, cols, theme, self.depth, Focus(self.node, self.folded, self.details))
+            lines, view = dag_page_lines(payload, cols, theme, self.depth, Focus(self.node, self.folded, self.details),
+                                         phase)
             boxes = tuple(view.boxes)
         self.lines, self._boxes = lines, boxes
-        self._drawn = (payload, cols, theme, self.depth, self.node, self.folded, self.details)
+        self._drawn = (payload, cols, theme, self.depth, self.node, self.folded, self.details, phase)
         # A redraw of the same payload (a key, a resize) keeps its read time: the note says how old the data is.
         if self._live is not None and self._live[3] is payload:
             read_at = self._live[2]
         else:
             stamp = self.read_at()
             read_at = stamp if isinstance(stamp, (int, float)) else self.clock()
-        self._live = (lines, boxes, read_at, payload)
+        self._live = (lines, boxes, read_at, payload, phase)
 
     def footer(self, position: str, theme: Theme) -> list[Line]:
         """The keys, then the title and the rows the page shows."""
         return [(Span(f" {DAG_KEYS} ", theme.status),), (Span(f" {self.title} · rows {position} ", theme.status),)]
+
+
+def _running(payload: Any) -> bool:
+    graph = payload.get("delegation_graph") if isinstance(payload, Mapping) else None
+    nodes = graph.get("nodes") if isinstance(graph, Mapping) else None
+    nodes = nodes if isinstance(nodes, list) else []
+    return any(isinstance(node, Mapping) and node.get("state") == "running" for node in nodes)
 
 
 def _state(payload: Any, node_id: str) -> str:

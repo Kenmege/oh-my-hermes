@@ -10,7 +10,9 @@ then each layer, a muted label row (`▾ layer 2 · 4 nodes · 2 running`), with
 one blank row between two layers when either is open (shut layers stack);
 under an open layer, one header row per node, four cells in: `▾` open or `▸`
 shut (none on a node with nothing under it), its state glyph in the state's
-colour (the running spinner in the running blue), its label in bold, and
+colour (the running spinner in the running blue), its label in bold (a
+running node's in the dag-ulw aura, its band moving through, where the aura
+moves: `aura.aura_text`), and
 `category · model:effort · status · ↓tokens` muted at the right edge (main's
 own fields, `delegation_view._tree_fields`, `_status_text`, `_tokens_text`).
 Under an open node, up to `DETAIL_ROWS` rows four cells further in, each led
@@ -64,6 +66,7 @@ from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Any
 
+from .aura import aura_text
 from .panels import DAG_INDENT, SPINNER_FRAMES, dag_style
 from .style import TRUECOLOR, Line, Span
 from .subagents import (
@@ -392,7 +395,9 @@ def _columns(rows: Sequence[tuple[_Item, bool]], width: int) -> _Columns:
     return _Columns(min(title, width), (), ())
 
 
-def _node_row(item: _Item, expanded: bool, width: int, theme: Theme, frame: int, columns: _Columns) -> list[Span]:
+def _node_row(
+    item: _Item, expanded: bool, width: int, theme: Theme, frame: int, columns: _Columns, aura: int | None = None,
+) -> list[Span]:
     from ..plugin_bundle.omh.delegation_view import UNICODE
 
     node = item.node or {}
@@ -413,10 +418,11 @@ def _node_row(item: _Item, expanded: bool, width: int, theme: Theme, frame: int,
         for at, text in enumerate(cells_shown)
     )
     pad = " " * max(room - cell_width(title), 0)
+    shown = (aura_text(title, theme.aura, theme.aura_glint, aura) if aura is not None and item.state == "running"
+             else [Span(title, dag_style("title", theme))])
     return [
         Span(lead), Span(triangle, theme.muted), Span(glyph, dag_style(f"glyph:{item.state}", theme)), Span(" "),
-        Span(origin, theme.muted), Span(title, dag_style("title", theme)),
-        Span(f"{pad}  {figure}" if figure else "", theme.muted),
+        Span(origin, theme.muted), *shown, Span(f"{pad}  {figure}" if figure else "", theme.muted),
     ]
 
 
@@ -483,10 +489,12 @@ def tree_lines(
     selected: str | None,
     depth: str = TRUECOLOR,
     now: float = 0.0,
+    aura: int | None = None,
 ) -> tuple[list[Line], TreeState]:
     """The tree in `cap` rows at most, none wider than `width`, painted at `depth` as the graph is everywhere
     (`style.color_depth`), and what the keys need from it; `selected` (a key of the state's `order`) is one
-    `menu_current` bar across the row while the tree has the keys, else None."""
+    `menu_current` bar across the row while the tree has the keys, else None. `aura` is the phase a running node's
+    title stands at in the dag-ulw aura; None (the aura does not move here) draws it as every title is drawn."""
     from ..plugin_bundle.omh.delegation_view import header_text
 
     layers = _items(graph, roster, now)
@@ -504,7 +512,7 @@ def tree_lines(
             hidden = hidden_by_group.get(item.label, 0)
             spans = _layer_row(item, expanded[item.key], theme, hidden if isinstance(hidden, int) else 0)
         elif kind == "node":
-            spans = _node_row(item, expanded[item.key], width, theme, frame, columns)
+            spans = _node_row(item, expanded[item.key], width, theme, frame, columns, aura)
         elif kind == "more":
             spans = _more_row(detail, theme)
         else:
