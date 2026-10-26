@@ -834,17 +834,16 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # capability rows name it in a runtime list ("pi-family" for the old
 # three-letter name, +6 each, +24). No other row moved. Re-derived from the
 # producer.
-# 525403 -> 525448: the shipped `ru` (Russian) trigger language pack. Its
+# 525403 -> 525400: the model-setup row drops the retired Apitopia, Qwen and
+# realtime-search/design wording and names Kimi K3 as superseded and DeepSeek
+# as a candidate (-3). Re-derived from the producer; the slack is retired.
+# 525400 -> 525444: the shipped `ru` (Russian) trigger language pack, after
+# its review (#2301) dropped the phrases everyday sentences contain. Its
 # Cyrillic phrases merge into rows' trigger previews: `dag-ulw` shows
-# `даг ультраворк` and `+4 more triggers` (+38), `running-work-board`
-# trades its eighth trigger for `+7 more triggers` (+4), and three rows'
-# `+N more` counts widen a digit (+3). No other row field moved.
-# Re-derived from the producer.
-# 525448 -> 525447: the ru pack review (#2301) drops the Russian phrases that
-# everyday sentences contain; only `jit-learn`'s count changes length
-# (`+11 more triggers` -> `+8 more triggers`, -1). Every other row keeps its
-# preview and its count's width. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525447
+# `даг ультраворк` and `+2 more triggers`, `running-work-board` trades its
+# eighth trigger for a `+N more triggers` count, and other rows' `+N more`
+# counts move. Re-derived from the producer on the tree merged with main.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525444
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

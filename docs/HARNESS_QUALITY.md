@@ -704,7 +704,7 @@ with no `spawned` event and no stamp started no worker and is not listed. The
 kanban line names the boards it read, and says so when no board exists or one
 could not be read. Every receipt also says what it does not cover: fanout runs
 dispatched outside a Hermes session or before the stamp existed, standalone
-`omh hermes-child dispatch` runs, kanban tasks created from the CLI or
+`omh coding hermes-child dispatch` runs, kanban tasks created from the CLI or
 dashboard (which record no originating session), and earlier attempts of a
 re-dispatched unit (the dispatch summary keeps the latest).
 

@@ -129,7 +129,7 @@ before it is sliced or stored.
 
 ## Capacity-aware admission (#1422)
 
-The capacity contract accepted for implementation is deliberately narrow: only
+The capacity contract is deliberately narrow: only
 a source-qualified fresh Codex `exec` JSON-lines initial-turn queue rejection,
 observed on the attempt's own process with a complete capture and exact
 terminal framing, may trip that executor's launch gate for the rest of the

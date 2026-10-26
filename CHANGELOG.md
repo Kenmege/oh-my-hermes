@@ -3074,7 +3074,7 @@ All notable changes will be documented here.
   non-interactive listing command, makes no model call, and starts no host
   session. The only host process it runs is the readiness module's approved
   `--version` probe, for a CLI in that probe's set; it runs whenever such a
-  CLI is on PATH, where readiness ran `pi` and `opencode` only as omo hosts.
+  CLI is on PATH, where readiness ran `pi` and `opencode` only as pi-family runtime hosts.
   Each `omh_agent_skills_discovery/v1` receipt binds that host version, the
   OS, the scan path, the manifest's `source_digest`, and the pack
   `catalog_revision`; the parser rejects a receipt that fails the checks
@@ -4655,7 +4655,7 @@ All notable changes will be documented here.
   not a cue. Only the model capture source (`hermes_model`) is screened: L1
   demotion, episode rollup, design-direction promotion, the workflows adapter
   and the `omh memory capture` CLI store the same sentence as before. The rule
-  follows oh-my-openagent's hint admission as a concept only (#2049).
+  follows an upstream harness's hint admission as a concept only (#2049).
 - **`agent-debug` reads a past session as evidence under fixed rules.** A
   new Hermes-only `references/session-forensics.md`, named by one quality-bar
   line, writes the question down (session, turn range, expected, observed, the
@@ -4683,7 +4683,7 @@ All notable changes will be documented here.
   missing answer is not read as a refusal either. `deep-interview`'s interview
   protocol gains one sentence: agreeing to an idea consents to that idea only,
   and a plan, handoff, or code change written later is accepted at its own
-  gate. The `ralplan` row for `code-yeongyu/oh-my-openagent` (concepts only)
+  gate. The `ralplan` row for the Sustainable-Use upstream harness (concepts only)
   now lists the question-gate file studied, and a new `docs/SKILL-SOURCES.md`
   row watches `obra/superpowers` (`skills/brainstorming/SKILL.md`) for
   `deep-interview` (#2049).
@@ -4704,7 +4704,7 @@ All notable changes will be documented here.
   rerun against the final tree before the closing brief, and a defect outside
   the change's blast radius stays open as a tracked issue instead of passing
   a criterion. The existing `docs/SKILL-SOURCES.md` rows for `ultrawork`
-  (`obra/superpowers` and `code-yeongyu/oh-my-openagent`, concepts only for
+  (`obra/superpowers` and the Sustainable-Use upstream harness, concepts only for
   the latter) now list the additional upstream files studied (#2049).
 - **`ulw-work`'s TDD reference checks that a new test guards something before
   it counts.** `references/tdd-red-green.md` now asks four questions before a
@@ -4717,7 +4717,7 @@ All notable changes will be documented here.
   regression test to fail on the code before the fix for that bug's own
   reason. The `ulw-work` body is unchanged; its existing pointer reaches the
   new sections. A new `docs/SKILL-SOURCES.md` row watches
-  `code-yeongyu/oh-my-openagent` (`.omo/rules/test-discipline.md`, concepts
+  the Sustainable-Use upstream harness (its test-discipline rule, concepts
   only) for `ultrawork` (#2049).
 - **`loop` reviews a loop's design before it launches.** A new
   `references/loop-design-review.md`, named by one quality-bar line, asks for
@@ -4773,7 +4773,7 @@ All notable changes will be documented here.
   each task as one `XS`-`XL` band. Both rules reach the portable
   `agent-skills/` projection, and new `docs/SKILL-SOURCES.md` rows watch
   `obra/superpowers` (`writing-plans`) for `plan` and, link-only,
-  `code-yeongyu/oh-my-openagent` (`ulw-plan`) for `ralplan` (#2049).
+  the Sustainable-Use upstream harness (`ulw-plan`) for `ralplan` (#2049).
 - **A workflow name inside a block quote, a relayed line, or a link no longer
   starts that workflow, and a delegated child is not told to start an
   orchestrating engine its brief names.** `> $ulw-work fix the build`,
@@ -4794,17 +4794,17 @@ All notable changes will be documented here.
   `ralplan`, `loop`, `maestro` and the retired engines that fold into
   `ultrawork`); task engines such as `research` and `ultraqa` and every other
   hint are unchanged (#2049).
-- **The upstream tracker now watches the superpowers and oh-my-openagent
+- **The upstream tracker now watches the superpowers and Sustainable-Use harness
   material shipped skills already adapt.** Five skill credits had no row in
   `docs/SKILL-SOURCES.md`, so upstream could change what OMH adapted and no
   issue would be raised. The `ultrawork` TDD reference and the `code-review`
   dispatch and response references now have `obra/superpowers` rows, and
   `frontend`, `visual-qa`, and `design-quality-gate` have link-only
-  `code-yeongyu/oh-my-openagent` rows (Sustainable Use License 1.0, concepts
+  rows for the Sustainable-Use upstream harness (Sustainable Use License 1.0, concepts
   only). Each row opens with a null-prior closure receipt. The nine skills
   that credit ECC were compared against ECC and share a posture rather than
   its structure, so they get no row; a note under the table records that and
-  the code-level omo borrowings. `tests/test_skill_source_attribution_coverage.py`
+  the code-level pi-family runtime borrowings. `tests/test_skill_source_attribution_coverage.py`
   fails when a shipped skill credits one of these upstreams with neither a row
   nor a listed reason (#2049).
 - **Concurrent TUIs share one fanout scan, and an idle widget polls less.**
@@ -5092,7 +5092,7 @@ All notable changes will be documented here.
   keeps both properties.
 - **The executor-name and coding-delivery phrase groups are defined once.**
   `src/plugin_bundle/omh/executor_cues.py` owns
-  `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `OMO_RUNTIME_CODING_AGENT_PHRASES`,
+  `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `PI_FAMILY_CODING_AGENT_PHRASES`,
   `NAMED_CODING_AGENT_PHRASES`, `CODING_DELIVERY_REQUEST_PHRASES` and
   `CODING_DELIVERY_REQUEST_TOKENS` with their reasoning comments;
   `omh.routing.executor_cues` re-exports them and awareness imports them

@@ -61,14 +61,14 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # runtime rename moved four sibling rows by +6 each, and the
             # executor-runtime-readiness row's trigger count went +35 -> +34
             # when its runtime names became scoring-only (same length).
-            # 522331 -> 522376 and the digest re-derived: the ru trigger pack
-            # moves 48 sibling rows' trigger previews, five of them in length (+45, itemized at
-            # FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the career row is unchanged.
-            # 522376 -> 522375 and the digest re-derived: the pack review drops its
-            # everyday phrases, which moves the `+N more` count of 40 sibling rows;
-            # only jit-learn's loses a digit (-1).
-            (skill_capabilities, 522375, FULL_ROW_DELTA_CAP,
-             '5f36f164fa28749f86b48d4369abd1573fdac0c325673b2b74a0036f07c2d143',
+            # 522331 -> 522328 and the digest re-derived again for the
+            # model-setup row refresh (-3); no other row moved.
+            # 522328 -> 522372 and the digest re-derived: the ru trigger pack, after
+            # its review, moves sibling rows' trigger previews and `+N more`
+            # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
+            # career row is unchanged.
+            (skill_capabilities, 522372, FULL_ROW_DELTA_CAP,
+             '29f587db13a801a914c73f909131354d31313bf8ce1437356e0b55568824f4b9',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -133,11 +133,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance, then the pi-family runtime rename in
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
+        # Re-derived again for the model-setup body refresh (retired provider
+        # and role-slot wording); only model-setup moves versus main.
         # Re-derived for the ru trigger pack: the 49 bodies it covers gain
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
-        # Re-derived for the pack review, which drops its everyday phrases from
-        # those lines.
-        self.assertEqual(_digest(legacy_hashes), '6ed0b6fc9c2d1325364622de24c85c922cc7481be0c42135b6a03eae47315528')
+        self.assertEqual(_digest(legacy_hashes), '3e33f8f5b26782a6bd9dc054ee30a69a54655cad08e2a2f7c0589feeba5ae189')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

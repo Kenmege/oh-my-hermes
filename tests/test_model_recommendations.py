@@ -232,8 +232,8 @@ class RecommendationCatalogTests(unittest.TestCase):
         with self.subTest(surface="installation", contract="chains-file-example"):
             self.assertIn(seeded_cat_block, installation)
             self.assertIn('"claude-fable-5-1", "reasoning_effort": "xhigh"', installation)
-            self.assertIn('"gpt-5.6-sol", "reasoning_effort": "xhigh"', installation)
-            self.assertIn('"kimi-k3-ultrafast", "reasoning_effort": "low"', installation)
+            self.assertIn('"gpt-6.1-sol", "reasoning_effort": "xhigh"', installation)
+            self.assertIn('"deepseek-v4.1-flash-ultrafast", "reasoning_effort": "low"', installation)
             self.assertIn("omh model-chains show", installation)
         self.assertIn('data-i18n="route.state.owner_default"', surfaces["site"])
         translations = Path("site/i18n.js").read_text(encoding="utf-8")
