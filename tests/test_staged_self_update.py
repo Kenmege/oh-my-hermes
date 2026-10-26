@@ -278,6 +278,7 @@ class StagedSelfUpdateTests(unittest.TestCase):
         *,
         failure: str = "",
         version: str = "",
+        restore_ok: bool = False,
     ) -> Runner:
         def run(
             command: list[str],
@@ -308,6 +309,8 @@ class StagedSelfUpdateTests(unittest.TestCase):
                 generation = Path(_runner_environment(env)["OMH_SELF_UPDATE_GENERATION"])
                 (generation / "skills" / "core").mkdir(parents=True, exist_ok=True)
                 _ = (generation / "skills" / "core" / "SKILL.md").write_text("candidate")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            if restore_ok and _runner_environment(env).get(self_update.ROLLBACK_RESTORE_ENV) == "1":
                 return subprocess.CompletedProcess(command, 0, "", "")
             if failure == "timeout":
                 raise subprocess.TimeoutExpired(command, 1)
@@ -465,13 +468,13 @@ class StagedSelfUpdateTests(unittest.TestCase):
             self._assert_pair(root, previous)
 
     def test_nonzero_and_timeout_post_activation_roll_back_and_reenter_previous(self):
-        for failure in ("post", "timeout"):
-            with self.subTest(failure), TemporaryDirectory() as temporary:
+        for failure, restore_ok in (("post", False), ("timeout", False), ("post", True), ("timeout", True)):
+            with self.subTest(failure=failure, restore_ok=restore_ok), TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 _legacy, args, plan = self._fixture(root, pointer=True)
                 previous = (root / "current").resolve()
                 calls: list[list[str]] = []
-                runner = self._runner(failure=failure)
+                runner = self._runner(failure=failure, restore_ok=restore_ok)
 
                 def recording_runner(
                     command: list[str],
@@ -497,10 +500,24 @@ class StagedSelfUpdateTests(unittest.TestCase):
                 self.assertEqual(result["post_activation"].get("reason", ""), expected_reason)
                 self.assertEqual(sum("--command-package-updated" in call and "update" not in call for call in calls), 2)
                 self._assert_pair(root, previous)
-                # The refused candidate is deleted like a failed staging
-                # candidate; the owner machine kept one on disk until the next
-                # successful update's garbage collection.
-                self.assertFalse(Path(result["candidate"]["path"]).exists())
+                marker = _read_json_object(root / "self-update.json")["activation_in_progress"]
+                if restore_ok:
+                    # Only a successful restoring reentry may dispose the candidate.
+                    self.assertFalse(Path(result["candidate"]["path"]).exists())
+                    self.assertIsNone(marker)
+                    self.assertEqual(result["rollback"]["restored"], previous.name)
+                    self.assertNotEqual(result["recovery"]["status"], "required")
+                else:
+                    self.assertTrue(Path(result["candidate"]["path"]).is_dir())
+                    pending = _object(marker, "pending rollback")
+                    self.assertIs(pending["restore_required"], True)
+                    self.assertEqual(pending["candidate"], result["candidate"]["path"])
+                    self.assertEqual(pending["previous"], str(previous))
+                    self.assertEqual(result["rollback"]["restored"], "")
+                    self.assertEqual(result["rollback"]["status"], "failed")
+                    self.assertEqual(result["rollback"]["reason"], expected_reason)
+                    self.assertEqual(result["recovery"]["status"], "required")
+                    self.assertEqual(result["recovery"]["action"], "restore_failed")
 
     def test_rollback_reentry_is_marked_so_its_summary_says_rollback(self):
         # The rollback re-entry re-renders the known-good pack and, unmarked,
@@ -602,26 +619,45 @@ class StagedSelfUpdateTests(unittest.TestCase):
                 self._assert_pair(root)
 
     def test_interrupted_rollback_reports_the_recovery_phase(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            _legacy, args, plan = self._fixture(root, pointer=True)
-            previous = root / "generations" / "bootstrap-legacy"
-            candidate = root / "generations" / "interrupted"
-            (candidate / "venv" / "bin").mkdir(parents=True)
-            (candidate / "skills").mkdir()
-            switch_current(root, candidate, platform=self._platform())
-            state = _read_json_object(root / "self-update.json")
-            state["activation_in_progress"] = {
-                "candidate": str(candidate),
-                "previous": str(previous),
-                "phase": "post_switch",
-            }
-            atomic_write_json(root / "self-update.json", state, private=True)
-            result = self._run(root, args, plan, self._runner(failure="post"))
-            self.assertEqual(result["phase"], "recovery")
-            self.assertEqual(result["recovery"].get("action"), "rolled_back_interrupted_activation")
-            self.assertTrue(result["rollback"]["performed"])
-            self.assertEqual((root / "current").resolve(), previous.resolve())
+        for restore_ok in (False, True):
+            with self.subTest(restore_ok=restore_ok), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                _legacy, args, plan = self._fixture(root, pointer=True)
+                previous = root / "generations" / "bootstrap-legacy"
+                candidate = root / "generations" / "interrupted"
+                (candidate / "venv" / "bin").mkdir(parents=True)
+                (candidate / "skills").mkdir()
+                switch_current(root, candidate, platform=self._platform())
+                state = _read_json_object(root / "self-update.json")
+                state["activation_in_progress"] = {
+                    "candidate": str(candidate),
+                    "previous": str(previous),
+                    "phase": "post_switch",
+                }
+                atomic_write_json(root / "self-update.json", state, private=True)
+                result = self._run(root, args, plan, self._runner(failure="post", restore_ok=restore_ok))
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["phase"], "recovery")
+                self.assertTrue(result["rollback"]["performed"])
+                self.assertEqual((root / "current").resolve(), previous.resolve())
+                self._assert_pair(root, previous)
+                marker = _read_json_object(root / "self-update.json")["activation_in_progress"]
+                if restore_ok:
+                    self.assertEqual(result["recovery"].get("action"), "rolled_back_interrupted_activation")
+                    self.assertEqual(result["rollback"]["restored"], previous.name)
+                    self.assertIsNone(marker)
+                    self.assertFalse(candidate.exists())
+                else:
+                    self.assertEqual(result["recovery"]["status"], "required")
+                    self.assertEqual(result["recovery"].get("action"), "restore_failed")
+                    self.assertEqual(result["rollback"]["status"], "failed")
+                    self.assertEqual(result["rollback"]["restored"], "")
+                    self.assertEqual(result["rollback"]["reason"], "post failed")
+                    self.assertTrue(candidate.is_dir())
+                    pending = _object(marker, "pending interrupted rollback")
+                    self.assertIs(pending["restore_required"], True)
+                    self.assertEqual(pending["candidate"], str(candidate))
+                    self.assertEqual(pending["previous"], str(previous))
 
     def test_corrupt_and_newer_state_refuse_without_overwriting(self):
         for contents in ("not json", json.dumps({"schema_version": "self_update_state/v99"})):

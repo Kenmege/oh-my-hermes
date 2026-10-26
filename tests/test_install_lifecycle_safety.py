@@ -186,6 +186,7 @@ class SharedStoreUninstallTests(_Fixture):
         """Mutation control, independently of whether the proposed plan is safe."""
         bot = self.hermes / "profiles" / "bot"
         bot.mkdir(parents=True)
+        _write(bot / "SOUL.md", "Bot profile identity.\n")
         self._setup_primary()
         _write(self.omh / "runtime" / "sentinel.json", '{"keep": true}\n')
         before = self._file_snapshot(self.root)
@@ -201,6 +202,7 @@ class SharedStoreUninstallTests(_Fixture):
     def test_shared_store_dry_run_does_not_plan_store_deletion(self) -> None:
         bot = self.hermes / "profiles" / "bot"
         bot.mkdir(parents=True)
+        _write(bot / "SOUL.md", "Bot profile identity.\n")
         self._setup_primary()
 
         status, stdout, stderr = run_cli(
@@ -309,6 +311,11 @@ class CorruptProfileUpdateTests(_Fixture):
         good = self.hermes / "profiles" / "z-good"
         bad.mkdir(parents=True)
         good.mkdir()
+        _write(good / "SOUL.md", "Healthy profile identity.\n")
+        ghost = self.hermes / "profiles" / "log-cache-shell"
+        _write(ghost / "logs" / "sentinel", "Keep incidental runtime files.\n")
+        (ghost / "cache").mkdir()
+        ghost_before = self._file_snapshot(ghost)
         (bad / "config.yaml").write_bytes(b"plugins:\n  x: \xff\n")
         bad_before = self._file_snapshot(bad)
 
@@ -329,6 +336,9 @@ class CorruptProfileUpdateTests(_Fixture):
         self.assertIn("z-good", by_profile)
         self.assertNotEqual(by_profile["z-good"]["status"], "failed")
         self.assertTrue((good / "plugins" / "omh").is_dir())
+        self.assertNotIn("log-cache-shell", by_profile)
+        self.assertEqual(self._file_snapshot(ghost), ghost_before)
+        self.assertEqual(sorted(p.name for p in ghost.iterdir()), ["cache", "logs"])
 
     def test_oserror_profile_config_is_a_named_failure(self) -> None:
         good = self.hermes / "profiles" / "z-good"
@@ -386,6 +396,7 @@ class UpdateJsonTests(_Fixture):
     def test_update_json_reports_a_profile_refresh_failure(self) -> None:
         bot = self.hermes / "profiles" / "bot"
         bot.mkdir(parents=True)
+        _write(bot / "SOUL.md", "Bot profile identity.\n")
         status, _, stderr = run_cli(
             [
                 "--hermes-home",

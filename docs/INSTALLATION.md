@@ -193,6 +193,55 @@ installation. These tests distinguish actual turn-start behavior from positive
 recall after the native background queue; this change does not alter upstream
 turn-start pack invalidation or claim live model delivery.
 
+## Hermes compatibility and support boundaries (operator reference)
+
+Loader observation follows the selected Hermes runtime, not a leftover legacy
+venv. An explicit interpreter or `HERMES_PYTHON` override takes precedence; a
+direct Python launcher remains supported. Otherwise the PATH launcher is queried
+with `--print-runtime-command`, and the observer reads the host's PM-committed
+dependency environment before loading PluginManager in a disposable home. It does
+not run the state-changing PM bootstrap. A present launcher that fails its printer
+reports `hermes_runtime_command_failed`, without falling back to another runtime;
+a missing explicit override reports `hermes_python_override_missing`. Finding an
+old `venv/bin/python` alone is not proof of the active PM runtime. Successful tool
+and hook registration is registration evidence only, not full startup, update,
+plugin execution, or browser execution. PM-only browser-skill promotion is not
+covered by this loader fix.
+
+The optional browser bridge requires explicit trusted-wrapper opt-in, a bound
+principal/session/profile/message identity, and request-bound cache bypasses.
+`host_browser_capability()` (also exposed as `ctx.browser_capability()`) reports
+API support, not admission. On audited Hermes main revision
+`4ea8d23cc9f527332ccb1d55359b27741b6ea51b`, optional browser execution remains unsupported:
+`_BROWSER_CONTROL_PRINCIPAL` and `_BROWSER_CONTROL_TRANSPORT_FAMILY` are absent.
+The diagnostic is `host_scope_unavailable` with
+`host_browser_identity_unsupported` and the missing capability names. OMH does not
+manufacture a principal from environment/config/user IDs or bypass approval,
+identity, lease, effect, or cache checks. Stable `v0.22.5` supplied the audited
+identity/cache APIs, but API support and loader registration do not demonstrate
+actual browser acquisition or effect execution on either host.
+
+The compatibility workflow and `tools/check_hermes_compatibility.py` are
+maintainer admission checks, not install or support certificates. A local helper
+result is not a hosted CI result. The local candidate probe observed a real
+stable `v0.22.5` PluginManager, a validated harmless status tool and completed
+pre-LLM callback using existing PM dependencies and disposable homes. Fresh PM
+provisioning, the hosted stable/main matrix, native Windows execution, Ubuntu
+runner execution, and branch-rule enforcement were not observed by this repair.
+The local macOS result does not close those gaps. A dirty candidate's receipt
+keeps its base SHA and bundle digest separate from an immutable source SHA.
+
+Profile synchronization recognizes genuine Hermes identity markers
+(`config.yaml`, `.env`, `SOUL.md`, `profile.yaml`, `auth.json`, or `state.db`),
+not directories containing logs/cache alone. Hidden and tombstoned profiles are
+excluded. Marker symlinks remain identity claims for existing symlink refusal
+and ownership checks, not permission to write through them. A configured child
+remains discoverable through its OMH-written `config.yaml` if its initial
+`SOUL.md` is later removed; this does not promise recovery after all identity
+files are deleted. Setup preserves supported inline-comment `skills:` headers
+and existing settings; ambiguous/unsupported YAML shapes are refused rather
+than shadowed with duplicate keys.
+
 ## Command Audience
 
 | Audience | Normal interaction |
@@ -1455,11 +1504,12 @@ reports the supported installer command instead.
 On installer-managed installs (the curl and PowerShell paths), the update is
 staged rather than applied in place. OMH builds the new command environment and
 its workflow pack off to the side, smoke-tests them, and only then swaps them in
-with a single pointer move. You either keep the version you had or get the new
-one; there is no half-updated state in between, even if the machine loses power
-mid-update. If the new version fails its post-activation check, OMH puts the
-previous one back automatically and says so. To go back deliberately after a bad
-update, run:
+with a single pointer move. This keeps the command and workflow pack paired;
+it does not make shared plugin/config refreshes atomic. If the new version fails
+its post-activation check, OMH attempts to restore the previous pointer and
+re-enters that version to restore shared resources. A failed restoring reentry
+leaves recovery required, even when the pointer is already back. To select a
+retained known-good generation deliberately, run:
 
 ```sh
 omh update --recover-known-good
@@ -4364,9 +4414,12 @@ place. It runs as a transaction:
    is the only step that makes the new version visible.
 6. Re-enter through the pointer to confirm the activated version actually runs.
 7. On success, keep the previous generation as the known-good fallback and
-   collect the rest. On failure, move the pointer back.
+   collect the rest. On failure, attempt to move the pointer back and re-enter
+   the previous generation; shared-resource restoration must succeed before
+   recovery is considered complete.
 
-The pointer is what makes the swap all-or-nothing. Both things that consume the
+The pointer makes the command/workflow-pack selection atomic, not all shared
+resource changes. Both things that consume the
 install are spelled beneath it and never in resolved form: the `omh` launcher
 resolves through `current/venv/bin/omh` (`current\Scripts\omh.exe` on Windows),
 and the workflow pack Hermes reads is registered in `skills.external_dirs` as
@@ -4391,10 +4444,25 @@ What you see when something goes wrong:
 | --- | --- | --- |
 | Staging or download fails | Candidate deleted before anything is activated | The install you already had, untouched |
 | Candidate fails its smoke checks | Candidate deleted before activation | The install you already had, untouched |
-| Activated version fails the post-activation run | Pointer moved back automatically | The previous generation, active again |
-| Machine dies mid-activation | Next `omh update` reconciles the marker against the pointer, then rolls back or discards the candidate | A consistent pair either way |
+| Activated version fails the post-activation run | Attempt pointer rollback and restoring reentry | Previous command/pack selected if rollback succeeds; shared resources restored only if reentry succeeds |
+| Restoring reentry also fails | Retain recovery marker and candidate anchor; report failed restoration | Recovery still required, not a healthy restored install |
+| Machine dies mid-activation | Next `omh update` reconciles the marker and retries the required activation/restoration step | Command/pack remain paired; restoration can still fail |
 | Two updates at once | The second refuses to start | No partial work |
-| You want the previous version back | `omh update --recover-known-good` | The retained known-good generation, active again |
+| You want the previous version back | `omh update --recover-known-good` selects and checks a retained generation | Restoration is reported only after its reentry succeeds |
+
+When candidate activation fails and restoring reentry also fails, the persisted
+`activation_in_progress.restore_required` marker remains true and records the
+candidate/previous anchors. JSON reports `rollback.status: failed`, an empty
+`rollback.restored`, and `recovery.status: required` / `action: restore_failed`,
+with the failure reason. Do not delete the retained candidate or clear the
+marker by hand. Preserve the reported paths and failure evidence, resolve the
+reported restoration error, then retry `omh update`: pending restore intent
+allows only restoration until it succeeds, not a fresh candidate activation.
+A healthy restoring reentry clears the marker and permits candidate cleanup;
+the original attempted update still reports failure rather than success.
+Pointer rollback alone does not prove shared-resource restoration or reverse
+all user/plugin state. Run `omh doctor` after recovery and inspect any remaining
+profile failures before treating the install as healthy.
 
 `omh update --recover-known-good` refuses rather than guesses when no retained
 generation exists. If the activation state file is unreadable or carries a schema

@@ -1,0 +1,262 @@
+name: Hermes compatibility
+
+# A6: fail-closed admission against a real Hermes host.
+#
+# Pull requests run the candidate OMH bundle against the stable Hermes release.
+# The nightly schedule and a manual dispatch run the full cross product:
+# OMH stable/candidate x Hermes stable/main.  There is no stub host and no
+# skipped leg here: `tools/check_hermes_compatibility.py` loads the built
+# plugin bundle through Hermes' own PluginManager in a disposable home, runs a
+# harmless tool handler and hook, and fails the job when any observation is
+# missing.
+
+on:
+  pull_request:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-compatibility-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HERMES_REPOSITORY: https://github.com/NousResearch/hermes-agent.git
+  HERMES_STABLE_TAG: v0.22.5
+  HERMES_MAIN_REF: main
+  OMH_STABLE_TAG: v4.0.2
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  stable-host-pr:
+    name: PR / ${{ matrix.omh }} OMH x ${{ matrix.host }} Hermes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: true
+      matrix:
+        omh: [candidate]
+        host: [stable]
+    defaults:
+      run:
+        working-directory: bundle-source
+    steps:
+      # The gate implementation always comes from the candidate, even for stable bundles.
+      - name: Check out the candidate CI harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Check out the OMH bundle source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: bundle-source
+          fetch-depth: 0
+          ref: ${{ matrix.omh == 'stable' && env.OMH_STABLE_TAG || github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+      - name: Build the OMH wheel and stage the plugin bundle
+        run: |
+          set -euo pipefail
+          OMH_SHA="$(git rev-parse HEAD)"
+          case "$OMH_SHA" in
+            (*[!0-9a-f]*|"") echo "OMH checkout is not bound to an immutable SHA: $OMH_SHA" >&2; exit 1 ;;
+          esac
+          [ "${#OMH_SHA}" -eq 40 ] || { echo "OMH SHA is not 40 hex characters: $OMH_SHA" >&2; exit 1; }
+          python -m pip wheel . --no-deps --wheel-dir dist
+          python - "$RUNNER_TEMP/omh-bundle" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          target = Path(sys.argv[1])
+          wheel = next(Path("dist").glob("oh_my_hermes-*.whl"))
+          with zipfile.ZipFile(wheel) as archive:
+              members = [name for name in archive.namelist() if name.startswith("omh/plugin_bundle/omh/")]
+              if not members:
+                  raise SystemExit(f"{wheel} carries no omh/plugin_bundle/omh payload")
+              for name in members:
+                  archive.extract(name, target)
+          print(f"staged {len(members)} files from {wheel.name}")
+          PY
+          echo "OMH_SHA=$OMH_SHA" >> "$GITHUB_ENV"
+      - name: Acquire the immutable Hermes host and bootstrap its PM environment
+        env:
+          HOST_REF: ${{ matrix.host == 'stable' && env.HERMES_STABLE_TAG || env.HERMES_MAIN_REF }}
+          HOST_DIR: ${{ runner.temp }}/hermes-host
+        run: |
+          set -euo pipefail
+          git init -q "$HOST_DIR"
+          git -C "$HOST_DIR" remote add origin "$HERMES_REPOSITORY"
+          git -C "$HOST_DIR" fetch --depth 1 origin "$HOST_REF"
+          git -C "$HOST_DIR" checkout -q --detach FETCH_HEAD
+          HOST_SHA="$(git -C "$HOST_DIR" rev-parse HEAD)"
+          case "$HOST_SHA" in
+            (*[!0-9a-f]*|"") echo "Hermes checkout is not bound to an immutable SHA: $HOST_SHA" >&2; exit 1 ;;
+          esac
+          [ "${#HOST_SHA}" -eq 40 ] || { echo "Hermes SHA is not 40 hex characters: $HOST_SHA" >&2; exit 1; }
+          echo "HOST_SHA=$HOST_SHA" >> "$GITHUB_ENV"
+          export HOME="$RUNNER_TEMP/host-os-home"
+          export HERMES_HOME="$RUNNER_TEMP/host-bootstrap-home"
+          export OMH_HOME="$RUNNER_TEMP/host-bootstrap-omh"
+          mkdir -p "$HOME" "$HERMES_HOME" "$OMH_HOME"
+          cd "$HOST_DIR"
+          bash setup-hermes.sh --runtime-only
+          # Interactive activation also provisions a test environment. CI needs only
+          # PM's committed runtime, selected through the host's pre-import API.
+          . ./scripts/_activation.sh
+          BOOTSTRAP_PYTHON="$(hermes_bootstrap_python "$HOST_DIR")"
+          HOST_PYTHON="$("$BOOTSTRAP_PYTHON" -c 'from pathlib import Path; from pm.environments import committed_venv, venv_python; v = committed_venv(Path.cwd()); assert v is not None, "PM runtime not committed"; print(venv_python(v))')"
+          [ -x "$HOST_PYTHON" ] || { echo "no committed PM interpreter" >&2; exit 1; }
+          echo "HOST_PYTHON=$HOST_PYTHON" >> "$GITHUB_ENV"
+      - name: Record the host identity receipt
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/ci-evidence/home"
+          {
+            echo "omh_sha=$OMH_SHA"
+            echo "host_ref=${{ matrix.host }}"
+            echo "host_sha=$HOST_SHA"
+            echo "host_python=$HOST_PYTHON"
+            echo "host_python_version=$("$HOST_PYTHON" -V 2>&1)"
+            echo "helper_python=$(python -V 2>&1)"
+          } | tee "$GITHUB_WORKSPACE/ci-evidence/host-identity.txt"
+      - name: Run the real-host compatibility gate
+        env:
+          HOST_DIR: ${{ runner.temp }}/hermes-host
+          OMH_BUNDLE: ${{ runner.temp }}/omh-bundle/omh/plugin_bundle/omh
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/tools/check_hermes_compatibility.py" \
+            --hermes-root "$HOST_DIR" \
+            --hermes-python "$HOST_PYTHON" \
+            --require-host-sha "$HOST_SHA" \
+            --omh-bundle "$OMH_BUNDLE" \
+            --omh-source-root "$GITHUB_WORKSPACE/bundle-source" \
+            --omh-sha "$OMH_SHA" \
+            --home "$GITHUB_WORKSPACE/ci-evidence/home" \
+            --json-out "$GITHUB_WORKSPACE/ci-evidence/receipt.json" | tee "$GITHUB_WORKSPACE/ci-evidence/gate-stdout.json"
+      - name: Upload the observed receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hermes-compatibility-receipt-pr-${{ matrix.omh }}-${{ matrix.host }}
+          path: ci-evidence/
+          if-no-files-found: error
+
+  matrix-host:
+    name: ${{ matrix.omh }} OMH x ${{ matrix.host }} Hermes
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: true
+      matrix:
+        omh: [stable, candidate]
+        host: [stable, main]
+    defaults:
+      run:
+        working-directory: bundle-source
+    steps:
+      # The gate implementation always comes from the candidate, even for stable bundles.
+      - name: Check out the candidate CI harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Check out the OMH bundle source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: bundle-source
+          fetch-depth: 0
+          ref: ${{ matrix.omh == 'stable' && env.OMH_STABLE_TAG || github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+      - name: Build the OMH wheel and stage the plugin bundle
+        run: |
+          set -euo pipefail
+          OMH_SHA="$(git rev-parse HEAD)"
+          case "$OMH_SHA" in
+            (*[!0-9a-f]*|"") echo "OMH checkout is not bound to an immutable SHA: $OMH_SHA" >&2; exit 1 ;;
+          esac
+          [ "${#OMH_SHA}" -eq 40 ] || { echo "OMH SHA is not 40 hex characters: $OMH_SHA" >&2; exit 1; }
+          python -m pip wheel . --no-deps --wheel-dir dist
+          python - "$RUNNER_TEMP/omh-bundle" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          target = Path(sys.argv[1])
+          wheel = next(Path("dist").glob("oh_my_hermes-*.whl"))
+          with zipfile.ZipFile(wheel) as archive:
+              members = [name for name in archive.namelist() if name.startswith("omh/plugin_bundle/omh/")]
+              if not members:
+                  raise SystemExit(f"{wheel} carries no omh/plugin_bundle/omh payload")
+              for name in members:
+                  archive.extract(name, target)
+          print(f"staged {len(members)} files from {wheel.name}")
+          PY
+          echo "OMH_SHA=$OMH_SHA" >> "$GITHUB_ENV"
+      - name: Acquire the immutable Hermes host and bootstrap its PM environment
+        env:
+          HOST_REF: ${{ matrix.host == 'stable' && env.HERMES_STABLE_TAG || env.HERMES_MAIN_REF }}
+          HOST_DIR: ${{ runner.temp }}/hermes-host
+        run: |
+          set -euo pipefail
+          git init -q "$HOST_DIR"
+          git -C "$HOST_DIR" remote add origin "$HERMES_REPOSITORY"
+          git -C "$HOST_DIR" fetch --depth 1 origin "$HOST_REF"
+          git -C "$HOST_DIR" checkout -q --detach FETCH_HEAD
+          HOST_SHA="$(git -C "$HOST_DIR" rev-parse HEAD)"
+          case "$HOST_SHA" in
+            (*[!0-9a-f]*|"") echo "Hermes checkout is not bound to an immutable SHA: $HOST_SHA" >&2; exit 1 ;;
+          esac
+          [ "${#HOST_SHA}" -eq 40 ] || { echo "Hermes SHA is not 40 hex characters: $HOST_SHA" >&2; exit 1; }
+          echo "HOST_SHA=$HOST_SHA" >> "$GITHUB_ENV"
+          export HOME="$RUNNER_TEMP/host-os-home"
+          export HERMES_HOME="$RUNNER_TEMP/host-bootstrap-home"
+          export OMH_HOME="$RUNNER_TEMP/host-bootstrap-omh"
+          mkdir -p "$HOME" "$HERMES_HOME" "$OMH_HOME"
+          cd "$HOST_DIR"
+          bash setup-hermes.sh --runtime-only
+          # Interactive activation also provisions a test environment. CI needs only
+          # PM's committed runtime, selected through the host's pre-import API.
+          . ./scripts/_activation.sh
+          BOOTSTRAP_PYTHON="$(hermes_bootstrap_python "$HOST_DIR")"
+          HOST_PYTHON="$("$BOOTSTRAP_PYTHON" -c 'from pathlib import Path; from pm.environments import committed_venv, venv_python; v = committed_venv(Path.cwd()); assert v is not None, "PM runtime not committed"; print(venv_python(v))')"
+          [ -x "$HOST_PYTHON" ] || { echo "no committed PM interpreter" >&2; exit 1; }
+          echo "HOST_PYTHON=$HOST_PYTHON" >> "$GITHUB_ENV"
+      - name: Record the host identity receipt
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/ci-evidence/home"
+          {
+            echo "omh_sha=$OMH_SHA"
+            echo "host_ref=${{ matrix.host }}"
+            echo "host_sha=$HOST_SHA"
+            echo "host_python=$HOST_PYTHON"
+            echo "host_python_version=$("$HOST_PYTHON" -V 2>&1)"
+            echo "helper_python=$(python -V 2>&1)"
+          } | tee "$GITHUB_WORKSPACE/ci-evidence/host-identity.txt"
+      - name: Run the real-host compatibility gate
+        env:
+          HOST_DIR: ${{ runner.temp }}/hermes-host
+          OMH_BUNDLE: ${{ runner.temp }}/omh-bundle/omh/plugin_bundle/omh
+        run: |
+          set -euo pipefail
+          python "$GITHUB_WORKSPACE/tools/check_hermes_compatibility.py" \
+            --hermes-root "$HOST_DIR" \
+            --hermes-python "$HOST_PYTHON" \
+            --require-host-sha "$HOST_SHA" \
+            --omh-bundle "$OMH_BUNDLE" \
+            --omh-source-root "$GITHUB_WORKSPACE/bundle-source" \
+            --omh-sha "$OMH_SHA" \
+            --home "$GITHUB_WORKSPACE/ci-evidence/home" \
+            --json-out "$GITHUB_WORKSPACE/ci-evidence/receipt.json" | tee "$GITHUB_WORKSPACE/ci-evidence/gate-stdout.json"
+      - name: Upload the observed receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hermes-compatibility-receipt-${{ matrix.omh }}-${{ matrix.host }}
+          path: ci-evidence/
+          if-no-files-found: error

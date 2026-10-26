@@ -12777,6 +12777,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             # Every profile shares the primary's OMH home, so one setup run
             # writes the same runtime/state.json once per Hermes home.
             (hermes_home / "profiles" / "bot").mkdir(parents=True, exist_ok=True)
+            # A real named profile has host identity; an empty shell is ignored.
+            (hermes_home / "profiles" / "bot" / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
             config_path = hermes_home / "config.yaml"
 
@@ -12844,6 +12846,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             hermes_home = root / ".hermes"
             profile = hermes_home / "profiles" / "bot"
             profile.mkdir(parents=True, exist_ok=True)
+            # Seed genuine profile identity before expecting setup to configure it.
+            (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
 
             self.assertEqual(run_cli(base + ["setup", "--with-plugin", "--yes"])[0], 0)
