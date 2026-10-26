@@ -100,8 +100,8 @@ Running - Done 1/5 - 1 failed
                   | + Accepted 12s                 |
                   | Start node                     |
                   +--------------------------------+
-                                   |
-                                   v
+                                   :
+                                   .
 +--------------------------------+  +--------------------------------+
 | Export button                  |  | Export docs                    |
 | unspecified-high - glm-5.3:low |  | writing                        |
@@ -115,8 +115,8 @@ Running - Done 1/5 - 1 failed
 | <- Export API                  |
 +--------------------------------+
 - Same frontier
-                                   |
-                                   v
+                                   :
+                                   .
                   +--------------------------------+
                   | Verify export                  |
                   | unspecified-high               |
@@ -307,7 +307,7 @@ def fan(widths: tuple[int, ...], edges: list[tuple[str, str]], *, running: str =
                                     *((upper, lower, "depends_on") for upper, lower in edges)])
 
 
-CONNECTOR_GLYPHS = frozenset("│─╭╮╰╯┬┴┼├┤▼|-+v")
+CONNECTOR_GLYPHS = frozenset("│─╭╮╰╯┬┴┼├┤▼╎▽|-+v:.")
 
 
 def connector_roles(view) -> list[set[str]]:
@@ -354,17 +354,24 @@ def middles(view) -> dict[str, int]:
     return found
 
 
-def drawn_edges(view, upper: list[str], lower: list[str], between: list[str]) -> set[tuple[str, str]] | None:
+UNDRAWN = frozenset("╎:")  # the one centred connector's bar in each charset: the gap's edges are not drawn
+
+
+def drawn_edges(view, upper: list[str], lower: list[str], between: list[str]) -> set[tuple[str, str]]:
     """The edges the connector rows of one gap draw, read the way a person reads them: each run of the bus joins
     every stub over it to every arrow under it, and with no bus each stub leads straight down to the arrow under
-    it. None where a stub or an arrow is under no box's middle (the one centred connector)."""
+    it. The one centred connector (`UNDRAWN`) draws none. A drawn stub or arrow under no box's middle fails: it
+    would point at nothing."""
+    if set(between[0].strip()) <= UNDRAWN:
+        return set()
     middle = middles(view)
     above = {middle[node_id]: node_id for node_id in upper}
     below = {middle[node_id]: node_id for node_id in lower}
     stubs = [at for at, char in enumerate(between[0]) if char.strip()]
     arrows = [at for at, char in enumerate(between[-1]) if char.strip()]
-    if any(cell not in above for cell in stubs) or any(cell not in below for cell in arrows):
-        return None
+    stray = [cell for cell in stubs if cell not in above] + [cell for cell in arrows if cell not in below]
+    if stray:
+        raise AssertionError(f"a drawn connector under no box's middle at {stray}: {between!r}")
     if len(between) == 2:
         return {(above[cell], below[cell]) for cell in stubs if cell in arrows}
     runs: list[list[int]] = []
@@ -376,6 +383,26 @@ def drawn_edges(view, upper: list[str], lower: list[str], between: list[str]) ->
                 runs.append([at])
     return {(above[top], below[bottom]) for run in runs for top in stubs if top in run for bottom in arrows
             if bottom in run}
+
+
+def gap_edges(payload: dict, upper: list[str], lower: list[str]) -> set[tuple[str, str]]:
+    return {(edge["from"], edge["to"]) for edge in payload["edges"] if edge["from"] in upper and edge["to"] in lower}
+
+
+def random_layered(seed: int) -> dict:
+    """A random layered graph: 2 to 4 frontiers of 1 to 5 lanes; each lane past the first frontier has a parent in
+    the frontier before it, maybe more there, and now and then one further up (an edge that skips a frontier)."""
+    rng = random.Random(seed)
+    widths = tuple(rng.randint(1, 5) for _ in range(rng.randint(2, 4)))
+    names = [[f"{at}{place}" for place in "abcde"[:count]] for at, count in enumerate(widths, 1)]
+    edges = []
+    for at, layer in enumerate(names[1:], 1):
+        for lower in layer:
+            parents = set(rng.sample(names[at - 1], rng.randint(1, len(names[at - 1]))))
+            if at > 1 and rng.random() < 0.15:
+                parents.add(rng.choice(names[rng.randrange(at - 1)]))
+            edges += [(upper, lower) for upper in sorted(parents)]
+    return fan(widths, edges)
 
 
 class SnapshotTests(unittest.TestCase):
@@ -622,8 +649,8 @@ class BoxTests(unittest.TestCase):
                               if edge["from"] in upper and edge["to"] in lower})
 
     def test_the_drawn_edges_are_the_graph_edges_exactly(self) -> None:
-        """Wherever a gap draws more than one straight connector, reading its stubs, buses and arrows back gives the
-        gap's edges: none missing, and none that two groups sharing a bus would imply."""
+        """Reading a gap's stubs, buses and arrows back gives the gap's edges, none missing and none that two groups
+        sharing a bus would imply; the one centred connector draws none."""
         straight = fan((2, 2), [("1a", "2a"), ("1b", "2b")])
         disjoint = fan((4, 2), [("1a", "2a"), ("1b", "2a"), ("1c", "2b"), ("1d", "2b")])
         cases = (dag_export_run(), dag_export_repair_run(), dag_export_button_repair_run(), nested(), owner_mock(),
@@ -635,12 +662,10 @@ class BoxTests(unittest.TestCase):
                 for charset in ("unicode", "ascii"):
                     view = render_delegation_view(case, width=width, charset=charset)
                     for upper, lower, between in gaps(view):
-                        if not between or (len(between) == 2 and sum(char.strip() != "" for char in between[0]) == 1):
-                            continue  # rows of one wrapped frontier, or one straight connector
+                        if not between or set(between[0].strip()) <= UNDRAWN:
+                            continue  # rows of one wrapped frontier, or the one centred connector
                         with self.subTest(name=case["name"], width=width, charset=charset, gap=(upper, lower)):
-                            self.assertEqual(drawn_edges(view, upper, lower, between),
-                                             {(edge["from"], edge["to"]) for edge in case["edges"]
-                                              if edge["from"] in upper and edge["to"] in lower})
+                            self.assertEqual(drawn_edges(view, upper, lower, between), gap_edges(case, upper, lower))
                             drawn += 1
         self.assertGreater(drawn, 10, "the cases draw edges, not only the one connector")
         for upper, lower, between in gaps(render_delegation_view(straight, width=100)):
@@ -649,6 +674,36 @@ class BoxTests(unittest.TestCase):
                              {("1a", "2a"), ("1b", "2b")})
         bus = gaps(render_delegation_view(disjoint, width=150))[0][2][1]
         self.assertEqual(len(bus.split()), 2, f"two groups that share no edge share no bus: {bus!r}")
+
+    def test_no_drawn_connector_implies_an_edge_the_graph_lacks(self) -> None:
+        """Over random layered graphs at three widths in both charsets, every gap reads back as exactly its edges
+        where it draws them and as none where it does not; never as an edge that is absent (the one centred
+        connector once sat over the middle boxes of two odd frontiers and read as their edge)."""
+        gaps_read = undrawn = 0
+        for seed in range(150):
+            payload = random_layered(seed)
+            for width in (60, 100, 150):
+                for charset in ("unicode", "ascii"):
+                    view = render_delegation_view(payload, width=width, charset=charset)
+                    for upper, lower, between in gaps(view):
+                        if not between:
+                            continue  # two rows of one wrapped frontier
+                        with self.subTest(seed=seed, width=width, charset=charset, gap=(upper, lower)):
+                            read, actual = drawn_edges(view, upper, lower, between), gap_edges(payload, upper, lower)
+                            self.assertLessEqual(read, actual, "a connector that implies an absent edge")
+                            if set(between[0].strip()) <= UNDRAWN:
+                                undrawn += 1
+                                self.assertEqual([len(line.strip()) for line in between], [1, 1])
+                            else:
+                                self.assertEqual(read, actual, "a drawn gap draws every edge it holds")
+                            gaps_read += 1
+        self.assertGreater(gaps_read, 500)
+        self.assertGreater(undrawn, 50, "the random graphs reach the one centred connector too")
+        # The reviewer's case: 1b has no edge, and the centred column is its middle and 2b's.
+        odd = render_delegation_view(fan((3, 3), [("1a", "2a"), ("1a", "2b"), ("1c", "2b"), ("1c", "2c")]),
+                                     width=120)
+        self.assertEqual([[line.strip() for line in between] for _upper, _lower, between in gaps(odd)],
+                         [["╎", "▽"]])
 
     def test_a_gap_whose_edges_cannot_be_drawn_exactly_gets_the_one_connector(self) -> None:
         cases = {
@@ -666,14 +721,14 @@ class BoxTests(unittest.TestCase):
                 with self.subTest(name, width=width):
                     self.assertEqual(view.layout, "box")
                     for _upper, _lower, between in gaps(view):
-                        self.assertEqual([line.strip() for line in between], ["│", "▼"])
-                        self.assertEqual(between[0].index("│"), between[1].index("▼"), "one straight connector")
+                        self.assertEqual([line.strip() for line in between], ["╎", "▽"])
+                        self.assertEqual(between[0].index("╎"), between[1].index("▽"), "one centred connector")
                     text_drawn = view.text()
                     self.assertFalse(set(text_drawn) & set("╭╮╰╯┼"), "no bus is drawn")
         # A frontier that wraps has no one row to draw edges to: the gaps on either side of it take the connector.
         wrapped = render_delegation_view(dag_export_run(), width=80)
         self.assertEqual([[line.strip() for line in between] for _upper, _lower, between in gaps(wrapped)
-                          if between], [["│", "▼"], ["│", "▼"]])
+                          if between], [["╎", "▽"], ["╎", "▽"]])
         one_row = render_delegation_view(dag_export_run(), width=120)
         self.assertEqual(len(gaps(one_row)[0][2]), 3, "the same run on one row draws its edges")
 

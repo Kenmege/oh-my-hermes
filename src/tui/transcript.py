@@ -177,6 +177,7 @@ PULSE_SECONDS = 0.5
 MEMORY_TOOL = "omh_memory"
 RECALL_GLINT_SECONDS = 0.9
 RECALL_GLINT_CELLS = 8
+RECALL_TYPE_CELLS = 12  # a recalled record's type column at most: its summary is what the row is for
 DETAIL_INDENT = "  "
 COLUMN_GAP = "  "
 
@@ -421,14 +422,18 @@ def _recall(name: str, result: object) -> dict[str, Any] | None:
 def _recall_lines(found: dict[str, Any]) -> tuple[str, ...]:
     """What a recall found, one line a record, from the records in its own result and nothing read anywhere else: its
     type, then its summary's first line (`decision  rotate refresh tokens per session`), the types padded to one
-    column. Both are written by a person or a model, so each goes through `_first_line` (escapes and control
-    characters dropped, as for any tool output) and the row is cut to the width like any output row. A record with no
-    summary is left out."""
-    records = [(_first_line(as_text(record.get("record_type"))), _first_line(as_text(record.get("summary"))))
-               for record in found.get("records") or [] if isinstance(record, dict)]
+    column in terminal cells, a type cut to `RECALL_TYPE_CELLS` so the summary stays in sight. Both are written by a
+    person or a model, so each goes through `_first_line` (escapes and control characters dropped, as for any tool
+    output) and the row is cut to the width like any output row. A record with no summary is left out, and records
+    that are not a list are none."""
+    found_records = found.get("records")
+    records = [(truncate(_first_line(as_text(record.get("record_type"))), RECALL_TYPE_CELLS),
+                _first_line(as_text(record.get("summary"))))
+               for record in (found_records if isinstance(found_records, list) else []) if isinstance(record, dict)]
     records = [(kind, summary) for kind, summary in records if summary]
-    column = max((len(kind) for kind, _summary in records), default=0)
-    return tuple(f"{kind.ljust(column)}  {summary}" if column else summary for kind, summary in records)
+    column = max((cell_width(kind) for kind, _summary in records), default=0)
+    return tuple(f"{kind}{' ' * (column - cell_width(kind))}  {summary}" if column else summary
+                 for kind, summary in records)
 
 
 def _result_summary(payload: dict[str, Any]) -> str:

@@ -22,8 +22,9 @@ parent's middle, a bus joining a group of parents to its children
 drawn only when every parent in it leads to every child, so the drawing
 never joins two boxes no edge joins; where the edges cannot be drawn so (an
 edge that skips a frontier, a frontier that wraps, two groups that would
-share a bus cell), one centred connector (``│`` then ``▼``) joins the two
-frontiers instead and implies no edge (`_edge_rows`). Either way the edges
+share a bus cell), one centred connector of its own marks (``╎`` then
+``▽``) joins the two frontiers instead: it says the gap's edges are not
+drawn, never that its column's boxes are joined (`_edge_rows`). Either way the edges
 are exact in each box's parents line and in the ``Dependencies`` section
 under the boxes, which lists every edge between two lanes. ``Node details`` then
 gives a card to each running or stuck node, and in `/dag` to the highlighted
@@ -117,6 +118,9 @@ class Charset:
     lines: Mapping[int, str]
     bends: Mapping[int, str]  # the corners where an edge turns, in place of `lines`' box corners
     arrow: str
+    # The one centred connector of a gap whose edges are not drawn: its own marks, so it never reads as the edge a
+    # straight `│` over `▼` draws from a parent's middle to a child's.
+    undrawn: tuple[str, str]
     glyphs: Mapping[str, str]
     pending: str  # a box's glyph for a waiting node
     unrecorded: str  # a box's glyph for a node whose state has no record (the tree draws `?`)
@@ -143,6 +147,7 @@ UNICODE: Final = Charset(
     },
     bends={_R | _D: "╭", _L | _D: "╮", _R | _U: "╰", _L | _U: "╯"},
     arrow="▼",
+    undrawn=("╎", "▽"),
     glyphs={
         "root": "◆", "waiting": "·", "dispatched": "◌", "running": "●", "stuck": "!", "done": "✓",
         "failed": "✗", "interrupted": "▪", "unknown": "?",
@@ -176,6 +181,7 @@ ASCII: Final = Charset(
     },
     bends={},
     arrow="v",
+    undrawn=(":", "."),
     glyphs={
         "root": "#", "waiting": ".", "dispatched": "o", "running": "*", "stuck": "!", "done": "+",
         "failed": "x", "interrupted": "-", "unknown": "?",
@@ -909,10 +915,12 @@ def _edge_rows(
 
     A group is the parents and children its edges connect, and it is drawn
     only when every parent in it leads to every child, so a bus never joins
-    two boxes no edge joins. None, and the one centred connector is drawn,
-    where the gap holds no edge, an edge into or out of it skips a frontier,
-    either frontier wraps (it has no single row to draw to), a group is not
-    every parent to every child, or two groups' buses would share a cell.
+    two boxes no edge joins. None, and the one centred connector is drawn
+    in its own marks (``╎`` over ``▽``, `Charset.undrawn`, which read as no
+    edge), where the gap holds no edge, an edge into or out of it skips a
+    frontier, either frontier wraps (it has no single row to draw to), a
+    group is not every parent to every child, or two groups' buses would
+    share a cell.
     Each group is dim, and blue where a child of it runs.
     """
     crossing = [(source, target) for source, target, _kind in shape.edges
@@ -1032,10 +1040,11 @@ def _box_view(
             if edge_lines is not None:
                 lines += edge_lines
                 continue
-            # Dim, and blue where it leads into a frontier with a node running.
+            # Its own marks (`Charset.undrawn`): a straight `│` over `▼` is an edge, and this is none. Dim, and blue
+            # where it leads into a frontier with a node running.
             below = {_state(shape.lanes[node_id]) for node_id in shape.rows[index + 1]}
             role = "connector:running" if "running" in below else "connector"
-            for mark in (charset.lines[_U | _D], charset.arrow):
+            for mark in charset.undrawn:
                 lines.append(_tidy([Segment(" " * connector, ""), Segment(mark, role)]))
     if sections >= 1 and shape.edges:
         lines += _dependencies(shape, width, charset)

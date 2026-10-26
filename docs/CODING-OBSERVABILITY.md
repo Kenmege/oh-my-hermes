@@ -429,11 +429,13 @@ The boxes draw an edge only where it exists. Between two frontiers each
 group of parents and the children they lead to shares one bus, and a group
 is drawn only when every parent in it leads to every child, so two groups
 with no edge between them never share a bus (`╰──┴──┬──╯   ╭──┴──╯`). Where
-the edges of a gap cannot be drawn that way, one centred connector (`│`
-then `▼`) joins the two frontiers instead and implies no edge: a group in
-which some parent does not lead to every child, two groups whose buses would
-overlap, an edge that skips a frontier (every gap it crosses), and a
-frontier that wraps (the gaps on either side of it). Either way the edges
+the edges of a gap cannot be drawn that way, one centred connector in
+marks of its own (`╎` then `▽`; `:` then `.` in ASCII) joins the two
+frontiers instead. It says the gap's edges are not drawn, and never reads
+as an edge between the boxes over and under it, as a straight `│` over `▼`
+does: a group in which some parent does not lead to every child, two groups
+whose buses would overlap, an edge that skips a frontier (every gap it
+crosses), and a frontier that wraps (the gaps on either side of it). Either way the edges
 are exact in each box's parents line and in `Dependencies`. Every box of a drawing is one
 width, as wide as its widest node needs and narrowed to put each frontier on
 one row, down to 22 cells (every line is cut to that width with `…`, and

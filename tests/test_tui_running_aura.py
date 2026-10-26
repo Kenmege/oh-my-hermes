@@ -25,7 +25,7 @@ from omh.tui.dag_pager import DagPager  # noqa: E402
 from omh.tui.dag_tree import tree_lines  # noqa: E402
 from omh.tui.gateway import Event  # noqa: E402
 from omh.tui.panels import dag_page_lines  # noqa: E402
-from omh.tui.style import COLOR_256, NO_COLOR, TRUECOLOR  # noqa: E402
+from omh.tui.style import COLOR_256, NO_COLOR, TRUECOLOR, Span  # noqa: E402
 from omh.tui.theme import build_theme, default_theme  # noqa: E402
 from omh.tui.transcript import RECALL_GLINT_SECONDS, Transcript  # noqa: E402
 from omh.tui.width import line_width  # noqa: E402
@@ -166,6 +166,31 @@ class DagPageAuraTests(unittest.TestCase):
                                           focus=_focus(app.pager))[0]
                 self.assertEqual(app.pager.lines, expected, "the page it always drew")
 
+    def test_a_graph_with_nothing_running_is_drawn_once_not_every_tick(self) -> None:
+        from unittest.mock import patch
+
+        from omh.tui import dag_pager
+
+        app = self.app
+        clock = [100.0]
+        app.clock = lambda: clock[0]
+        app.color_depth, app.motion = TRUECOLOR, True
+        settled = dag_export_run()
+        for node in settled["nodes"]:
+            if node.get("state") == "running":
+                node.update(state="done", status="accepted")
+        for graph, draws in ((settled, 0), (dag_export_run(), 3)):
+            with self.subTest(running=draws > 0):
+                with_hud(app, graph)
+                send(app, "/dag")
+                screen(app)  # the first frame draws it (and again on the node it opens on)
+                with patch.object(dag_pager, "dag_page_lines", wraps=dag_pager.dag_page_lines) as drawn:
+                    for _ in range(3):
+                        clock[0] += 0.35
+                        screen(app)
+                self.assertEqual(drawn.call_count, draws)
+                app.pager = None
+
     def test_a_page_that_is_no_longer_live_stands_still(self) -> None:
         app = self.app
         app.color_depth, app.motion = TRUECOLOR, True
@@ -238,6 +263,26 @@ class RecallGlintTests(unittest.TestCase):
         self.assertTrue(all("\x1b" not in row and "\r" not in row and "\x00" not in row for row in shown))
         self.assertTrue(all(line_width(line) <= 80 for line in rows), "cut to the width like any output row")
         self.assertTrue(shown[1].endswith("…"))
+
+    def test_the_type_column_is_measured_in_cells_and_a_long_type_is_cut(self) -> None:
+        self.complete("omh_memory", recall_result([{"record_type": "결정사항", "summary": "wide type"},
+                                                   {"record_type": "fact", "summary": "narrow type"}]))
+        shown = [text(line) for line in self.transcript.live_lines(120, self.theme)][1:]
+        starts = {line_width((Span(row[: row.index(word)]),)) for row, word in zip(shown, ("wide type", "narrow type"))}
+        self.assertEqual(len(starts), 1, f"one summary column in cells: {shown}")
+        self.setUp()
+        self.complete("omh_memory", recall_result([
+            {"record_type": "a-record-type-far-longer-than-any-real-one", "summary": "still in sight"}]))
+        shown = [text(line) for line in self.transcript.live_lines(120, self.theme)][1:]
+        self.assertEqual(shown, ["┃   ⎿  a-record-ty…  still in sight"])
+
+    def test_records_that_are_not_a_list_print_nothing_and_raise_nothing(self) -> None:
+        for records in (5, "decision", {"record_type": "fact"}, None):
+            with self.subTest(records=records):
+                self.setUp()
+                self.complete("omh_memory", {**recall_result(), "records": records})
+                rows = self.transcript.live_lines(80, self.theme)
+                self.assertEqual(len(rows), 1, [text(line) for line in rows])
 
     def test_a_recall_that_found_nothing_and_other_memory_actions_keep_todays_rows(self) -> None:
         """Today a decoded `omh_memory` result prints nothing under its row (it has no output field)."""

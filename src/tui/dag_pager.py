@@ -136,7 +136,8 @@ class DagPager(Pager):
         from ..plugin_bundle.omh.hud_text import elapsed_text
 
         payload = self.payload()
-        phase = self.aura()
+        # Only a running box takes the aura: a graph with none is drawn once, not every tick.
+        phase = self.aura() if _running(payload) else None
         focus = (cols, theme, self.depth, self.node, self.folded, self.details, phase)
         if self._drawn is not None and self._drawn[0] is payload and self._drawn[1:] == focus:
             return
@@ -178,6 +179,13 @@ class DagPager(Pager):
     def footer(self, position: str, theme: Theme) -> list[Line]:
         """The keys, then the title and the rows the page shows."""
         return [(Span(f" {DAG_KEYS} ", theme.status),), (Span(f" {self.title} · rows {position} ", theme.status),)]
+
+
+def _running(payload: Any) -> bool:
+    graph = payload.get("delegation_graph") if isinstance(payload, Mapping) else None
+    nodes = graph.get("nodes") if isinstance(graph, Mapping) else None
+    nodes = nodes if isinstance(nodes, list) else []
+    return any(isinstance(node, Mapping) and node.get("state") == "running" for node in nodes)
 
 
 def _state(payload: Any, node_id: str) -> str:
