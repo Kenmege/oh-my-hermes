@@ -222,7 +222,9 @@ def install_plugin_bundle(paths: OmhPaths, *, force: bool = False, dry_run: bool
     existing_manifest = read_plugin_manifest(target)
     if existing_manifest is not None and not force and not _protection_inventory_valid(existing_manifest):
         raise PluginPackError("invalid OMH plugin manifest inventory; plugin directory left unchanged")
-    dirty = plugin_local_modifications(existing_manifest, target)
+    # A file already holding the incoming bundle's bytes is not a conflict:
+    # replacing it loses nothing, so only real divergence needs --force.
+    dirty = plugin_local_modifications(existing_manifest, target, incoming=_record_file_map(source_records))
     # `is_directory_link` as well as `exists`: `Path.exists` follows the link,
     # so a dangling plugin symlink or junction reads as absent and would slip
     # past the ownership guard into the replacement path without --force. The
@@ -445,7 +447,15 @@ def read_plugin_manifest(plugin_dir: Path) -> dict[str, Any] | None:
         return None
 
 
-def plugin_local_modifications(manifest: dict[str, Any] | None, plugin_dir: Path) -> list[str]:
+def plugin_local_modifications(
+    manifest: dict[str, Any] | None, plugin_dir: Path, *, incoming: Mapping[str, str] | None = None
+) -> list[str]:
+    """Managed files whose bytes differ from the manifest record.
+
+    With ``incoming`` (path -> sha256 of the bundle about to be installed), a
+    file whose bytes already equal its incoming record is not reported: the
+    install would write exactly what is there, so no local change is lost.
+    """
     if not manifest:
         return []
     modified: list[str] = []
@@ -464,7 +474,8 @@ def plugin_local_modifications(manifest: dict[str, Any] | None, plugin_dir: Path
             continue
         except (OSError, ValueError) as exc:
             raise PluginPackError(f"could not inspect managed plugin path: {exc}") from exc
-        if sha256_file(path) != expected:
+        digest = sha256_file(path)
+        if digest != expected and digest != (incoming or {}).get(rel):
             modified.append(rel)
     return modified
 
@@ -599,7 +610,7 @@ def _copy_plugin_bundle(
             if not force and existing_manifest is not None and not is_directory_link(backup):
                 if read_plugin_manifest(backup) != existing_manifest:
                     raise PluginPackError("plugin manifest changed during staging; original bundle restored")
-                dirty = plugin_local_modifications(existing_manifest, backup)
+                dirty = plugin_local_modifications(existing_manifest, backup, incoming=_record_file_map(file_records))
                 if dirty:
                     raise PluginPackError(f"managed plugin files changed: {', '.join(dirty)}; original bundle restored")
                 unknown = _plugin_unmanaged_entries(existing_manifest, backup)

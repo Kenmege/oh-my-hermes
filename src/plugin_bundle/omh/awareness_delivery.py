@@ -34,6 +34,7 @@ import json
 import os
 import random
 import secrets
+import stat
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -235,6 +236,44 @@ def _with_windows_retry(operation: Callable[[], None]) -> None:
     operation()
 
 
+_LOCK_OPEN_FLAGS = (
+    os.O_RDWR
+    | os.O_CREAT
+    | os.O_APPEND
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+
+
+def _open_lock_file(lock_path: Path) -> int:
+    """Open the lock file without following a symlink planted at its name.
+
+    The name is predictable, so a path-based touch/chmod/open would create,
+    chmod and open whatever a link there points at. `O_NOFOLLOW` refuses the
+    link atomically; where it is absent (Windows) the link is refused by an
+    lstat first. The mode is then set on the descriptor, never on the path.
+    """
+    if not getattr(os, "O_NOFOLLOW", 0) and lock_path.is_symlink():
+        raise OSError(errno.ELOOP, "refusing a symlinked lock file", str(lock_path))
+    opened: list[int] = []
+    _with_windows_retry(lambda: opened.append(os.open(lock_path, _LOCK_OPEN_FLAGS, 0o600)))
+    descriptor = opened[0]
+    keep = False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "lock path is not a regular file", str(lock_path))
+        if hasattr(os, "fchmod"):
+            _with_windows_retry(lambda: os.fchmod(descriptor, 0o600))
+        else:
+            _with_windows_retry(lambda: lock_path.chmod(0o600))
+        keep = True
+    finally:
+        if not keep:
+            os.close(descriptor)
+    return descriptor
+
+
 @contextmanager
 def _awareness_delivery_lock(
     path: Path, *, timeout_seconds: float = _LOCK_TIMEOUT_SECONDS
@@ -254,9 +293,7 @@ def _awareness_delivery_lock(
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     _with_windows_retry(lambda: path.parent.chmod(0o700))
     lock_path = path.with_name(f".{path.name}.lock")
-    _with_windows_retry(lambda: lock_path.touch(mode=0o600, exist_ok=True))
-    _with_windows_retry(lambda: lock_path.chmod(0o600))
-    with lock_path.open("a+", encoding="utf-8") as handle:
+    with os.fdopen(_open_lock_file(lock_path), "a+", encoding="utf-8") as handle:
         mechanism = _acquire_delivery_lock(handle, lock_path, timeout_seconds)
         try:
             yield mechanism

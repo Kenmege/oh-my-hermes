@@ -26,6 +26,7 @@ from test_tui_app import (
     INTERRUPTED,
     LIVE_ID,
     NO_TERMIOS,
+    UNREAD_DEFAULT,
     AppTestCase,
     FakePoller,
     ScriptedTerminal,
@@ -492,7 +493,7 @@ class DocumentedApprovalsToggleTests(unittest.TestCase):
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class SteerReplayTests(AppTestCase):
     def steer_run(self, status: str, *segments: str) -> object:
-        answers = (*startup_answers(), ("session.steer", {"result": {"status": status, "text": "second prompt"}}))
+        answers = (*startup_answers(UNREAD_DEFAULT), ("session.steer", {"result": {"status": status, "text": "second prompt"}}))
         return self.prepare(Scenario("session", spans("session", "startup", "create", *segments), answers=answers))
 
     def test_ctrl_enter_as_a_key_report_steers_and_the_notice_lands(self) -> None:
@@ -1263,7 +1264,10 @@ class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
         app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
         app.startup()
         self.assertEqual(client.awaited, ["session.create"])
-        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog", "session.list"])
+        self.assertEqual(
+            [method for method, _params in client.calls],
+            ["config.get", "commands.catalog", "session.list", "config.get", "model.options"],  # the default's two last
+        )
         self.assertEqual(app.busy_mode, "queue")  # Hermes' own default, until config.get answers
         type_text(app, "/")
         self.assertTrue(app._menu_rows())  # no catalog yet: the TUI's own commands still complete

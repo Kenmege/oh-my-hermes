@@ -1320,6 +1320,33 @@ def _configured_path_contains_symlink(value: object) -> bool:
         current = current.parent
 
 
+def _configured_omh_home_link_refusal(args: argparse.Namespace, paths: OmhPaths) -> str | None:
+    """Resolution erases a configured home's symlink; uninstall still sees its spelling.
+
+    Checks the spelling `resolve_paths` used for the standalone lane: the
+    explicit `--omh-home`, else the home's persisted `omh_home` binding, else
+    the process `OMH_HOME`.
+    """
+    explicit = getattr(args, "omh_home", None)
+    if explicit not in (None, ""):
+        source, value = "--omh-home", str(explicit)
+    else:
+        try:
+            binding = plugin_omh_home_setting(read_config(paths.hermes_config_path))
+        except (OSError, UnicodeError):
+            return "OMH home ownership is unproven: the persisted omh_home binding is unreadable"
+        if binding:
+            raw_hermes = Path(str(getattr(args, "hermes_home", None) or os.environ.get("HERMES_HOME") or "~/.hermes")).expanduser()
+            binding = re.sub(r"\$\{(?:env:)?HERMES_HOME\}|\$HERMES_HOME\b|%HERMES_HOME%", lambda _: str(raw_hermes), binding)
+            bound = Path(os.path.expandvars(binding)).expanduser()
+            source, value = "the persisted omh_home binding", str(bound if bound.is_absolute() else raw_hermes / bound)
+        else:
+            source, value = "OMH_HOME", os.environ.get("OMH_HOME") or ""
+    if _configured_path_contains_symlink(value):
+        return f"refusing to remove an OMH home whose path configured by {source} passes through a symlink or directory junction"
+    return None
+
+
 def _command_package_self_update_plan(args: argparse.Namespace) -> dict[str, object]:
     if bool(getattr(args, "command_package_updated", False)):
         return {"should_update": False, "reason": "command package update already observed"}
@@ -2633,6 +2660,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         force=bool(args.force),
         remove_command_package=bool(remove_all and not args.keep_command),
         store_plan=plan,
+        home_refusal=_configured_omh_home_link_refusal(args, paths),
     )
     legacy_files = (
         _remove_legacy_display_files(
@@ -2926,13 +2954,16 @@ def _list_catalog_context(skills: list[dict[str, object]]) -> dict[str, object]:
 
 def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
     paths = _paths(args)
-    checks = run_doctor(paths)
+    # Both default to today's behaviour; each flag turns off one thing only.
+    personal_files = not getattr(args, "no_personal_files", False)
+    state_write = not getattr(args, "no_state_write", False)
+    checks = run_doctor(paths, state_write=state_write)
     next_action = recommended_next_action(checks)
     summary = _doctor_operator_summary(checks)
     runtime_writable = any(check.name == "runtime_artifacts" and check.ok for check in checks)
     runtime_state_readable = not any(check.name == "runtime_state" and not check.ok for check in checks)
     state_log: dict[str, str] = {}
-    if runtime_writable and runtime_state_readable:
+    if state_write and runtime_writable and runtime_state_readable:
         update_state(
             paths,
             {
@@ -2945,8 +2976,8 @@ def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
             },
         )
         state_log = {"path": str(paths.runtime_state_path), "entry": "last_doctor"}
-    advisories = run_doctor_advisories(paths)
-    return {
+    advisories = run_doctor_advisories(paths, personal_files=personal_files)
+    payload: dict[str, object] = {
         "ok": doctor_ok(checks),
         "checks": [check.__dict__ for check in checks],
         "summary": summary,
@@ -2959,6 +2990,26 @@ def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
         # not move the doctor status, the issue counts, or the exit code.
         "build_identity": probe_build_identity(),
         "language": _resolve_language(args),
+    }
+    # Only when a control is on, so a default run's payload keeps its shape.
+    if not (personal_files and state_write):
+        payload["privacy_controls"] = _doctor_privacy_controls(personal_files=personal_files, state_write=state_write)
+    return payload
+
+
+def _doctor_privacy_controls(*, personal_files: bool, state_write: bool) -> dict[str, object]:
+    """Say which doctor privacy controls were on and what each one left undone."""
+    return {
+        "personal_files": "read" if personal_files else "not_read",
+        "personal_files_skipped": (
+            [] if personal_files else ["advisory:soul_missing_or_starter", "advisory:hermes_memory_staleness"]
+        ),
+        "state_write": "enabled" if state_write else "disabled",
+        "state_write_skipped": (
+            []
+            if state_write
+            else ["runtime/state.json last_doctor", "runtime_artifacts write probe", "workflow_state write probe"]
+        ),
     }
 
 
@@ -3163,11 +3214,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "wrapper_backend_surface": "omh chat interact and runtime commands are adapter/operator contracts, not the normal chat UX",
     }
 
+    # `ok` means what the exit code means: every step setup was asked to run
+    # ran. A model step that could not run makes it false here and in the
+    # state record, so a reader of `ok` alone is not told otherwise.
+    setup_ok = _setup_exit_code({"steps": steps}) == 0
     if not args.dry_run:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
         state_patch: dict[str, object] = {
             "last_setup": {
-                "ok": True,
+                "ok": setup_ok,
                 "apply_skipped": bool(args.skip_apply),
                 "hermes_native": hermes_native,
                 "operator_summary": operator_summary,
@@ -3185,7 +3240,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
     payload: dict[str, object] = {
-        "ok": True,
+        "ok": setup_ok,
         "steps": steps,
         "dry_run": args.dry_run,
         "hermes_native": hermes_native,
@@ -3220,6 +3275,12 @@ def _noninteractive_rerun_command(argv: list[str]) -> str:
     return shlex.join(rerun)
 
 
+# Model-step statuses that mean the step could not run at all. A missing
+# prerequisite maps to 3; a Hermes that is there but failed maps to 1.
+_MODEL_STEP_NOT_RUN_STATUSES = frozenset({"hermes_unavailable", "hermes_config_missing", "hermes_config_unreadable"})
+_MODEL_STEP_FAILED_STATUSES = frozenset({"hermes_command_failed"})
+
+
 def _setup_exit_code(payload: Any) -> int:
     """0 when every step setup was asked to run ran.
 
@@ -3230,15 +3291,23 @@ def _setup_exit_code(payload: Any) -> int:
     which `main` returns for an OmhError: the flags parsed, and the same
     choices succeed as `--no-interactive --json`.
 
-    3 when the install steps finished but the requested model step could not
-    run because no `hermes` executable was found
-    (`steps.model_activation.status == "hermes_unavailable"`). Not 0, because
-    a wrapper reading only the status would be told the models were set up
-    when nothing was inspected; not 1, because nothing OMH installed failed
-    and the same command succeeds once Hermes is on PATH; not 2, which `main`
-    returns for an OmhError. 3 is what the other mappers return for a command
-    that ran but could not inspect what it needed (`_profile_isolation_exit_code`,
+    3 when the install steps finished (or, on a dry run, were previewed) but
+    the requested model step could not run: no `hermes` executable was found
+    (`hermes_unavailable`), or Hermes' config file does not exist
+    (`hermes_config_missing`) or exists but cannot be read
+    (`hermes_config_unreadable`), as `steps.model_activation.status`. Not 0,
+    because a wrapper reading only the status would be told the models were
+    set up or previewed when nothing was inspected; not 1, because nothing
+    OMH installed failed and the same command succeeds once the prerequisite
+    is there; not 2, which `main` returns for an OmhError. 3 is what the
+    other mappers return for a command that ran but could not inspect what it
+    needed (`_profile_isolation_exit_code`,
     `_memory_evidence_exit_code`).
+
+    1 when Hermes is on PATH but a command the model step needs failed: it
+    exited nonzero, timed out, or answered in a shape the adapter refuses
+    (`hermes_command_failed`). That is a fault in the Hermes the user has,
+    not a prerequisite they can supply, so it is not 3.
 
     Generic failure signals -- a refused or interrupted run, or a unit
     carrying a failure kind -- are never success either, so this mapper
@@ -3252,7 +3321,10 @@ def _setup_exit_code(payload: Any) -> int:
         return 1
     steps = summary.get("steps")
     activation = steps.get("model_activation") if isinstance(steps, dict) else None
-    if isinstance(activation, dict) and activation.get("status") == "hermes_unavailable":
+    status = activation.get("status") if isinstance(activation, dict) else None
+    if status in _MODEL_STEP_FAILED_STATUSES:
+        return 1
+    if status in _MODEL_STEP_NOT_RUN_STATUSES:
         return 3
     return 0
 
@@ -5032,6 +5104,7 @@ def _print_doctor_summary(payload: dict[str, object], *, language: str = "en") -
     state_log = payload.get("state_log", {})
     if isinstance(state_log, dict) and state_log.get("path") and state_log.get("entry"):
         print(f"  {tr(language, 'state_log', path=state_log.get('path'), entry=state_log.get('entry'))}")
+    _print_doctor_privacy_controls(payload)
     for check in checks:
         if not isinstance(check, dict) or (check.get("ok") and check.get("severity") != "warning"):
             continue
@@ -5050,11 +5123,24 @@ def _print_doctor_summary(payload: dict[str, object], *, language: str = "en") -
     print(f"  {tr(language, 'machine_readable')}")
 
 
+def _print_doctor_privacy_controls(payload: dict[str, object]) -> None:
+    """Say, under the summary, what a privacy control left unread or unwritten."""
+    controls = payload.get("privacy_controls")
+    if not isinstance(controls, dict):
+        return
+    if controls.get("state_write") == "disabled":
+        print("  State write: disabled (--no-state-write); runtime/state.json was not written and no write probe ran.")
+    if controls.get("personal_files") == "not_read":
+        print("  Personal files: not read (--no-personal-files); SOUL.md, memories/MEMORY.md and memories/USER.md were not opened.")
+
+
 def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None:
     """Render the read-only Advice lane, separate from doctor checks.
 
     Advice never affects the doctor status or exit code; it is a default-on,
     plain-text section that surfaces the ``hermes_config_advice`` advisory lane.
+    A ``skipped`` entry is listed with its reason, so an inspector that did not
+    run is never mistaken for one that found nothing.
     """
     advisories = payload.get("advisories", {})
     if not isinstance(advisories, dict):
@@ -5067,7 +5153,8 @@ def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None
         for entry in entries
         if isinstance(entry, dict) and entry.get("status") == "advice"
     ]
-    if not actionable:
+    skipped = [entry for entry in entries if isinstance(entry, dict) and entry.get("status") == "skipped"]
+    if not actionable and not skipped:
         return
     print(_color("Advice (read-only; does not affect doctor status)", "1;36", use_color))
     for entry in actionable:
@@ -5077,6 +5164,8 @@ def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None
         print(f"  - {check_id}: {observed}")
         if remediation:
             print(f"    Suggestion: {remediation}")
+    for entry in skipped:
+        print(f"  - {entry.get('check_id', 'unknown')}: skipped ({entry.get('reason', '')})")
 
 
 def _doctor_human_next_action(next_action: str, *, language: str) -> str:
@@ -6672,6 +6761,22 @@ def _add_top_level_commands(sub) -> None:
     doctor = sub.add_parser("doctor", help="Check local OMH install health and Hermes skill registration.")
     doctor.add_argument("--json", action="store_true", help="Print the full machine-readable doctor payload.")
     doctor.add_argument("--language", default=None, help=f"Human output language ({', '.join(LANGUAGE_CODES)}).")
+    doctor.add_argument(
+        "--no-personal-files",
+        action="store_true",
+        help=(
+            "Do not open Hermes personal files (SOUL.md, memories/MEMORY.md, memories/USER.md); "
+            "the checks that need them are reported as skipped."
+        ),
+    )
+    doctor.add_argument(
+        "--no-state-write",
+        action="store_true",
+        help=(
+            "Write nothing under the OMH home: no runtime/state.json `last_doctor` entry and no write probes; "
+            "writability is then checked from permissions and reported as not probed."
+        ),
+    )
     add_doctor_profile_isolation_argument(doctor)
     doctor.set_defaults(func=cmd_doctor)
 

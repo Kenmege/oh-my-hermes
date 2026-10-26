@@ -35,6 +35,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+R", "Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, "
                "Esc leaves the composer as it was"),
     ("Ctrl+X", "Opens the /sessions picker"),
+    ("Ctrl+S", "Opens the bot board, as /bots does: this machine's Hermes profiles, their gateways and sessions, "
+               "read-only"),
     ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
     ("↓", "On an empty composer while the agent view under the info line shows subagents, gives its rows the keys "
           "as the agent list; in a DAG run, to its folding tree"),
@@ -59,7 +61,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+L", "Redraws the screen"),
     ("Ctrl+Z", "Suspends the OMH TUI to the shell, as Ctrl+Z does in any terminal program (Hermes stops with it); "
                "fg brings it back"),
-    ("Ctrl+C", "Clears the composer, interrupts a running turn, or (twice when idle) exits"),
+    ("Ctrl+C", "Clears the composer, else interrupts a running turn; a second press within 2 s exits, "
+               "mid-turn too"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
     ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once, allow this session or (when Hermes "
                                   "offers it) always allow, and allow it, or the last row to deny and tell Hermes "
@@ -85,6 +88,9 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Tab / n, Shift+Tab / p, Space / Enter, d", "In /dag, highlight the next or the previous box, fold or unfold "
                                                  "the highlighted one, or show or hide Node details; ↑ / ↓, "
                                                  "PageUp / PageDown and g / G scroll, q or Esc leaves"),
+    ("↑ / ↓, Enter or →, ← or Esc or q, r", "On the bot board, move, open a profile's sessions or a session's last "
+                                            "messages, go back (on the profiles, close the board), or read it again "
+                                            "now; it reads again every 5 s by itself"),
     ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, an agent's log, this list), "
                                           "move a line, a page, or to either end, or leave"),
 )

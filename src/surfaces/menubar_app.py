@@ -12,6 +12,7 @@ from typing import Any
 
 from ..command_path import inspect_omh_command_path
 from ..local_store import atomic_write_text
+from ..install.uninstall_safety import configured_link_reason, unsafe_removal_reason
 from ..paths import OmhPaths
 from ..runtime.artifacts import update_state
 
@@ -209,7 +210,15 @@ def uninstall_menubar_app(paths: OmhPaths, *, dry_run: bool = False, platform_na
     system = platform_name or platform.system()
     app_paths = menubar_app_paths(paths)
     candidates = [app_paths["launch_agent"], app_paths["app_dir"]]
-    existing = [path for path in candidates if path.exists()]
+    existing = [path for path in candidates if path.exists() or path.is_symlink()]
+    reason = (
+        unsafe_removal_reason(paths.omh_home, hermes_home=paths.hermes_home)
+        or configured_link_reason(paths.omh_home, "OMH_HOME")
+        or unsafe_removal_reason(app_paths["app_dir"], hermes_home=paths.hermes_home)
+    )
+    if not reason and not is_managed_menubar_install(paths):
+        reason = "menu bar ownership is unproven: no matching OMH LaunchAgent"
+    removable = [] if reason else existing
     payload = {
         "schema_version": MENUBAR_APP_SCHEMA_VERSION,
         "operation": "uninstall",
@@ -217,14 +226,17 @@ def uninstall_menubar_app(paths: OmhPaths, *, dry_run: bool = False, platform_na
         "label": MENUBAR_LABEL,
         "dry_run": bool(dry_run),
         "removed": [],
-        "would_remove": [str(path) for path in existing] if dry_run else [],
+        "kept_paths": [{"path": str(path), "reason": reason} for path in existing] if reason else [],
+        "would_remove": [str(path) for path in removable] if dry_run else [],
     }
     if dry_run:
         return {**payload, "status": "dry_run"}
+    if reason:
+        return {**payload, "status": "kept" if existing else "absent"}
 
     stop_result = stop_menubar_app(paths, platform_name=system)
     removed: list[str] = []
-    for path in existing:
+    for path in removable:
         if path.is_dir():
             shutil.rmtree(path)
         else:

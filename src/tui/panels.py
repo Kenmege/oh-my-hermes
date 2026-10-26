@@ -1226,10 +1226,11 @@ SETTLED_NODE_STATES = frozenset({"done", "failed", "interrupted", "unknown"})
 def dag_run_summary(graph: Mapping[str, Any]) -> str:
     """`DAG · export feature · done 5/6 · 1 failed` once every lane of `graph` has settled; "" while one has not.
 
-    A finished run holds no rows under the composer: its tree collapses to
-    this one line, until the graph lingers out of the HUD
-    (`delegation_graph.GRAPH_LINGER_SECONDS`) as the whole block did. The
-    counts are the lanes' recorded states; lanes the reader left out
+    A finished run's delegation block is this one line, until the graph
+    lingers out of the HUD (`delegation_graph.GRAPH_LINGER_SECONDS`) as the
+    whole block did; the agent view under the composer draws nothing for it
+    once its turn ends (`agent_view._run_gone`). The counts are the lanes'
+    recorded states; lanes the reader left out
     (`hidden_nodes`) leave the run unread, so it stays a tree, and so does a
     dag-ulw run that is not over (`dag_open`: a node whose child went quiet
     is still out, though its lane reads settled). `/dag` still draws the

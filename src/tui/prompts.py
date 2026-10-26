@@ -78,6 +78,9 @@ _DENY_KEYS = frozenset("dn")
 CHOICE_DIGITS = "123456789"
 # The last row of a clarify question's choices: it opens a text field (Hermes' Ink TUI, `prompt.clarify.other`).
 CLARIFY_OTHER = "Other (type your answer)"
+# A question the TUI asks itself (the app's model confirmation) sets this to True: its choices are the only answers,
+# so it has no text field's row. Hermes' own questions never carry it.
+CLOSED_CHOICES = "omh_closed_choices"
 # A multi-select question (`multi_select`): a box before each choice, and a note after the question.
 TICKED, UNTICKED = "[x] ", "[ ] "
 MULTI_NOTE = " (choose one or more)"
@@ -95,6 +98,7 @@ APPROVAL_IDLE_KEYS = tuple(form.removesuffix(" and stops") for form in APPROVAL_
 CLARIFY_CHOICE_KEYS = (
     "↑↓ or 1-9 · enter picks · type to answer · esc cancels", "↑↓ enter picks · esc cancels", "esc cancels"
 )
+CLARIFY_CLOSED_KEYS = ("↑↓ or 1-9 · enter picks · esc cancels", "↑↓ enter picks · esc cancels", "esc cancels")
 CLARIFY_FIELD_KEYS = (
     "type your answer · enter sends · ↑↓ back to the choices · esc cancels",
     "enter sends · ↑↓ choices · esc cancels",
@@ -214,6 +218,8 @@ class PromptSlot:
                 return CLARIFY_TEXT_KEYS
             if self.typing:
                 return CLARIFY_FIELD_KEYS
+            if not self._other_row():
+                return CLARIFY_CLOSED_KEYS
             return CLARIFY_MULTI_KEYS if self._multi() else CLARIFY_CHOICE_KEYS
         return VALUE_KEYS
 
@@ -252,6 +258,11 @@ class PromptSlot:
         question = self._current_question()
         return _string_choices(question) if question else []
 
+    def _other_row(self) -> bool:
+        """Whether the current question ends with the text field's row (`CLARIFY_OTHER`); not one `CLOSED_CHOICES` closes."""
+        question = self._current_question()
+        return not (question and question.get(CLOSED_CHOICES) is True)
+
     def _multi(self) -> bool:
         """Whether the current question takes several choices (Hermes' `multi_select`, on a question with choices)."""
         question = self._current_question()
@@ -281,7 +292,8 @@ class PromptSlot:
             if self._multi():
                 return self._record_answer(_ticked_answer(self.ticked or [choices[index]]))
             return self._record_answer(choices[index])
-        self.selected, self.typing = len(choices), True
+        if self._other_row():
+            self.selected, self.typing = len(choices), True
         return None
 
     def _tick(self, index: int) -> None:
@@ -351,12 +363,13 @@ class PromptSlot:
         choices = self._current_choices()
         if not choices:
             return None
+        last = len(choices) if self._other_row() else len(choices) - 1
         if isinstance(key, Paste):
-            return None if self.typing else self._open_field(key)
+            return None if self.typing or not self._other_row() else self._open_field(key)
         if key.name in (UP, DOWN):
             self.typing = False
             step = -1 if key.name == UP else 1
-            self.selected = min(max(self.selected + step, 0), len(choices))
+            self.selected = min(max(self.selected + step, 0), last)
             return None
         if self.typing:
             return None
@@ -369,12 +382,12 @@ class PromptSlot:
             if self.selected < len(choices):
                 self._tick(self.selected)
             return None
-        if len(key.char) == 1 and key.char in CHOICE_DIGITS and int(key.char) - 1 <= len(choices):
+        if len(key.char) == 1 and key.char in CHOICE_DIGITS and int(key.char) - 1 <= last:
             if multi and int(key.char) - 1 < len(choices):
                 self._tick(int(key.char) - 1)
                 return None
             return self._pick(int(key.char) - 1)
-        return self._open_field(key)
+        return self._open_field(key) if self._other_row() else None
 
     def _open_field(self, key: Key | Paste) -> TypeIt:
         self.selected, self.typing = len(self._current_choices()), True
@@ -422,7 +435,9 @@ class PromptSlot:
         A clarify question answered says the label (the ticked labels, joined)
         or the text the person typed, as Hermes reads it, without the
         `(Recommended)` tag it adds to a choice (`_without_recommended`);
-        `skipped` for an empty answer, and one cancelled says `cancelled`. A
+        `skipped` for an empty answer, and one cancelled says `cancelled`; the
+        TUI's own question (`CLOSED_CHOICES`) says only the choice, whose label
+        names what it does. A
         value prompt says only `answered` or
         `declined`, never the value. An approval's answer is the app's to say.
         """
@@ -440,6 +455,9 @@ class PromptSlot:
             if question["qid"] not in answers:
                 continue
             value, asked = answers[question["qid"]], _one_line(question.get("question"))
+            if question.get(CLOSED_CHOICES) is True and isinstance(value, str) and value:
+                rows.append((True, value))
+                continue
             if not isinstance(value, str) or not value:
                 rows.append((False, f"{OUTCOME_SKIPPED} · {asked}"))
                 continue
@@ -634,7 +652,8 @@ class PromptSlot:
         if not choices:
             return _keep_ends([*head, (Span("  type an answer and press enter · esc cancels", theme.hint),)], max_rows,
                               width, theme)
-        labels = [(f"{number}. ", choice) for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
+        rows = [*choices, CLARIFY_OTHER] if self._other_row() else choices
+        labels = [(f"{number}. ", choice) for number, choice in enumerate(rows, start=1)]
         if self._multi():
             boxes = [TICKED if choice in self.ticked else UNTICKED for choice in choices] + [" " * len(UNTICKED)]
             labels = [(box + lead, label) for box, (lead, label) in zip(boxes, labels)]
