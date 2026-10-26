@@ -9,11 +9,14 @@ All notable changes will be documented here.
   title and screen, which the OMH TUI does not draw, so a pane running `omh`
   was missing from the list. Inside a herdr pane (`HERDR_ENV=1` and
   `HERDR_PANE_ID`), the TUI now reports the state its title shows through
-  `herdr pane report-agent` (source `omh:tui`, agent `hermes`): a question or
+  `herdr pane report-agent` (source `omh:tui`, agent `omh`): a question or
   approval waiting on you is `blocked`, a running turn `working`, otherwise
-  `idle`. It reports only on a change, off the render loop, and releases the
-  pane on exit. Outside herdr nothing changes and nothing is spawned; a
-  missing or unresponsive herdr is ignored.
+  `idle`. It reports only on a change, off the render loop, sends only the
+  newest state when herdr is slow, and releases the pane on exit. herdr's pane
+  environment is kept from the Hermes gateway the TUI starts, so herdr's own
+  Hermes plugin cannot claim the pane and lock those reports out. Outside
+  herdr nothing changes and nothing is spawned; a missing or unresponsive
+  herdr is ignored.
 
 - **Setup no longer writes a second `plugins.enabled` when a column-0
   comment sits inside `plugins:` (#2304).** Hermes' own config separates the

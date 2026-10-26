@@ -44,6 +44,10 @@ READY_EVENT = "gateway.ready"
 GATEWAY_PYTHONPATH_ENV = "OMH_TUI_GATEWAY_PYTHONPATH"
 # Names the shim and `omh` use to talk to the frontend; the gateway has no use for them.
 INTERNAL_ENV_PREFIX = "OMH_TUI_"
+# herdr's pane environment (`HERDR_ENV`, `HERDR_PANE_ID`, ...) stays with the TUI, which reports the pane's state
+# itself (`herdr.py`). Where the gateway runs, herdr's own Hermes plugin would report a `herdr:hermes` session for
+# the pane, after which herdr refuses the TUI's reports; and a gateway daemon started from here outlives the pane.
+HERDR_ENV_PREFIX = "HERDR_"
 REQUIRED_ENV = ("HERMES_PYTHON", "HERMES_PYTHON_SRC_ROOT")
 
 STDERR_TAIL_LINES = 200
@@ -150,7 +154,7 @@ def gateway_spawn(env: Mapping[str, str]) -> GatewaySpawn:
     child = {
         name: value
         for name, value in env.items()
-        if name not in contract.STRIPPED_GATEWAY_ENV and not name.startswith(INTERNAL_ENV_PREFIX)
+        if name not in contract.STRIPPED_GATEWAY_ENV and not name.startswith((INTERNAL_ENV_PREFIX, HERDR_ENV_PREFIX))
     }
     launcher_path = env.get(GATEWAY_PYTHONPATH_ENV, "")
     child["PYTHONPATH"] = src_root + os.pathsep + launcher_path if launcher_path else src_root
