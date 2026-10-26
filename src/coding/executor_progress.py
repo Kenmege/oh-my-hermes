@@ -10,6 +10,7 @@ from typing import Any
 
 from ..local_store import atomic_write_json, ensure_dir, ensure_file, read_json_object, read_jsonl_objects, utc_now
 from ..paths import OmhPaths
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST, canonical_progress_record
 from ..plugin_bundle.omh.run_records import (
     DELEGATION_FILE,
     EVENTS_FILE,
@@ -37,7 +38,7 @@ from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 # `ALLOWED_EXECUTOR_PROFILES` and `BINDING_STATES` are the run-record
 # vocabularies the plugin reader checks too, so `run_records` owns them.
-# Without `omo_runtime` there `fanout dispatch` spawns omo units into a lane
+# Without `pi_family_runtime` there `fanout dispatch` spawns pi-family units into a lane
 # that `normalize_executor_profile` rejects, so the units run entirely unobserved.
 TARGET_TYPES = ("run", "wrapper_session")
 # One definition, several names. The vocabulary is owned by `run_records` in
@@ -157,12 +158,15 @@ def normalize_executor_profile(value: str, *, observed_hermes_execution: bool = 
         "claude-code": "claude_code",
         "claude-code-cli": "claude_code",
         "claude_code": "claude_code",
-        # The omo host CLIs collapse into one lane. `normalized` has already
-        # folded "_" to "-", so "omo_runtime" arrives here as "omo-runtime".
-        "omo-runtime": "omo_runtime",
-        "pi": "omo_runtime",
-        "senpi": "omo_runtime",
-        "opencode": "omo_runtime",
+        # The pi-family host CLIs collapse into one lane. `normalized` has already
+        # folded "_" to "-", so "pi_family_runtime" arrives here as "pi-family-runtime".
+        "pi-family-runtime": "pi_family_runtime",
+        "pi": "pi_family_runtime",
+        PI_DISTRIBUTION_HOST: "pi_family_runtime",
+        # Read-only: the profile id and lane older releases wrote (the fold
+        # above makes the lane spelling equal the profile id).
+        LEGACY_RUNTIME_PROFILE_ID: "pi_family_runtime",
+        "opencode": "pi_family_runtime",
     }
     if normalized == "hermes":
         if observed_hermes_execution:
@@ -361,7 +365,7 @@ def write_progress_binding(paths: OmhPaths, binding: dict[str, Any]) -> dict[str
 
 
 def read_progress_binding(paths: OmhPaths, target_type: str, target_id: str) -> dict[str, Any] | None:
-    binding = read_json_object(progress_dir_for_target(paths, target_type, target_id) / EXECUTOR_PROGRESS_BINDING_FILE)
+    binding = canonical_progress_record(read_json_object(progress_dir_for_target(paths, target_type, target_id) / EXECUTOR_PROGRESS_BINDING_FILE))
     if not binding:
         return None
     _require_valid("binding", validate_progress_binding(binding))
@@ -378,7 +382,7 @@ def list_progress_bindings(paths: OmhPaths, *, limit: int | None = None) -> list
             continue
         for binding_path in sorted(root.glob("*/executor_progress/binding.json")):
             try:
-                binding = read_json_object(binding_path)
+                binding = canonical_progress_record(read_json_object(binding_path))
                 if not binding:
                     continue
                 _require_valid("binding", validate_progress_binding(binding))
@@ -552,7 +556,7 @@ def build_safe_progress_signal(
         "explicit_summary": _compact_text(_sanitize_progress_copy(explicit_summary), 280),
         "evidence_ref_count": len(evidence_refs or []),
         # The routed model is what a live row needs to answer "which model is
-        # this"; the runtime alone cannot, because one profile (omo_runtime
+        # this"; the runtime alone cannot, because one profile (pi_family_runtime
         # especially) fronts many models.
         "routed_model": _compact_text(routed_model, 120),
         "routed_reasoning_effort": _compact_text(routed_reasoning_effort, 40),
@@ -1085,6 +1089,7 @@ def append_progress_event(paths: OmhPaths, binding: dict[str, Any], event: dict[
 def latest_progress_event(paths: OmhPaths, binding: dict[str, Any]) -> dict[str, Any]:
     target = _binding_target(binding)
     events, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / EVENTS_FILE)
+    events = [canonical_progress_record(event) for event in events]
     valid = [event for event in events if not validate_progress_event(event) and _payload_matches_binding_instance(event, binding)]
     return valid[-1] if valid else {}
 
@@ -1141,6 +1146,7 @@ def append_progress_report(paths: OmhPaths, binding: dict[str, Any], report: dic
 def latest_progress_report(paths: OmhPaths, binding: dict[str, Any]) -> dict[str, Any]:
     target = _binding_target(binding)
     reports, _errors = read_jsonl_objects(progress_dir_for_target(paths, target["type"], target["id"]) / EXECUTOR_PROGRESS_REPORTS_FILE)
+    reports = [canonical_progress_record(report) for report in reports]
     valid = [report for report in reports if not validate_progress_report(report) and _payload_matches_binding_instance(report, binding)]
     return valid[-1] if valid else {}
 

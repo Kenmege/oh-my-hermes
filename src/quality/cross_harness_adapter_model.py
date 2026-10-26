@@ -30,7 +30,7 @@ class Profile(StrEnum):
     PI = "pi"
     HERMES = "hermes"
     OMX = "omx"
-    OMO = "omo"
+    PI_FAMILY = "pi-family"
     OMC = "omc"
 
 

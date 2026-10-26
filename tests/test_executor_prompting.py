@@ -96,7 +96,7 @@ class ExecutorPromptingTests(unittest.TestCase):
         cases = (
             ("hermes", "runtime_handoff", "/ulw-work {message}"),
             ("omx-runtime", "runtime_handoff", "$ultrawork {message}"),
-            ("omo-runtime", "runtime_handoff", ""),
+            ("pi-family-runtime", "runtime_handoff", ""),
             ("omc-runtime", "runtime_handoff", ""),
         )
         for profile, handoff_key, candidate_template in cases:

@@ -124,7 +124,7 @@ export function hudStateLabel(active, agents) {
   return parts.join(' · ')
 }
 
-const MAESTRO_EXECUTOR_SHORT_NAMES = { codex: 'codex', claude_code: 'claude', omo_runtime: 'omo', hermes_local: 'hermes' }
+const MAESTRO_EXECUTOR_SHORT_NAMES = { codex: 'codex', claude_code: 'claude', pi_family_runtime: 'pi', hermes_local: 'hermes' }
 
 // The route column shows WHICH model runs, not who serves it: the label
 // keeps only the segment after the last slash. Shapes, as the TUI draws

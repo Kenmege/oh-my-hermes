@@ -17,7 +17,7 @@ from omh.routing.action_copy import NEXT_ACTION_LABELS
 from omh.routing.executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
     NAMED_CODING_AGENT_PHRASES,
-    OMO_RUNTIME_CODING_AGENT_PHRASES,
+    PI_FAMILY_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
 from omh.routing.coding_route_actions import (
@@ -36,6 +36,7 @@ from omh.routing.owner_preference import (
     record_accepted_explicit_choice,
 )
 from omh.wrapper.contract import build_chat_interaction_payload
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 
 
 # One message per coding-delivery route-hint site. Direct `ultraprocess`, broad
@@ -117,7 +118,7 @@ class CodingRouteActionVocabularyTests(unittest.TestCase):
 
         for name in (
             "SUBSTRING_NAMED_CODING_AGENT_PHRASES",
-            "OMO_RUNTIME_CODING_AGENT_PHRASES",
+            "PI_FAMILY_CODING_AGENT_PHRASES",
             "NAMED_CODING_AGENT_PHRASES",
             "CODING_DELIVERY_REQUEST_PHRASES",
             "CODING_DELIVERY_REQUEST_TOKENS",
@@ -153,7 +154,7 @@ class CodingRouteActionVocabularyTests(unittest.TestCase):
                 self.assertNotIn("゚", decomposed)
         self.assertEqual(
             NAMED_CODING_AGENT_PHRASES,
-            (*SUBSTRING_NAMED_CODING_AGENT_PHRASES, *OMO_RUNTIME_CODING_AGENT_PHRASES),
+            (*SUBSTRING_NAMED_CODING_AGENT_PHRASES, *PI_FAMILY_CODING_AGENT_PHRASES),
         )
 
     def test_vendored_awareness_delivery_signal_applies_the_boundary_rule(self) -> None:
@@ -199,7 +200,7 @@ class CodingRouteActionVocabularyTests(unittest.TestCase):
         self.assertEqual(decision.selected_owner, "claude-code")
         self.assertFalse(decision.choice_required)
 
-    def test_pi_family_cues_resolve_the_omo_runtime_owner(self) -> None:
+    def test_pi_family_cues_resolve_the_pi_family_runtime_owner(self) -> None:
         for message in (
             "have pi implement the retry fix",
             "ask pi to fix the login bug",
@@ -207,15 +208,15 @@ class CodingRouteActionVocabularyTests(unittest.TestCase):
             "delegate to pi: fix the login bug",
             "pi한테 이 버그 고치라고 해줘",
             "pi에게 이 이슈 맡겨서 고쳐줘",
-            "have senpi fix the login bug",
+            f"have {PI_DISTRIBUTION_HOST} fix the login bug",
             "opencode로 이 버그 고쳐줘",
-            "omo runtime으로 이 버그 고쳐줘",
+            f"{RUNTIME_USER_PHRASE}으로 이 버그 고쳐줘",
         ):
             with self.subTest(message=message):
                 decision = _decision(message)
 
                 self.assertEqual(decision.next_action, NAMED_EXECUTOR_NEXT_ACTION)
-                self.assertEqual(decision.selected_owner, "omo-runtime")
+                self.assertEqual(decision.selected_owner, "pi-family-runtime")
                 self.assertFalse(decision.choice_required)
 
 
@@ -265,9 +266,9 @@ class CodingRouteActionGuardTests(unittest.TestCase):
         self.assertEqual(decision.next_action, USER_CHOICE_NEXT_ACTION)
         self.assertTrue(decision.choice_required)
 
-    def test_raspberry_pi_and_pip_context_never_name_the_omo_runtime_owner(self) -> None:
+    def test_raspberry_pi_and_pip_context_never_name_the_pi_family_runtime_owner(self) -> None:
         # Bare "pi" belongs to Raspberry-Pi physical-device routing, and "pi"
-        # is a substring of "pip"; neither may name the omo-runtime executor.
+        # is a substring of "pip"; neither may name the pi-family-runtime executor.
         for message in (
             "raspberry pi relay",
             "deploy to my pi 5",
@@ -405,9 +406,9 @@ class CodingRouteActionGuardTests(unittest.TestCase):
         self.assertEqual(bypass.owner_preference_reason_code, "non_coding_workflow")
         self.assertEqual(bypass.selected_owner, "")
 
-    def test_embedded_pi_family_substrings_never_name_the_omo_runtime_owner(self) -> None:
-        # Word-boundary guard: as raw substrings "promo runtime" contains
-        # "omo runtime" and "api한테" contains "pi한테", so containment alone
+    def test_embedded_pi_family_substrings_never_name_the_pi_family_runtime_owner(self) -> None:
+        # Word-boundary guard: as raw substrings a word ending in the runtime's
+        # short name contains its runtime phrase, and "api한테" contains "pi한테", so containment alone
         # named an executor these messages never mention.
         for message in (
             "promo runtime 로그 확인하는 코드 짜줘",

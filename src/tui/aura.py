@@ -14,6 +14,14 @@ token is there, so the app ticks for it then and never otherwise
 (`App._aura_live`). At 256 or 16 colours it stands still; at the `NO_COLOR`
 depth, and on a background where its band would not show
 (`theme.aura_moves`), the token and the heavy rules are bold and still.
+
+The same aura marks a dag-ulw node that runs, where it is drawn live: its
+title in the agent tree under the composer (`dag_tree`) and its box's border
+and title in `/dag` (`panels.dag_page_lines`), stepped across the title or
+the box with the band moving through (`aura_text`). It moves under the same
+conditions (`App._aura_moves`), and where it would not move those draw as
+they always have: a still aura is not drawn there, and the graph printed into
+the transcript is never live.
 """
 
 from __future__ import annotations
@@ -66,3 +74,9 @@ def aura_rule(width: int, base: Sequence[Style], glint: Sequence[Style], phase: 
         else:
             spans.append(Span(AURA_RULE, style))
     return tuple(spans)
+
+
+def aura_text(text: str, base: Sequence[Style], glint: Sequence[Style], phase: int) -> list[Span]:
+    """`text` a character at a time in the aura at `phase`: each its step of the gradient across `text`, and the band's
+    where the band passes (`aura_style`)."""
+    return [Span(char, aura_style(base, glint, at, len(text), phase)) for at, char in enumerate(text)]

@@ -1,8 +1,9 @@
 """Lexical reference regions shared by routing matchers, never output rewriting.
 
-The block-quote, relay-header and URL regions follow the mask list of
-oh-my-openagent's skill-pointer arming guard (concept only, commit 1f031d0d4);
-the patterns and wording here are OMH's own.
+The block-quote, relay-header and URL regions follow the mask list of the
+upstream skill-pointer arming guard recorded in the note on code-level
+borrowings in `docs/SKILL-SOURCES.md` (concept only, commit 1f031d0d4); the
+patterns and wording here are OMH's own.
 """
 
 from __future__ import annotations

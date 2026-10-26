@@ -140,8 +140,8 @@ vocabulary, `omh loop goal-driver-handoff --loop <id>` prepares a
 `boundaries:` / `stop when:`) built from the loop cycle and its linked goal
 ledger. OMH prepares the text; a human or wrapper pastes it into an
 interactive Hermes surface. OMH never sets the goal, never registers a gate,
-and never reads the judge's verdict. Verified against the observed basis
-Hermes Agent v0.20.4 (build 2026.8.18, `~/.hermes/hermes-agent/pyproject.toml`).
+and never reads the judge's verdict. Observed on Hermes Agent v0.20.4
+(build 2026.8.18); not re-checked since.
 
 After the host or wrapper observes Hermes accepting that exact prepared
 command and ending at least two contiguous turns in the same session, it may
@@ -658,9 +658,9 @@ observed evidence appears in the briefing.
 
 For prompt-only Claude Code or generic agents, the same wrapper session action
 records attached/result metadata without creating a Codex lifecycle run. For
-Hermes/OMX/OMO/OMC runtime handoffs, an observed open also records the
-`runtime_start` ladder step; worktree, worker, review, CI, and merge still
-require separate evidence.
+Hermes, OMX, pi-family runtime, and OMC runtime handoffs, an observed open
+also records the `runtime_start` ladder step; worktree, worker, review, CI, and
+merge still require separate evidence.
 
 If a wrapper cannot prove a transition, keep the status at `not_observed` and
 show the next required evidence instead of inferring progress.

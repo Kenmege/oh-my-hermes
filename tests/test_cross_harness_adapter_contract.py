@@ -153,7 +153,7 @@ class AdapterBoundaryFailingFirstTests(unittest.TestCase):
             parse_adapter_result(result)
 
     def test_all_profile_effort_observation_and_process_variants_are_typed(self) -> None:
-        for profile in ("codex", "claude-code", "pi", "hermes", "omx", "omo", "omc"):
+        for profile in ("codex", "claude-code", "pi", "hermes", "omx", "pi-family", "omc"):
             with self.subTest(profile=profile):
                 request = _request()
                 request["profile"] = profile

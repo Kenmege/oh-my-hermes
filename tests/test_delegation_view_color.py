@@ -323,7 +323,8 @@ class PaintTests(unittest.TestCase):
             with self.subTest(environ=environ):
                 self.assertEqual(app.color_depth, expected)
                 spans = graph_spans(app._agent_view(100, 40))  # the agent view under the info line draws it
-                self.assertTrue(any("Refresh HUD docs" in span.text for span in spans))
+                # A running node's title is a span a character in the aura where it moves (truecolor, motion on).
+                self.assertIn("Refresh HUD docs", "".join(span.text for span in spans))
                 self.assertTrue(all(span.style.depth == expected for span in spans))
 
     def test_a_chat_post_is_plain_text(self) -> None:

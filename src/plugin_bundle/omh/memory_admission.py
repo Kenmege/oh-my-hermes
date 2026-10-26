@@ -17,9 +17,10 @@ session against one home exclude each other. Stdlib only; no import of the
 ``omh`` control plane.
 
 Refusing an instruction-shaped summary from the model's own capture path, naming
-why and how to restate it, follows the hint admission rule of oh-my-openagent
-(https://github.com/code-yeongyu/oh-my-openagent, commit 657ea5a2a; concept
-only, link-only); the vocabulary and wording here are OMH's own.
+why and how to restate it, follows the memory hint admission rule of the
+upstream recorded in the note on code-level borrowings in
+`docs/SKILL-SOURCES.md` (commit 657ea5a2a; concept only, link-only); the
+vocabulary and wording here are OMH's own.
 """
 
 from __future__ import annotations

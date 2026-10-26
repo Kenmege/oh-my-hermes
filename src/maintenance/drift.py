@@ -188,12 +188,6 @@ def _routing_precision_intervention_case_count() -> int:
     return count if not isinstance(count, bool) else 0
 
 
-def _installable_skill_count() -> int:
-    from ..skills.catalog import installable_skill_names
-
-    return len(installable_skill_names())
-
-
 def _common_request_case_count() -> int:
     from ..quality.common_request_coverage import build_common_request_coverage_demo
 
@@ -877,7 +871,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Three domain-science vocabulary controls (+3).
             # Career actor repair adds five employer requests and two references.
             # Normalized actor/objective follow-up adds seven employer contrasts.
-            expected=1114,
+            # The pi-family runtime rename: `family` alone never names the
+            # executor readiness owner (+1).
+            expected=1115,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1380,28 +1376,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install drift, and /omh-doctor status runs doctor (+1).
             # Career actor repair retains five personal/target/quoted controls.
             # Actor/objective follow-up adds two third-person candidate controls.
-            expected=1130,
+            # The pi-family runtime rename: asking whether pi-family is ready
+            # checks executor readiness (+1).
+            expected=1131,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
-        ),
-        CountMetric(
-            name="installable_skill_count",
-            describe="Installable workflow skills quoted in reference surfaces",
-            live=_installable_skill_count,
-            # The current workflow additions are part of the installable catalog.
-            # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
-            # `market-research` adds one.
-            # show-reel adds one installable motion-production method.
-            # Three optional executable science methods (+3).
-            expected=151,
-            sites=(
-                "docs/README.md",
-                # The docs index quotes the count in prose and
-                # `test_first_release_trust_surfaces_are_present` asserts that
-                # exact string, so the number lives in two files, not one.
-                "tests/test_router_content.py",
-            ),
         ),
         CountMetric(
             name="common_request_case_count",

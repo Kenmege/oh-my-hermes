@@ -22,6 +22,7 @@ from omh.coding.executor_readiness import (  # noqa: E402
 )
 from omh.system.local_store import atomic_write_json, utc_now  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOME
 
 
 class AuthSignalMarkerTests(unittest.TestCase):
@@ -63,30 +64,30 @@ class AuthSignalMarkerTests(unittest.TestCase):
         entry = auth_signal_for_profile("hermes")
         self.assertEqual(entry["login_marker"], "not_applicable")
 
-    def test_senpi_marker_is_presence_only(self) -> None:
-        """omo-runtime's marker is the first omo host credential store found
-        (pi, senpi, then opencode): present iff a non-empty JSON object
+    def test_pi_distribution_marker_is_presence_only(self) -> None:
+        """pi-family-runtime's marker is the first pi-family host credential store found
+        (pi, its distribution host, then opencode): present iff a non-empty JSON object
         exists; provider names and values never read."""
         with TemporaryDirectory() as tmp:
             home = Path(tmp)
-            self.assertEqual(executor_auth_signals(home=home)["profiles"]["omo-runtime"]["login_marker"], "absent")
-            senpi_dir = home / ".senpi" / "agent"
-            senpi_dir.mkdir(parents=True)
-            (senpi_dir / "auth.json").write_text("{}", encoding="utf-8")
-            self.assertEqual(executor_auth_signals(home=home)["profiles"]["omo-runtime"]["login_marker"], "absent")
-            (senpi_dir / "auth.json").write_text(
+            self.assertEqual(executor_auth_signals(home=home)["profiles"]["pi-family-runtime"]["login_marker"], "absent")
+            pi_distribution_dir = home / PI_DISTRIBUTION_HOME / "agent"
+            pi_distribution_dir.mkdir(parents=True)
+            (pi_distribution_dir / "auth.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(executor_auth_signals(home=home)["profiles"]["pi-family-runtime"]["login_marker"], "absent")
+            (pi_distribution_dir / "auth.json").write_text(
                 json.dumps({"kimi-coding": {"key": "sk-SECRET-VALUE-12345"}}), encoding="utf-8"
             )
             signals = executor_auth_signals(home=home)
-            self.assertEqual(signals["profiles"]["omo-runtime"]["login_marker"], "present")
+            self.assertEqual(signals["profiles"]["pi-family-runtime"]["login_marker"], "present")
             self.assertNotIn("sk-SECRET-VALUE-12345", json.dumps(signals))
             self.assertNotIn("kimi-coding", json.dumps(signals))
-            (senpi_dir / "auth.json").write_text("not json {", encoding="utf-8")
-            self.assertEqual(executor_auth_signals(home=home)["profiles"]["omo-runtime"]["login_marker"], "unknown")
+            (pi_distribution_dir / "auth.json").write_text("not json {", encoding="utf-8")
+            self.assertEqual(executor_auth_signals(home=home)["profiles"]["pi-family-runtime"]["login_marker"], "unknown")
 
-    def test_opencode_auth_store_marks_omo_runtime_present(self) -> None:
-        """An opencode-hosted omo login is a first-class marker: the opencode
-        auth store alone flips omo-runtime to present, so it no longer ranks
+    def test_opencode_auth_store_marks_pi_family_runtime_present(self) -> None:
+        """An opencode-hosted pi-family login is a first-class marker: the opencode
+        auth store alone flips pi-family-runtime to present, so it no longer ranks
         below logged-in codex/claude-code in executor_choice_context."""
         with TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -97,10 +98,10 @@ class AuthSignalMarkerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             signals = executor_auth_signals(home=home)
-            self.assertEqual(signals["profiles"]["omo-runtime"]["login_marker"], "present")
+            self.assertEqual(signals["profiles"]["pi-family-runtime"]["login_marker"], "present")
             self.assertNotIn("sk-SECRET-VALUE-12345", json.dumps(signals))
             self.assertNotIn("anthropic", json.dumps(signals))
-            entry = auth_signal_for_profile("omo-runtime", home=home)
+            entry = auth_signal_for_profile("pi-family-runtime", home=home)
             self.assertEqual(entry["login_marker"], "present")
 
 
@@ -192,7 +193,7 @@ class ExecutorChoiceContextTests(unittest.TestCase):
             profiles = [entry["profile"] for entry in context["candidates"]]
             # Ranking may reorder by live local login markers; membership and
             # count are the contract.
-            self.assertEqual(sorted(profiles), ["claude-code", "codex", "omo-runtime"])
+            self.assertEqual(sorted(profiles), ["claude-code", "codex", "pi-family-runtime"])
             for entry in context["candidates"]:
                 self.assertEqual(entry["readiness_status"], "not_observed")
                 self.assertIn("auth_signal", entry)

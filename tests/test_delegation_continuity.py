@@ -2,7 +2,7 @@
 
 When OMH delegates coding work toward a stated merge/deploy goal, the outstanding
 obligation is recorded as a goal ledger in the OMH state root -- not hand-written
-into a product repo's `.omo`/`.omx`/`.document-harness` runtime-evidence dirs. A
+into a product repo's `CONTINUITY_FORBIDDEN_TARGETS` runtime-evidence dirs. A
 delegated subtask completing (a review, say) is not the parent goal completing:
 the goal stays OPEN until the merge/deploy is observed through an external-effect
 receipt, or until explicit cancellation, and it is reconcilable from the
@@ -47,6 +47,7 @@ from omh.plugin_bundle.omh.awareness import (  # noqa: E402
     awareness_primer_payload,
     workflow_context_cards,
 )
+from omh.coding.pi_family_interop import RUNTIME_HOME
 
 _MESSAGE = "fix the broken login flow in src/auth.py and add a regression test"
 
@@ -209,7 +210,7 @@ class AwarenessGuardrailTests(unittest.TestCase):
         self.assertIn("no merge", shape)
         # Goal 2's write-location clause.
         self.assertIn(".omh/goals", shape)
-        self.assertIn(".omo", shape)
+        self.assertIn(RUNTIME_HOME, shape)
         self.assertIn(".omx", shape)
         self.assertIn("subtask completing is not the parent goal completing", shape)
 
@@ -218,7 +219,7 @@ class AwarenessGuardrailTests(unittest.TestCase):
         rails = [
             cue
             for cue in cues
-            if ".omh/goals" in str(cue.get("route", "")) and ".omo" in str(cue.get("route", ""))
+            if ".omh/goals" in str(cue.get("route", "")) and RUNTIME_HOME in str(cue.get("route", ""))
         ]
         self.assertTrue(rails, "no delegation-continuity write-location rail cue found")
 

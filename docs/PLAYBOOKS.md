@@ -35,11 +35,14 @@ files.
 
 ## Included Playbooks
 
+The table lists the situation-level playbooks. `omh playbook list --json` is the
+complete list, including the G1-G10 feature-surface playbooks described in
+[Application Cases](APPLICATION_CASES.md).
+
 | Playbook | Use When | Primary Shape |
 | --- | --- | --- |
 | `request-to-handoff` | A user sends a natural request and needs the first role-owned next action. | Route request -> select role -> plan or prepare -> handoff or retain -> status card. |
 | `safe-feature-change` | A user wants a safe feature, bug fix, or refactor flow. | Recommend -> plan -> accept -> coding handoff -> status card. |
-| `source-finder` | A user needs typed source candidates before deciding whether to learn, research, package, or implement. | Scope source kinds -> prepare candidates -> track acquisition status -> choose downstream workflow. |
 | `source-backed-research` | A user needs current, official, comparative, or citation-backed evidence. | Clarify scope -> gather sources -> synthesize -> report confidence. |
 | `research-department` | A user wants ongoing market, competitor, paper, news, or source-monitoring research without hand-building Hermes profiles and delivery glue. | Scope research -> source inbox -> Scout/Analyst/Briefer lanes -> integration readiness -> briefing status. |
 | `research-to-strategy-brief` | A user wants business or customer evidence shaped into strategy. | Scope research -> evidence table -> meeting topics -> strategy options -> decision record. |
@@ -53,7 +56,6 @@ files.
 | `reliability-incident-review` | A user wants postmortem, SLO, error-budget, incident follow-up, or service reliability review. | Scope service -> gather evidence -> assess reliability -> track remediation -> record unresolved gaps. |
 | `market-scan-to-strategy` | A user wants competitor or market evidence shaped into strategy. | Scope scan -> evidence matrix -> implications -> strategy brief. |
 | `deep-interview-to-plan` | A broad goal lacks scope, non-goals, or acceptance criteria. | One question -> clarified brief -> plan -> decision gate. |
-| `loopable-goal-cycle` | A user directly starts a long-horizon goal such as `./loop make this a 10k-star quality OSS`. | Classify task/project/ambition -> preserve the north star -> reframe into a bounded first loop goal -> research -> plan -> handoff -> feedback -> wait or resume. |
 | `local-pipeline-buildout` | A maintainer wants a repeatable local process for recurring work. | Catalog route -> wrapper contract -> plan gate -> lifecycle status. |
 | `idea-to-deploy` | A user wants a product or app idea to feel like a full delivery loop. | Idea -> decision -> plan -> handoff -> verification/release -> deploy/monitor status. |
 | `cto-loop` | A user wants CTO/PM-style operating cadence and decision quality. | Signals -> risks -> architecture tradeoffs -> decision -> follow-up handoffs -> status. |

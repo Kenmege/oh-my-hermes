@@ -16,10 +16,17 @@ dispatch, a `depends_on`, a repair or an extend) from a node with none, and
 what comes after a repaired node (a node that depends on it, or an extend its
 check added) sits below that node's repair, which ran first. The
 nodes of one frontier sit side by side with a ``· Same frontier`` label
-under them, and one connector (``│`` then ``▼``) joins one frontier to the
-next, whatever its edges. So the drawing implies no edge: the edges are
-exact in each box's parents line and in the ``Dependencies`` section under
-the boxes, which lists every edge between two lanes. ``Node details`` then
+under them. Between two frontiers the edges are drawn: ``│`` under each
+parent's middle, a bus joining a group of parents to its children
+(``╰──┬──╯``, ``╭──┴──╮``), and ``▼`` over each child's middle. A group is
+drawn only when every parent in it leads to every child, so the drawing
+never joins two boxes no edge joins; where the edges cannot be drawn so (an
+edge that skips a frontier, a frontier that wraps, two groups that would
+share a bus cell), one centred connector of its own marks (``╎`` then
+``▽``) joins the two frontiers instead: it says the gap's edges are not
+drawn, never that its column's boxes are joined (`_edge_rows`). Either way the edges
+are exact in each box's parents line and in the ``Dependencies`` section
+under the boxes, which lists every edge between two lanes. ``Node details`` then
 gives a card to each running or stuck node, and in `/dag` to the highlighted
 one: its whole title, category and model, status and output tokens, group and
 session. The tree's status column takes the token count too where the row has
@@ -109,7 +116,11 @@ _L, _R, _U, _D = 1, 2, 4, 8
 class Charset:
     name: str
     lines: Mapping[int, str]
+    bends: Mapping[int, str]  # the corners where an edge turns, in place of `lines`' box corners
     arrow: str
+    # The one centred connector of a gap whose edges are not drawn: its own marks, so it never reads as the edge a
+    # straight `│` over `▼` draws from a parent's middle to a child's.
+    undrawn: tuple[str, str]
     glyphs: Mapping[str, str]
     pending: str  # a box's glyph for a waiting node
     unrecorded: str  # a box's glyph for a node whose state has no record (the tree draws `?`)
@@ -134,7 +145,9 @@ UNICODE: Final = Charset(
         _L | _R | _D: "┬", _L | _R | _U: "┴", _U | _D | _R: "├", _U | _D | _L: "┤", _L | _R | _U | _D: "┼",
         _L: "─", _R: "─", _U: "│", _D: "│",
     },
+    bends={_R | _D: "╭", _L | _D: "╮", _R | _U: "╰", _L | _U: "╯"},
     arrow="▼",
+    undrawn=("╎", "▽"),
     glyphs={
         "root": "◆", "waiting": "·", "dispatched": "◌", "running": "●", "stuck": "!", "done": "✓",
         "failed": "✗", "interrupted": "▪", "unknown": "?",
@@ -166,7 +179,9 @@ ASCII: Final = Charset(
             )
         },
     },
+    bends={},
     arrow="v",
+    undrawn=(":", "."),
     glyphs={
         "root": "#", "waiting": ".", "dispatched": "o", "running": "*", "stuck": "!", "done": "+",
         "failed": "x", "interrupted": "-", "unknown": "?",
@@ -809,7 +824,8 @@ def _box_header(graph: Mapping[str, Any], shape: _Frontiers, width: int, charset
 
 def _dependencies(shape: _Frontiers, width: int, charset: Charset) -> list[tuple[Segment, ...]]:
     """Every edge between lanes as text, ``Export API → Export button``, its kind named unless it is a
-    `depends_on`: the boxes draw one connector per frontier gap, so this is where the edges are exact."""
+    `depends_on`: where the boxes draw one centred connector for a frontier gap (`_edge_rows`), this is where its
+    edges are exact."""
     lines: list[tuple[Segment, ...]] = [(), (Segment("Dependencies", "header"),)]
     arrow = f" {charset.right} "
     for upper, lower, kind in shape.edges:
@@ -891,6 +907,69 @@ def _details(
     return lines
 
 
+def _edge_rows(
+    shape: _Frontiers, upper: int, middle: Mapping[str, int], charset: Charset,
+) -> list[tuple[Segment, ...]] | None:
+    """The edges from frontier ``upper`` to the next, drawn as they are: ``│`` under each parent's middle, a bus that
+    joins one group of parents to its children (``╰──┬──╯``, ``╭──┴──╮``), and ``▼`` over each child's middle.
+
+    A group is the parents and children its edges connect, and it is drawn
+    only when every parent in it leads to every child, so a bus never joins
+    two boxes no edge joins. None, and the one centred connector is drawn
+    in its own marks (``╎`` over ``▽``, `Charset.undrawn`, which read as no
+    edge), where the gap holds no edge, an edge into or out of it skips a
+    frontier, either frontier wraps (it has no single row to draw to), a
+    group is not every parent to every child, or two groups' buses would
+    share a cell.
+    Each group is dim, and blue where a child of it runs.
+    """
+    crossing = [(source, target) for source, target, _kind in shape.edges
+                if shape.layer[source] <= upper < shape.layer[target]]
+    if not crossing or any(shape.layer[source] != upper or shape.layer[target] != upper + 1
+                           or source not in middle or target not in middle for source, target in crossing):
+        return None
+    groups: list[tuple[set[str], set[str], int]] = []  # parents, children, edges
+    for source, target in crossing:
+        joined = [group for group in groups if source in group[0] or target in group[1]]
+        parents, children, count = {source}, {target}, 1
+        for group in joined:
+            parents, children, count = parents | group[0], children | group[1], count + group[2]
+            groups.remove(group)
+        groups.append((parents, children, count))
+    drawn: list[tuple[int, int, set[int], set[int], str]] = []  # first cell, last cell, parents', children's, role
+    for parents, children, count in groups:
+        if count != len(parents) * len(children):
+            return None
+        tops, bottoms = {middle[node_id] for node_id in parents}, {middle[node_id] for node_id in children}
+        running = any(_state(shape.lanes[node_id]) == "running" for node_id in children)
+        drawn.append((min(tops | bottoms), max(tops | bottoms), tops, bottoms,
+                      "connector:running" if running else "connector"))
+    drawn.sort()
+    if any(earlier[1] >= later[0] for earlier, later in zip(drawn, drawn[1:])):
+        return None
+
+    def row(marks: dict[int, tuple[str, str]]) -> tuple[Segment, ...]:
+        pieces, at = [], 0
+        for cell in sorted(marks):
+            mark, role = marks[cell]
+            pieces += [Segment(" " * (cell - at), ""), Segment(mark, role)]
+            at = cell + 1
+        return _tidy(pieces)
+
+    bar = charset.lines[_U | _D]
+    stubs = {cell: (bar, role) for _first, _last, tops, _bottoms, role in drawn for cell in tops}
+    arrows = {cell: (charset.arrow, role) for _first, _last, _tops, bottoms, role in drawn for cell in bottoms}
+    bus: dict[int, tuple[str, str]] = {}
+    for first, last, tops, bottoms, role in drawn:
+        for cell in range(first, last + 1):
+            bits = ((_U if cell in tops else 0) | (_D if cell in bottoms else 0)
+                    | (_L if cell > first else 0) | (_R if cell < last else 0))
+            bus[cell] = (charset.bends.get(bits) or charset.lines[bits], role)
+    if all(first == last for first, last, *_rest in drawn):
+        return [row(stubs), row(arrows)]  # every edge is straight down: no bus to draw
+    return [row(stubs), row(bus), row(arrows)]
+
+
 @dataclass(frozen=True)
 class _Boxes:
     lines: list[tuple[Segment, ...]]
@@ -928,6 +1007,11 @@ def _box_view(
     lines = [*_box_header(graph, shape, width, charset), ()]
     boxes: list[tuple[str, int, int]] = []
     order: list[str] = []
+    middle: dict[str, int] = {}  # the cell under each box's middle, in a frontier drawn on one row
+    for frontier in shape.rows:
+        if len(frontier) <= per_row:
+            left = (span - len(frontier) * (box_width + GAP) + GAP) // 2 + box_width // 2
+            middle.update((node_id, left + at * (box_width + GAP)) for at, node_id in enumerate(frontier))
     for index, frontier in enumerate(shape.rows):
         # A frontier is centred; one that wraps keeps the column its first row starts at, so it reads as one grid.
         offset = (span - min(per_row, len(frontier)) * (box_width + GAP) + GAP) // 2
@@ -952,10 +1036,15 @@ def _box_view(
         if len(frontier) > 1:
             lines.append(_tidy([Segment(" " * offset, ""), Segment(f"{charset.dot} Same frontier", "frontier")]))
         if index < len(shape.rows) - 1:
-            # Dim, and blue where it leads into a frontier with a node running.
+            edge_lines = _edge_rows(shape, index, middle, charset)
+            if edge_lines is not None:
+                lines += edge_lines
+                continue
+            # Its own marks (`Charset.undrawn`): a straight `│` over `▼` is an edge, and this is none. Dim, and blue
+            # where it leads into a frontier with a node running.
             below = {_state(shape.lanes[node_id]) for node_id in shape.rows[index + 1]}
             role = "connector:running" if "running" in below else "connector"
-            for mark in (charset.lines[_U | _D], charset.arrow):
+            for mark in charset.undrawn:
                 lines.append(_tidy([Segment(" " * connector, ""), Segment(mark, role)]))
     if sections >= 1 and shape.edges:
         lines += _dependencies(shape, width, charset)

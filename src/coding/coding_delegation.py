@@ -90,6 +90,7 @@ from ..system.tracker_content import normalize_tracker_content
 from ..isolation import build_isolation_plan
 from ..memory import validate_handoff_context_blocked, validate_handoff_context_pack, validate_project_memory_recall_pack
 from ..workflows.role_context_packs import build_role_context_pack, pin_role_context_pack
+from .pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_USER_PHRASE
 from ..routing.coding_route_actions import named_executor_owners
 from ..routing.executor_cues import contains_boundary_phrase
 from ..routing.localization import normalized_phrase
@@ -249,9 +250,9 @@ _LOCAL_CAPABILITY_EXAMPLES = {
         "team or worker lanes",
         "MCP tools",
     ],
-    "omo-runtime": [
-        "OMO/oh-my runtime templates",
-        "OMO skills",
+    "pi-family-runtime": [
+        "pi-family/oh-my runtime templates",
+        "pi-family runtime skills",
         "worker lanes",
         "MCP tools",
     ],
@@ -268,16 +269,16 @@ _CODING_STATUS_AGENT_TERMS = (
     "coding agent",
     "coding-agent",
     "hermes coding",
-    "senpi",
+    PI_DISTRIBUTION_HOST,
     "opencode",
-    "omo runtime",
+    RUNTIME_USER_PHRASE,
     "코덱스",
     "클로드 코드",
     "클로드",
     "코딩 에이전트",
     "코딩-agent",
 )
-# Bare "pi" hides inside "api" and "pipeline", so the omo host CLI only counts
+# Bare "pi" hides inside "api" and "pipeline", so the pi host CLI only counts
 # through these right-bounded forms — and never when the message carries
 # Raspberry-Pi (or api) context, which names hardware, not the executor.
 # Right-bounding alone is not enough: "raspi status" and "spi status" contain
@@ -391,7 +392,7 @@ def build_coding_delegation_payload(
         "codex",
         "claude-code",
         "omx-runtime",
-        "omo-runtime",
+        "pi-family-runtime",
         "omc-runtime",
         "generic",
     }:
@@ -1938,7 +1939,7 @@ def _names_sole_external_executor(message: str) -> bool:
     member is the *sole* named owner. A user who names one external CLI with an
     imperative has already made the explicit owner choice, so the delegation
     path yields the same delegate outcome for Codex that it always has for
-    Claude Code. Hermes coding and the omo-runtime family are runtime owners,
+    Claude Code. Hermes coding and the pi-family-runtime family are runtime owners,
     not external CLIs, and stay on the retained-workflow clarify outcome; a
     message naming more than one owner is a genuine owner-comparison question.
     Broadening this detection to either case regresses those clarifications.
@@ -2587,7 +2588,7 @@ def _runtime_handoff(
             "Use the original task message as the runtime request.",
             f"Run {label} with the recommended OMH workflow unless local runtime routing has stronger evidence.",
             "For Hermes-owned coding, use OMH coding skills directly instead of pretending a separate executor ran.",
-            "For OMX/OMO/OMC, treat the runtime as the chosen oh-my execution layer, not a plain prompt.",
+            "For OMX, pi-family, or OMC runtimes, treat the runtime as the chosen oh-my execution layer, not a plain prompt.",
             "Keep prepared runtime state separate from observed runtime evidence.",
         ],
         "non_goals": [
@@ -2767,7 +2768,7 @@ def _local_capability_fallback(profile: str) -> str:
         "generic": "plain generic executor",
         "hermes": "plain Hermes runtime",
         "omx-runtime": "plain OMX runtime",
-        "omo-runtime": "plain OMO runtime",
+        "pi-family-runtime": "plain pi-family runtime",
         "omc-runtime": "plain OMC runtime",
     }
     label = fallback_labels.get(profile, f"plain {executor_label(profile)}")
@@ -2997,7 +2998,7 @@ def _local_capability_prompt_block(profile: str, label: str) -> str:
 
 
 def _runtime_local_capability_prompt_block(profile: str, label: str) -> str:
-    runtime_examples = "OMX/OMO/OMC templates"
+    runtime_examples = "OMX/pi-family/OMC templates"
     if profile == "hermes":
         runtime_examples = "Hermes/OMH runtime skills and coding-team paths"
     return (

@@ -49,6 +49,15 @@ See "What the lock actually guarantees" in
 Practical implications for a wrapper or operator running more than one agent
 against the same OMH home:
 
+- Prefer one long-lived wrapper process per chat surface rather than
+  multiple processes racing to update the same session or run record.
+- If two agents must write concurrently (for example, two coding executors
+  reporting progress on sibling tasks), route both through commands that use
+  the locked update path rather than hand-rolling a parallel JSON writer.
+- A lock timeout or contention error is a real signal, not a transient
+  glitch to retry silently. Surface it as a blocker rather than dropping the
+  update.
+
 ## Explicit Hermes Child Control
 
 Audience: **agents, operators, and maintainers**. Normal users ask Hermes for
@@ -59,11 +68,11 @@ Hermes Agent child:
 
 ```bash
 omh coding hermes-child prepare \
-  --model qwen3-coder-next --provider qwen --reasoning high \
+  --model glm-5.3 --provider zai --reasoning high \
   --parent-run-id parent-1 --run-id child-1 --json < prompt.txt
 
 omh coding hermes-child dispatch --confirm-dispatch \
-  --model qwen3-coder-next --provider qwen --reasoning high \
+  --model glm-5.3 --provider zai --reasoning high \
   --parent-run-id parent-1 --run-id child-1 --json < prompt.txt
 
 omh coding hermes-child status --run-id child-1 --json
@@ -102,7 +111,8 @@ valid response. Unsupported and failed probes omit `load_state` and every
 inventory claim, retain only closed reason codes and fingerprints, and never
 persist command output.
 
-Hermes Agent v0.20.5 at upstream `5259f565` has no such inventory command. Its
+Observed on Hermes Agent v0.20.5 (upstream `5259f565`), not re-checked since:
+Hermes has no such inventory command. Its
 `--skills` option preloads prompt content and `hermes skills list
 --enabled-only` lists configured candidates, but neither returns a nonce-bound
 runtime inventory. The real host probe therefore reports
@@ -121,15 +131,6 @@ omh coding model-routing reset --route-family <id> --json
 
 These report or clear explicit local routing preference metadata. They do not
 execute a model or prove that a model is available.
-
-- Prefer one long-lived wrapper process per chat surface rather than
-  multiple processes racing to update the same session or run record.
-- If two agents must write concurrently (for example, two coding executors
-  reporting progress on sibling tasks), route both through commands that use
-  the locked update path rather than hand-rolling a parallel JSON writer.
-- A lock timeout or contention error is a real signal, not a transient
-  glitch to retry silently. Surface it as a blocker rather than dropping the
-  update.
 
 ## Hermes `config.yaml` Is a Capability Boundary, Not an OMH Lock
 
@@ -214,19 +215,23 @@ separate when several agents are active:
   must preview and digest-bind every alias change; a concurrent Hermes config
   write invalidates that preview and must be re-inspected rather than retried
   blindly.
-- Maestro coordinates prepared external Codex, Claude Code, OMO, OMC, OMX, and
-  generic handoffs. It is not an executor, does not own Hermes-native work, and
-  cannot turn one agent's prepared route into another agent's observed run.
-- `pi` and `senpi` are host CLIs in the OMO runtime family, not additional
-  owners. Their metadata observations do not select a model for another agent.
+- Maestro coordinates prepared external Codex, Claude Code, pi-family
+  runtime, OMC, OMX, and generic handoffs. It is not an executor, does not own
+  Hermes-native work, and cannot turn one agent's prepared route into another
+  agent's observed run.
+- The pi-family runtime's host CLIs are hosts of that runtime, not
+  additional owners. Their metadata observations do not select a model for
+  another agent.
 - Recommendation categories and aliases are editable user policy. A missing
   Kimi, GPT, or Claude recommendation can fall through to a confirmed compatible
-  Qwen, Gemini, Grok, or other model without blocking setup. An explicitly
+  GLM, DeepSeek, Gemini, Grok, or other model without blocking setup. An explicitly
   requested unavailable model instead requires a new choice.
 - Grok's `x_platform_data` placement is editorial X-platform affinity, not a
-  measured capability or a reason to override a user's model choice. CCAPI and
-  Apitopia are likewise editorial provider-family preferences; each active
-  route must be user-declared and credentials remain with the native owner.
+  measured capability or a reason to override a user's model choice. CCAPI for
+  Claude is likewise preferred provider-family metadata only; it is not a
+  bundled or probed integration and is considered only when the user declares
+  the corresponding local route active. Credentials remain with the native
+  owner.
 
 The agent/maintainer `omh coding model-routing status` report can compare local
 observations, Hermes aliases, Maestro chains, and owner-learning metadata. It is

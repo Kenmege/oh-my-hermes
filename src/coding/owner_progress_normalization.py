@@ -1,7 +1,7 @@
 """Deterministic owner-to-OMH progress vocabulary normalization (`omh_owner_progress_normalization/v1`).
 
 Every coding owner narrates its own progress in its own words. Codex says
-`targeted_tests_passed`, a Claude Code stream says `result`, an omo host says
+`targeted_tests_passed`, a Claude Code stream says `result`, a pi-family host says
 nothing structured at all. Downstream surfaces -- the status board, the live
 executor projection, the chat reporter -- need one vocabulary, and the
 translation into it is where a wrapper quietly starts lying: an unrecognized
@@ -109,6 +109,7 @@ from __future__ import annotations
 
 from typing import Any, Final, NamedTuple
 
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID, PI_DISTRIBUTION_HOST
 from ..plugin_bundle.omh.run_records import EXECUTOR_PROGRESS_EVENT_TYPES, UNMAPPED_SOURCE_EVENT
 from .executors import EXECUTOR_PROFILES
 
@@ -201,8 +202,8 @@ MAPPING_NOTES: Final[tuple[str, ...]] = (
 )
 
 # Owner spellings folded onto one fanout owner. `_` is folded to `-` before the
-# lookup, so the progress-lane spellings (`claude_code`, `omo_runtime`,
-# `hermes_local`) arrive here already matching their hyphenated keys. The omo
+# lookup, so the progress-lane spellings (`claude_code`, `pi_family_runtime`,
+# `hermes_local`) arrive here already matching their hyphenated keys. The pi-family
 # host CLIs collapse into one owner for the same reason the progress lane
 # collapses them: the question is which lane narrated, not which binary was on
 # PATH.
@@ -212,10 +213,12 @@ _OWNER_ALIASES: Final[dict[str, str]] = {
     "claude-code": "claude-code",
     "claude-code-cli": "claude-code",
     "omx-runtime": "omx-runtime",
-    "omo-runtime": "omo-runtime",
-    "pi": "omo-runtime",
-    "senpi": "omo-runtime",
-    "opencode": "omo-runtime",
+    "pi-family-runtime": "pi-family-runtime",
+    "pi": "pi-family-runtime",
+    PI_DISTRIBUTION_HOST: "pi-family-runtime",
+    # Read-only: the id older releases wrote for this owner.
+    LEGACY_RUNTIME_PROFILE_ID: "pi-family-runtime",
+    "opencode": "pi-family-runtime",
     "omc-runtime": "omc-runtime",
     "generic": "generic",
     "hermes": "hermes",
@@ -226,7 +229,7 @@ _OWNER_ALIASES: Final[dict[str, str]] = {
 # `omx-runtime`, `omc-runtime`, `generic` -- has no progress lane today and
 # resolves to an honest, visible unmapped record. That is the required answer,
 # not a gap to close later by guessing at their words.
-OWNERS_WITH_PROGRESS_LANE: Final[tuple[str, ...]] = ("codex", "claude-code", "omo-runtime", "hermes")
+OWNERS_WITH_PROGRESS_LANE: Final[tuple[str, ...]] = ("codex", "claude-code", "pi-family-runtime", "hermes")
 
 _KNOWN_OWNERS: Final[frozenset[str]] = frozenset(EXECUTOR_PROFILES)
 
@@ -377,8 +380,8 @@ _SHARED_DIALECT: Final[dict[str, str]] = {
 # claude-code rows are the documented `--output-format stream-json` envelope
 # types and are NOT confirmed from a stream captured in this repo; they are
 # supported as documented, the same standard `unit_telemetry` applies to that
-# owner's result object. `omo-runtime` has no structured stdout surface at all
-# -- `unit_telemetry` reports `source="none"` for its pi/senpi/opencode hosts --
+# owner's result object. `pi-family-runtime` has no structured stdout surface at all
+# -- `unit_telemetry` reports `source="none"` for its pi-family and opencode hosts --
 # so it adds no native words and speaks the shared dialect only. `hermes`
 # narrates through the same workflow vocabulary.
 _OWNER_DIALECT_DELTAS: Final[dict[str, dict[str, str]]] = {
@@ -392,7 +395,7 @@ _OWNER_DIALECT_DELTAS: Final[dict[str, dict[str, str]]] = {
         "user": "progress_observed",
         "result": "executor_completed",
     },
-    "omo-runtime": {},
+    "pi-family-runtime": {},
     "hermes": {},
 }
 
@@ -400,8 +403,8 @@ _OWNER_DIALECT_DELTAS: Final[dict[str, dict[str, str]]] = {
 #
 # `unit_telemetry._STRUCTURED_SOURCE_BY_OWNER` is this repo's telemetry
 # contract for which owners emit a stream it can read, and it names `codex` and
-# `claude-code` only: omo's pi/senpi/opencode hosts report `source="none"`. An
-# omo `full_tests_passed` is therefore narration with nothing behind it, and
+# `claude-code` only: the pi-family runtime's hosts report `source="none"`. A
+# pi-family `full_tests_passed` is therefore narration with nothing behind it, and
 # granting it the verification tier would let an unreadable stream produce the
 # strongest claim in the ladder. Capping it is the same refusal
 # `_change_reported_but_not_observed` already makes about a self-reported edit
@@ -416,7 +419,7 @@ _OWNER_EVIDENCE_CEILING: Final[dict[str, str]] = {
     "codex": "verified",
     "claude-code": "verified",
     "hermes": "verified",
-    "omo-runtime": "result_claimed",
+    "pi-family-runtime": "result_claimed",
 }
 
 # Bounds. A source event is an identifier-shaped word, not a log line; the caps
@@ -620,7 +623,7 @@ def normalization_table_violations(rows: dict[str, str] | None = None) -> list[s
     detect violations".
 
     The per-owner evidence CEILING is deliberately not applied here. A capped
-    row (an omo `full_tests_passed`) is refused at runtime on purpose; it is a
+    row (a pi-family `full_tests_passed`) is refused at runtime on purpose; it is a
     correct row about an owner whose stream cannot carry it, not a table bug.
     """
     if rows is not None:

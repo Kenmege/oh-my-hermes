@@ -1949,7 +1949,7 @@ class WrapperSessionTests(unittest.TestCase):
             self.assertTrue(validate_runtime(paths)["ok"])
 
     def test_non_terminal_executor_launches_are_prompt_only(self) -> None:
-        for executor in ("generic", "hermes", "omx-runtime", "omo-runtime", "omc-runtime"):
+        for executor in ("generic", "hermes", "omx-runtime", "pi-family-runtime", "omc-runtime"):
             with self.subTest(executor=executor):
                 actions = {
                     action["id"]: action

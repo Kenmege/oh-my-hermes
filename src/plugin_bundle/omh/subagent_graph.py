@@ -27,6 +27,7 @@ _SUCCESS_STATES: Final[frozenset[str]] = frozenset(
 _FAILED_STATES: Final[frozenset[str]] = frozenset(
     {
         "capability_snapshot_invalid",
+        "owner_profile_renamed",
         "route_unresolved",
         "modality_unknown",
         "modality_unsupported",

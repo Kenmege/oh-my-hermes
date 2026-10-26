@@ -4,12 +4,12 @@
 records the leader pid in the unit's inflight marker. When the dispatcher
 dies without running its cleanup (SIGKILL, power loss), those groups can
 survive against the worktree with a marker left behind — including the
-shape OMO shipped as an incident, where the LEADER is already gone but its
+shape the pi-family runtime shipped as an incident, where the LEADER is already gone but its
 grandchildren live on in the group. This reaper therefore judges liveness
 at the GROUP level, and terminates ONLY pids an inflight marker names:
 
 - a pid no marker names is refused, whatever its process name says — there
-  is deliberately no pattern-matching kill (OMO's `doctor --reap` carries
+  is deliberately no pattern-matching kill (the pi-family runtime's `doctor --reap` carries
   the same constraint);
 - a live leader that is no longer its own group leader is refused as a
   recycled pid;

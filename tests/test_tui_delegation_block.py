@@ -165,7 +165,7 @@ class DagCommandTests(unittest.TestCase):
         self.assertEqual(rows[0], "OMH / DAG · 5 tasks")
         self.assertIn("│ [-] > Export button", "\n".join(rows), "it opens on the running node")
         self.assertIn("Node details", rows)
-        self.assertEqual(rows[-2:], [f" {DAG_KEYS}", " delegation graph · rows 1-40/40"])
+        self.assertEqual(rows[-2:], [f" {DAG_KEYS}", " delegation graph · rows 1-42/42"])
         self.assertNotIn("Runs", rows[-2], "one graph per conversation: no other run to switch to")
         spans = [span for line in app.pager.lines for span in line if span.text.strip()]
         self.assertTrue(all(span.style.depth == TRUECOLOR for span in spans))
@@ -216,7 +216,7 @@ class DagCommandTests(unittest.TestCase):
         with_hud(app, dag_export_run())
         send(app, "/dag")
         rows = screen(app)
-        self.assertEqual(app.pager.top, 4, "the running node it opens on is scrolled whole into the 14 rows")
+        self.assertEqual(app.pager.top, 5, "the running node it opens on is scrolled whole into the 14 rows")
         self.assertTrue(rows[8].startswith("┌") and rows[9].startswith("│ [-] > Export button")
                         and rows[13].startswith("└"), rows)
         rows = press(app, SHIFT_TAB, SHIFT_TAB)  # Export button, then back past Export API to Verify export

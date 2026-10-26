@@ -47,7 +47,10 @@ at `message.complete`, as one row per call (`● name(argument summary)`, the
 mark a shape and a colour per state, `TOOL_MARKS`, and the name bold in its
 tool family's hue, `TOOL_FAMILIES`) with what it printed under `⎿`, a blank row
 between two calls, no header over them; a read or a load says in one line what
-it read instead (`_read_summary`). A run of consecutive plumbing calls
+it read instead (`_read_summary`), and an `omh_memory` recall that found
+records lists them, a line each (`_recall_lines`), which one band of the
+dag-ulw aura sweeps as the call completes, while its group is live and only
+where the aura moves (`_glint_band`). A run of consecutive plumbing calls
 (`PLUMBING_TOOLS`: loading a skill, reading tool details) folds into one row,
 `● Loaded 4 skills + tool details · a, b, c, d  3.5s` (a failed one keeps its own
 row, and the details view unfolds the run), and a shell call that
@@ -88,6 +91,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+import json
 import re
 import time
 from typing import Any
@@ -102,7 +106,7 @@ from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
 from .slash import slash_spans, slash_token_ranges
 from .theme import TOOL_FAMILIES, Theme, kind_style, on_band
-from .width import line_width, truncate, truncate_left, truncate_line
+from .width import cell_width, line_width, truncate, truncate_left, truncate_line
 
 TOOL_GENERATING = "generating"
 TOOL_RUNNING = "running"
@@ -167,6 +171,13 @@ RAIL = "┃ "  # the left rail of a prompt, a tool call or a reply, in the block
 # A running tool's mark alternates the running blue and dim this often, counted from its own start, so calls that run
 # side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
 PULSE_SECONDS = 0.5
+# An `omh_memory` call that recalled something sweeps one band of the dag-ulw aura across its output rows as it
+# completes, while its group is still live; it moves only where the aura does (`Transcript.live_lines`'s `glint`), and
+# a row in scrollback is drawn as it always is.
+MEMORY_TOOL = "omh_memory"
+RECALL_GLINT_SECONDS = 0.9
+RECALL_GLINT_CELLS = 8
+RECALL_TYPE_CELLS = 12  # a recalled record's type column at most: its summary is what the row is for
 DETAIL_INDENT = "  "
 COLUMN_GAP = "  "
 
@@ -270,6 +281,8 @@ class ToolRow:
     # An interpreter fed its script through a heredoc, `python3 script · 23 lines` (`_heredoc_summary`): shown in its
     # row instead of `args_summary`, which the details view shows.
     script: str = ""
+    # When an `omh_memory` recall that found records completed (`_recall`), on the transcript's clock; else None.
+    recalled_at: float | None = None
 
     def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
         """The diff colour-stripped and classified, its file names relative to `diff_root`.
@@ -385,6 +398,42 @@ def tool_result_status(result: object) -> str:
     if isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0:
         return TOOL_ERROR
     return TOOL_OK
+
+
+def _recall(name: str, result: object) -> dict[str, Any] | None:
+    """The result of a completed call that recalled something, else None: an `omh_memory` recall whose result says it
+    found records, read from the fields the tool writes (`action`, `status`, `record_count`), never from its words.
+    Hermes hands a plugin tool's JSON over decoded; a string is decoded here."""
+    if name != MEMORY_TOOL:
+        return None
+    try:
+        found = json.loads(result) if isinstance(result, str) else result
+    except ValueError:
+        return None
+    if not isinstance(found, dict):
+        return None
+    count = found.get("record_count")
+    if (found.get("action") == "recall" and found.get("status") == "found" and isinstance(count, int)
+            and not isinstance(count, bool) and count > 0):
+        return found
+    return None
+
+
+def _recall_lines(found: dict[str, Any]) -> tuple[str, ...]:
+    """What a recall found, one line a record, from the records in its own result and nothing read anywhere else: its
+    type, then its summary's first line (`decision  rotate refresh tokens per session`), the types padded to one
+    column in terminal cells, a type cut to `RECALL_TYPE_CELLS` so the summary stays in sight. Both are written by a
+    person or a model, so each goes through `_first_line` (escapes and control characters dropped, as for any tool
+    output) and the row is cut to the width like any output row. A record with no summary is left out, and records
+    that are not a list are none."""
+    found_records = found.get("records")
+    records = [(truncate(_first_line(as_text(record.get("record_type"))), RECALL_TYPE_CELLS),
+                _first_line(as_text(record.get("summary"))))
+               for record in (found_records if isinstance(found_records, list) else []) if isinstance(record, dict)]
+    records = [(kind, summary) for kind, summary in records if summary]
+    column = max((cell_width(kind) for kind, _summary in records), default=0)
+    return tuple(f"{kind}{' ' * (column - cell_width(kind))}  {summary}" if column else summary
+                 for kind, summary in records)
 
 
 def _result_summary(payload: dict[str, Any]) -> str:
@@ -871,6 +920,33 @@ def _pulse_dim(tool: ToolRow, now: float | None) -> bool:
     return int(max(0.0, now - tool.started_at) / PULSE_SECONDS) % 2 == 1
 
 
+def _glint_band(tool: ToolRow, now: float | None) -> float | None:
+    """How far the band sweeping a recall's output rows has gone at `now`, from 0 as the call completes to 1
+    `RECALL_GLINT_SECONDS` later. None with no clock, for any other call, and once the sweep is over."""
+    if now is None or tool.recalled_at is None:
+        return None
+    elapsed = now - tool.recalled_at
+    return elapsed / RECALL_GLINT_SECONDS if 0 <= elapsed < RECALL_GLINT_SECONDS else None
+
+
+def _glinted(text: str, style: Style, band: int, theme: Theme) -> list[Span]:
+    """`text` in `style`, but its cells under the band (`RECALL_GLINT_CELLS` from `band`) in the aura's steps across
+    the band, not bold: the words stay the words."""
+    spans: list[Span] = []
+    at = 0
+    for char in text:
+        offset = at - band
+        painted = style
+        if 0 <= offset < RECALL_GLINT_CELLS and theme.aura:
+            painted = replace(theme.aura[offset * (len(theme.aura) - 1) // (RECALL_GLINT_CELLS - 1)], bold=False)
+        if spans and spans[-1].style == painted:
+            spans[-1] = Span(spans[-1].text + char, painted)
+        else:
+            spans.append(Span(char, painted))
+        at += cell_width(char)
+    return spans
+
+
 def _rail(style: Style) -> Line:
     return (Span(RAIL[0], style), Span(RAIL[1:]))
 
@@ -918,13 +994,15 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None,
     return truncate_line((*head, *args, *tail), width)
 
 
-def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> list[Line]:
+def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
     """The tool's printed lines under its name, each cut to the width: three of them, or all kept with `expanded`.
 
     A failed tool's are its last ones, with the count of the rest above them
     (`_tool_output`). A denied call whose result gave no reason says
     `denied`, so a denial reads apart from a failure without colour, unless
     an answer under its row already says so (`ToolRow.answer_refused`).
+    Given `now` (the live region, where the aura moves), a recall's rows
+    carry the band that sweeps them once (`_glint_band`).
     """
     output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED and not tool.answer_refused() else ())
     if not output:
@@ -936,7 +1014,14 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     texts = [Span(line, theme.faint) for line in shown]
     more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}{SHOWS_ALL}", theme.faint)] if hidden else []
     ordered = [*more, *texts] if failed else [*texts, *more]
-    return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
+    swept = _glint_band(tool, now)
+    band = None
+    if swept is not None:  # it enters at the left of the words and leaves past the end of the longest
+        extent = min(width - line_width(first), max(line_width((span,)) for span in ordered))
+        band = int(swept * (extent + RECALL_GLINT_CELLS)) - RECALL_GLINT_CELLS
+    return [truncate_line((*(rest if index else first),
+                           *(_glinted(span.text, span.style, band, theme) if band is not None else (span,))), width)
+            for index, span in enumerate(ordered)]
 
 
 def _answer_rows(text: str, level: str, width: int, theme: Theme, marked: bool = True) -> list[Line]:
@@ -1012,10 +1097,13 @@ def _folded_row(unit: list[ToolRow], width: int, theme: Theme, now: float | None
     return truncate_line((*head, *args, *tail), width)
 
 
-def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
+def _tool_rows(
+    group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None, glint: bool = False,
+) -> list[Line]:
     """Each call on a rail in its state's colour: its own row (what ran, on what), what the person answered it right
     under that, and what it printed under them, a blank row between two calls; a run of plumbing calls is one row,
-    unfolded again by `expanded`. A group with no call shows nothing."""
+    unfolded again by `expanded`. A group with no call shows nothing. With `glint` (the aura moves) and `now`, a
+    recall's output rows carry the band that sweeps them once."""
     inner = max(width - len(RAIL), 1)
     rows: list[Line] = []
     for unit in _units(group.tools, fold=not expanded):
@@ -1035,20 +1123,22 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
             if lines:  # a diff keeps its own bands
                 own.extend(diff_rows(lines, inner, theme, full=expanded, lead=_output_leads(theme)[0]))
             else:
-                own.extend(_output_rows(tool, inner, theme, expanded))
+                own.extend(_output_rows(tool, inner, theme, expanded, now if glint else None))
         rail = _rail(_state_style(status, theme))
         rows.extend([*([()] if rows else []), *(_within((*rail, *row), width) for row in own)])
     return rows
 
 
 def block_rows(
-    block: Block, width: int, theme: Theme, expanded: bool = False, max_rows: int | None = None, now: float | None = None
+    block: Block, width: int, theme: Theme, expanded: bool = False, max_rows: int | None = None,
+    now: float | None = None, glint: bool = False,
 ) -> list[Line]:
     """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs.
 
     `max_rows` lets a block whose rows end the same either way (thinking
     text) render only its last rows; the rows returned may start lower.
     `now` pulses running tools' marks; without it every mark is settled.
+    With `glint` too, a recall's output rows carry their one band.
     """
     width = max(1, width)
     if isinstance(block, UserBlock):
@@ -1067,7 +1157,7 @@ def block_rows(
         return _thinking_rows(block, width, theme, expanded, max_rows)
     if isinstance(block, DagBlock):
         return dag_rows(block, width, theme)
-    return _tool_rows(block, width, theme, expanded, now)
+    return _tool_rows(block, width, theme, expanded, now, glint)
 
 
 # ── the model ─────────────────────────────────────────────────────────────
@@ -1563,12 +1653,15 @@ class Transcript:
         waited = self.waited_within(row.started_at, now) if row.started_at is not None else 0.0
         row.duration_s = _duration(payload, row, now, waited)
         row.summary = _result_summary(payload)
-        read = _read_summary(row.name, payload.get("result")) if row.status == TOOL_OK else ()
+        recall = _recall(row.name, payload.get("result")) if row.status == TOOL_OK else None
+        read = _recall_lines(recall) if recall is not None else (
+            _read_summary(row.name, payload.get("result")) if row.status == TOOL_OK else ())
         row.output, row.output_more = (read, 0) if read else _tool_output(
             payload.get("result"), row.status, closed_said=row.answer_refused()
         )
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
         row.held_lines = None
+        row.recalled_at = now if recall is not None else None
 
     def _display_args(self, summary: str) -> str:
         return _relative(self.cwd, summary) if _is_path(summary) else summary
@@ -1687,20 +1780,24 @@ class Transcript:
             cut -= 1
         return cut
 
-    def live_lines(self, width: int, theme: Theme, max_rows: int | None = None, now: float | None = None) -> list[Line]:
+    def live_lines(
+        self, width: int, theme: Theme, max_rows: int | None = None, now: float | None = None, glint: bool = False,
+    ) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.
 
         With `max_rows`, only the blocks that reach into the last `max_rows`
         rows are rendered, and of live thinking text only its last rows: the
         rows returned end exactly as the whole tail does, and may start below
-        its top. With `now` a running tool's mark pulses (`PULSE_SECONDS`).
-        The answer is kept until the transcript changes or a mark turns, so
-        asking again with the same width, limit and theme renders nothing.
+        its top. With `now` a running tool's mark pulses (`PULSE_SECONDS`),
+        and with `glint` too (the dag-ulw aura moves on this terminal) a
+        recall's output rows carry the band that sweeps them once.
+        The answer is kept until the transcript changes, a mark turns or a band
+        moves, so asking again with the same width, limit and theme renders nothing.
         """
-        key = (self._version, width, max_rows, self._pulses(now))
+        key = (self._version, width, max_rows, self._pulses(now), self._glints(now if glint else None))
         held = self._live_held
         if held is None or held[0] != key or held[1] is not theme:
-            held = self._live_held = (key, theme, self._render_live(width, theme, max_rows, now))
+            held = self._live_held = (key, theme, self._render_live(width, theme, max_rows, now, glint))
         return list(held[2])
 
     def _pulses(self, now: float | None) -> tuple[bool, ...]:
@@ -1715,7 +1812,22 @@ class Transcript:
             if tool.status == TOOL_RUNNING
         )
 
-    def _render_live(self, width: int, theme: Theme, max_rows: int | None, now: float | None = None) -> list[Line]:
+    def _glints(self, now: float | None) -> tuple[float | None, ...]:
+        """How far the band over every recall not yet taken has gone: what a live render depends on beyond the
+        pulses."""
+        if now is None:
+            return ()
+        return tuple(
+            _glint_band(tool, now)
+            for block in self.blocks[self._cursor :]
+            if isinstance(block, ToolGroup)
+            for tool in block.tools
+            if tool.recalled_at is not None
+        )
+
+    def _render_live(
+        self, width: int, theme: Theme, max_rows: int | None, now: float | None = None, glint: bool = False,
+    ) -> list[Line]:
         """`live_lines` rendered, from the last block up until `max_rows` rows are covered (all of them for None)."""
         rendered: list[tuple[bool, list[Line]]] = []  # (opens a block, its rows), the last block first
         held = [(True, block_rows(block, width, theme)) for block in reversed(self._held)]  # under the live blocks
@@ -1734,7 +1846,8 @@ class Transcript:
                 block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block,
                                       theme, width)
             else:  # only the last block can be live thinking, the one kind the limit shortens, so it gets all of it
-                block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows, now)
+                block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows, now,
+                                         glint)
             if block_lines:
                 rendered.append((opens_block, block_lines))
                 count += len(block_lines)

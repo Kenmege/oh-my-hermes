@@ -243,8 +243,7 @@ The generated `ulw-context` workflow is the public Hermes surface for safe
 terminology lookup, explicitly confirmed reviewed capture, and dependency-ready
 frontier interviewing. Its canonical catalog id is `context`. Generated name
 and description metadata make it eligible for host semantic nomination, but
-live Hermes semantic nomination is `not_tested`: the installed host profile
-used for QA did not contain `ulw-context`, and no profile mutation was made.
+live Hermes semantic nomination is `not_tested`.
 Current selection evidence is limited to explicit workflow invocation and a
 deterministic lexical proxy over catalog metadata. That proxy measures lexical
 competition; it is not evidence of semantic nomination by Hermes. Deterministic
@@ -329,7 +328,8 @@ Selected coding executors/runtimes own:
    report progress and blockers, and send only a bounded delta when an active
    turn needs steering. Codex can use the
    run-backed lifecycle path. Claude Code and generic agents can use portable
-   prompt handoffs. Hermes, OMX, OMO, and OMC can use `coding_runtime_handoff/v1`
+   prompt handoffs. Hermes, OMX, the pi-family runtime, and OMC can use
+   `coding_runtime_handoff/v1`
    contracts with team/swarm, worker-protocol, and worktree guidance while still
    preserving prepared-vs-observed boundaries. Coding handoffs should also
    carry `worktree_session_isolation/v1` so wrappers know whether to continue in
@@ -357,67 +357,41 @@ Selected coding executors/runtimes own:
 
 ## Delivery Grain
 
-One user goal should normally produce one PR.
+One user goal should normally produce one PR. It carries the capability from
+contract to tests. When a split is allowed, and how to report one, is
+`AGENTS.md` (Delivery Grain); this page does not repeat it.
 
-Inside that PR, multiple focused commits are fine: plan/documentation, tests,
-implementation, review fixes, and CI fixes can all live in the same goal PR.
-Do not split review feedback, follow-up test fixes, or small documentation
-adjustments into new PRs unless they are independently releasable goals or the
-user explicitly asks for a separate PR.
+## Strategic Themes
 
-Split into separate PRs only when:
+Unordered themes, not a plan: none has an owner or a status.
 
-- the next change has a different user-facing goal
-- the work has independent release or rollback value
-- the current PR would become too risky to review coherently
-- a dependency or external decision blocks part of the work
-- the user explicitly requests stacked or separate PRs
+- Direction lock.
+  Keep this document, architecture docs, README, generated skills, examples,
+  and tests aligned around delegation-first wrapper orchestration.
 
-## Strategic Milestones
+- Hermes-native UX depth.
+  Expand golden JSON into Hermes Agent-facing examples for actions, threads,
+  buttons, and status updates without turning them into separate bot products.
 
-1. Direction lock.
-   Keep this document, architecture docs, README, generated skills, examples,
-   and tests aligned around delegation-first wrapper orchestration.
+- Evidence completeness.
+  Keep review, CI, merge-readiness, and merge observation records strict at
+  the run level while wrapper sessions remain chat continuity only.
 
-2. Hermes-native UX depth.
-   Expand golden JSON into Hermes Agent-facing examples for actions, threads,
-   buttons, and status updates without turning them into separate bot products.
+- Retained cognition quality.
+  Improve Hermes-side research, deep interview, and planning skills so
+  non-coding requests feel first-class rather than like coding handoff
+  leftovers.
 
-3. Evidence completeness.
-   Keep review, CI, merge-readiness, and merge observation records strict at
-   the run level while wrapper sessions remain chat continuity only.
+- Hermes surface readiness.
+  Keep improving examples that consume `chat_interaction/v1` from the Hermes
+  Agent side so users understand the chat-first flow without learning CLI
+  commands.
 
-4. Retained cognition quality.
-   Improve Hermes-side research, deep interview, and planning skills so
-   non-coding requests feel first-class rather than like coding handoff
-   leftovers.
-
-5. Hermes surface readiness.
-   Keep improving examples that consume `chat_interaction/v1` from the Hermes
-   Agent side so users understand the chat-first flow without learning CLI
-   commands.
-
-6. Skill-first distribution.
-   Lead with Hermes skill tap/install when the target Hermes environment
-   supports it. Keep `omh setup` as the bootstrap, repair, validation, and
-   wrapper/backend route that creates the same Hermes-visible skill state
-   through generated managed skills and `skills.external_dirs`.
-
-## Goal-Complete Delivery Rule
-
-When a goal is broad, keep the complete target capability coherent in one PR
-rather than splitting it into artificially tiny delivery units. A goal-complete
-delivery should carry the user-visible capability from contract to tests:
-
-- document the desired chat or handoff behavior
-- encode the deterministic schema or catalog metadata
-- expose the Hermes skill, setup, or wrapper-facing surface
-- record local metadata-only artifacts when needed
-- add focused tests for the public contract
-- update README/docs so the capability is discoverable
-
-Do not split the docs, implementation, review fixes, and CI fixes for that same
-goal into separate PRs unless one of the Delivery Grain split conditions applies.
+- Skill-first distribution.
+  Lead with Hermes skill tap/install when the target Hermes environment
+  supports it. Keep `omh setup` as the bootstrap, repair, validation, and
+  wrapper/backend route that creates the same Hermes-visible skill state
+  through generated managed skills and `skills.external_dirs`.
 
 ## Review Checklist
 

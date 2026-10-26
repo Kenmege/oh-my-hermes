@@ -22,7 +22,7 @@ surfaces remain deterministic and inspectable without crowding the skill picker.
 | G1 | Natural-language scheduled automation | `workflow_skill` | Installed `automation-blueprint` skill or chat route | `scheduled-ops-blueprint` / `scheduled-ops-blueprint` | Hermes can render an `automation_blueprint` card; a blueprint is not host cron creation, Hermes automation enablement, source retrieval, gateway delivery, or no-agent execution evidence. |
 | G2 | GitHub PR/Issue event operations | `workflow_skill` | Installed `github-event-ops` skill or chat route | `github-event-ops` / `github-event-ops` | A GitHub event card is not webhook delivery, GitHub API mutation, label application, review completion, CI rerun, or fix execution evidence. |
 | G3 | Multi-agent Kanban board | `workflow_skill` | Installed `agent-board` skill or chat route | `agent-board` / `agent-board` | Hermes can render an `agent_board` card; a board card is not proof that another Hermes target accepted, worked, heartbeat-ed, or completed unless target-specific evidence exists. |
-| G4 | Memory and skill curation review | `workflow_skill` | Installed `memory-sync` skill or chat route | `memory-sync` / `memory-sync` | Hermes can render a `memory_curation` card; a curation review is not Hermes internal memory, `MEMORY.md`, `USER.md`, or skill-file modification evidence. |
+| G4 | Project terminology alignment | `direct_skill` | Installed `ulw-context` skill or chat route | `deep-interview-to-plan` / `deep-interview` | A project-terms source, pending candidate, reviewed profile, or prepared handoff is not routing authority, model use, execution, review, CI, or merge evidence. |
 | G5 | Gateway-native intent card | `workflow_skill` | Installed `gateway-intent-card` skill or chat route | `gateway-intent-card` / `gateway-intent-card` | Hermes can render a `gateway_intent` card; a gateway intent card is not platform login, message send, thread mutation, attachment upload, or delivery evidence. |
 | G6 | Executor runtime readiness | `workflow_skill` | Installed `executor-runtime-readiness` skill or chat route | `executor-runtime-readiness` / `executor-runtime-readiness` | Runtime readiness is not executor dispatch, plugin load, tool invocation, code execution, review, CI, or merge evidence. |
 | G7 | Deliverable file package | `workflow_skill` | Installed `deliverable-package` skill or chat route | `deliverable-package` / `deliverable-package` | Hermes can render a `deliverable_package` card; a deliverable package card is not binary generation, render QA, formula recalculation, approval, upload, attachment, or delivery evidence. |
@@ -30,8 +30,7 @@ surfaces remain deterministic and inspectable without crowding the skill picker.
 | G9 | MCP and external toolbelt readiness | `workflow_skill` | Installed `toolbelt-readiness` skill or chat route | `toolbelt-readiness` / `toolbelt-readiness` | Hermes can render a `toolbelt_readiness` card; a toolbelt card is not MCP install, credential validation, API access, connector invocation, or successful workflow execution evidence. |
 | G10 | Ops command-board and service quality card | `workflow_skill` | Installed `ops-observability-card` skill or chat route | `ops-observability-card` / `ops-observability-card` | Hermes can render an `ops_observability` card and provider-neutral service-quality board; an observability card is not billing truth, provider quota truth, live metric-provider access, complete tracing, SLO pass, incident closure, remediation completion, performance proof, or workflow completion evidence. |
 
-Compatibility aliases remain routable for at least one release window, but docs
-should teach Hermes chat or the installed workflow skills first. For example,
+Docs should teach Hermes chat or the installed workflow skills first. For example,
 prefer "PR opened with failing CI; decide whether to review, label, or prepare a
 fix handoff" over teaching `$github-event-ops` as a primary user command.
 
@@ -212,8 +211,9 @@ Confirm the skill pack is installed through Hermes or registered through the
 OMH bootstrap path:
 
 ```sh
-hermes skills install ulw-interview
-hermes skills install ulw-plan
+hermes skills tap add rlaope/oh-my-hermes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-interview --yes
+hermes skills install rlaope/oh-my-hermes/skills/ulw-plan --yes
 omh setup
 omh doctor
 ```
@@ -557,8 +557,8 @@ chat correctly but the plugin hint nudges the wrapper toward the wrong workflow
 or returns `no_hint`.
 
 `omh demo grounded-score` is a deterministic contract-compliance demo over the
-current 50-scenario operator corpus. The score is 10/10 only when the expected
-chat route, response kind, next action, playbook confidence, and
+operator corpus in `src/quality/grounded_score.py`. The score is 10/10 only when
+the expected chat route, response kind, next action, playbook confidence, and
 coding-delegation evidence boundary all match. It does not award points for
 unobserved execution, review, CI, or merge work. The matrix below is a snapshot
 generated from `src/quality/grounded_score.py`; when scenarios change, this
@@ -568,7 +568,7 @@ table should change with them.
 | --- | --- | --- | --- | --- | --- |
 | Startup SaaS product triage | `결제 실패 이슈가 자주 나와` | `feedback-triage` / `feedback_triage` | `feedback-triage` | No executor handoff by default; Hermes keeps the workflow retained until observed evidence changes. | `10/10` |
 | Startup SaaS product triage with strategy follow-up | `결제 실패 피드백을 모아서 회의 주제와 다음 전략을 정리해줘` | `feedback-triage` / `feedback_triage` | `feedback-triage` | No executor handoff by default; Hermes keeps the workflow retained until observed evidence changes. | `10/10` |
-| Open-source issue-to-PR preparation | `이 이슈 PR로 만들 수 있게 정리해줘` | `ralplan` / `plan` | `safe-feature-change` | Prepared handoff only; execution, verification, review, CI, and merge stay unobserved until runtime evidence exists. | `10/10` |
+| Open-source issue-to-PR preparation | `이 이슈 PR로 만들 수 있게 정리해줘` | `github-event-ops` / `github_event_ops` | `github-event-ops` | Prepared handoff only; execution, verification, review, CI, and merge stay unobserved until runtime evidence exists. | `10/10` |
 | AI agent product QA | `쿠버네티스 장애 상황에서 Cloudy가 적절히 진단하나?` | `ultraqa` / `qa_review` | `release-readiness-review` | No executor handoff by default; Hermes keeps the workflow retained until observed evidence changes. | `10/10` |
 | Dangerous refactor plan-first routing | `이거 위험한 리팩터링 같아` | `ralplan` / `plan` | `safe-feature-change` | Prepared handoff only; execution, verification, review, CI, and merge stay unobserved until runtime evidence exists. | `10/10` |
 | AI coding safety audit | `AI가 했다고 했는데 실제로 뭐 했는지 모르겠다` | `code-review` / `review_check` | `release-readiness-review` | Prepared handoff only; execution, verification, review, CI, and merge stay unobserved until runtime evidence exists. | `10/10` |

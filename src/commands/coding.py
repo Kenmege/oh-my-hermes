@@ -10,6 +10,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from ..coding.executors import canonical_executor_profile
 from ..plugin_bundle.omh.run_records import FANOUT_CONTRACT_FILE, RUN_FILE
 from ..coding_delegation import CODING_EXECUTOR_TARGETS, build_coding_delegation_payload, coding_delegation_record_payload
 from ..coding.media_handoff_capabilities import input_representations_from_attachments, merged_input_representation
@@ -28,6 +29,7 @@ from ..coding.executor_capability_snapshots import (
     ExecutorCapabilitySnapshotError,
     build_executor_capability_snapshot,
     read_executor_capability_snapshot,
+    snapshot_file_exists,
     validate_executor_capability_snapshot,
     write_executor_capability_snapshot,
 )
@@ -36,7 +38,8 @@ from ..coding.executor_skill_discovery import (
     skill_selection_card,
     suggested_skill_sequence,
 )
-from ..coding.executors import EXECUTOR_PROFILES
+from ..coding.executors import EXECUTOR_PROFILES, legacy_executor_profile_ids
+from ..coding.pi_family_interop import canonical_runtime_record
 from ..executor_readiness import EXECUTOR_READINESS_PROFILES, probe_executor_readiness
 from ..hermes_planning import (
     build_plan_handoff_context_pack,
@@ -444,7 +447,7 @@ def _record_delegation_continuity(paths: OmhPaths, payload: dict[str, object]) -
     `_record_coding_decision`: it never fails the command over a store error, and
     it re-derives the ledger's location from `continuity_write_target(paths)` so
     it can only ever write under the OMH goals directory -- never into a product
-    repo's `.omo`/`.omx`/`.document-harness` runtime-evidence dirs.
+    repo's `CONTINUITY_FORBIDDEN_TARGETS` runtime-evidence dirs.
 
     The goal is created active with a REQUIRED merge/deploy criterion carrying no
     evidence, so it stays open until the merge/deploy is observed. An existing
@@ -964,7 +967,7 @@ def cmd_coding_capability_snapshot_record(args: argparse.Namespace) -> int:
 
 def cmd_coding_capability_snapshot_inspect(args: argparse.Namespace) -> int:
     try:
-        path = _capability_snapshot_path(args)
+        path = _capability_snapshot_read_path(args)
         snapshot = read_executor_capability_snapshot(path)
         if snapshot is None:
             raise ValueError(f"executor capability snapshot not found: {path}")
@@ -984,8 +987,10 @@ def cmd_coding_capability_snapshot_inspect(args: argparse.Namespace) -> int:
 
 def cmd_coding_capability_snapshot_validate(args: argparse.Namespace) -> int:
     try:
-        path = _capability_snapshot_path(args)
-        snapshot = read_json_object(path)
+        path = _capability_snapshot_read_path(args)
+        raw = read_json_object(path)
+        # Validated as the current release reads it: an old profile id is current.
+        snapshot = None if raw is None else canonical_runtime_record(raw)
         if snapshot is None:
             raise ValueError(f"executor capability snapshot not found: {path}")
         errors = validate_executor_capability_snapshot(snapshot)
@@ -1024,6 +1029,18 @@ def _read_capability_snapshot_json(path_text: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("--capabilities-json must contain a JSON object")
     return value
+
+
+def _capability_snapshot_read_path(args: argparse.Namespace) -> Path:
+    """The snapshot to read: an older release's file name when only that one exists."""
+    path = _capability_snapshot_path(args)
+    if getattr(args, "snapshot_path", "") or snapshot_file_exists(path):
+        return path
+    for legacy_id in legacy_executor_profile_ids(args.executor):
+        legacy = path.with_name(f"{legacy_id}.json")
+        if snapshot_file_exists(legacy):
+            return legacy
+    return path
 
 
 def _capability_snapshot_path(args: argparse.Namespace) -> Path:
@@ -1253,12 +1270,12 @@ def cmd_coding_category_maestro(args: argparse.Namespace) -> int:
         report_profiles[profile] = categories
     rejected = list(config.get("rejected", [])) if isinstance(config, dict) else []
     # Catalogless profiles are deliberately absent from this table (#1180's
-    # one-basis rule); naming where THEIR categories come from keeps a pi/omo
+    # one-basis rule); naming where THEIR categories come from keeps a pi-family
     # operator from reading this as "pi has no category routing".
     catalogless_note = (
-        "omo-runtime (host CLI: pi/senpi) and other catalogless profiles are not configured here: "
-        "their categories resolve from the locally-derived model catalog (omo config) — see "
-        "`omh coding model-route --executor omo-runtime --from-inventory`."
+        "pi-family-runtime (host CLI: pi or its distribution host) and other catalogless profiles are not configured here: "
+        "their categories resolve from the locally-derived model catalog (pi-family runtime config) — see "
+        "`omh coding model-route --executor pi-family-runtime --from-inventory`."
     )
     payload = {
         "schema_version": "omh_category_maestro_report/v1",
@@ -1554,7 +1571,7 @@ def cmd_coding_model_inventory(args: argparse.Namespace) -> int:
         lines.append(f"note: {note.get('domain')} work favors {affine} (locally present: {present or 'none'})")
     if inventory.get("domain_affinity_notes"):
         lines.append(str(inventory.get("domain_affinity_claim_boundary", "")))
-    for name in ("omo_agent_config", "opencode_config_providers", "opencode_auth_providers"):
+    for name in ("runtime_agent_config", "opencode_config_providers", "opencode_auth_providers"):
         source = sources.get(name, {}) if isinstance(sources, dict) else {}
         if not isinstance(source, dict):
             continue
@@ -2255,7 +2272,7 @@ def cmd_coding_fanout_brief(args: argparse.Namespace) -> int:
         selected_effort = model_route.get("selected_reasoning_effort", "")
         model_id = _bounded_fanout_brief_scalar(selected_model)
         effort = _bounded_fanout_brief_scalar(selected_effort)
-        # One human-readable label per subagent, e.g. "gpt-5.6-sol xhigh" —
+        # One human-readable label per subagent, e.g. "gpt-6.1-sol xhigh" —
         # what a briefing renders next to the unit without joining two fields.
         # The format is a stable part of fanout_briefing/v1 and is built by
         # the same `model_label_for` helper the status board uses, so the two
@@ -3435,7 +3452,7 @@ def _add_coding_commands(sub) -> None:
         "--report-dir",
         help="Directory for the per-range report files that bound each derived unit (default reports/document-plan-<plan_id>).",
     )
-    fanout_prepare.add_argument("--owner", help="Coding owner for every derived unit (default unassigned).")
+    fanout_prepare.add_argument("--owner", type=canonical_executor_profile, help="Coding owner for every derived unit (default unassigned).")
     fanout_prepare.add_argument("--source", choices=CHAT_SOURCES, default="generic")
     fanout_prepare.add_argument("--record", action="store_true", help="Persist the contract under ~/.omh/coding/fanout/.")
     fanout_prepare.set_defaults(func=cmd_coding_fanout_prepare)
@@ -3678,6 +3695,7 @@ def _add_coding_commands(sub) -> None:
     )
     run_cmd.add_argument(
         "--owner",
+        type=canonical_executor_profile,
         choices=EXECUTOR_PROFILES,
         required=True,
         help="The coding owner explicitly chosen for this run.",
@@ -3727,7 +3745,7 @@ def _add_coding_commands(sub) -> None:
         "--category",
         default=None,
         help=(
-            "OMO/ULW model category for this run (ultrabrain, deep, deep-work, architect, capable, "
+            "ULW model category for this run (ultrabrain, deep, deep-work, architect, capable, "
             "quick, simple-work, writing, visual-engineering, artistry, unspecified-high, "
             "unspecified-low); resolved through the "
             "category-maestro table when one is configured. --model still wins."
@@ -3742,6 +3760,7 @@ def _add_coding_commands(sub) -> None:
     )
     model_route.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         default=None,
         help="Executor profile, for example codex or claude-code. Required unless --explain is given.",
     )
@@ -3756,7 +3775,7 @@ def _add_coding_commands(sub) -> None:
         "--category",
         default=None,
         help=(
-            "OMO/ULW model category, orthogonal to role: visual-engineering, ultrabrain, deep, "
+            "ULW model category, orthogonal to role: visual-engineering, ultrabrain, deep, "
             "deep-work, architect, capable, artistry, quick, simple-work, unspecified-low, "
             "unspecified-high, or writing; ulw-* aliases accepted."
         ),
@@ -3827,7 +3846,7 @@ def _add_coding_commands(sub) -> None:
         "chain",
         nargs="+",
         help=(
-            "Chain entries in order, each `model[:effort]`, e.g. gpt-5.6-sol:xhigh. The tail after the "
+            "Chain entries in order, each `model[:effort]`, e.g. gpt-6.1-sol:xhigh. The tail after the "
             "last colon is taken as the effort only when it is a known level (off, minimal, low, medium, "
             "high, xhigh, max, auto); other colon tags stay part of the model id."
         ),
@@ -3967,6 +3986,7 @@ def _add_coding_commands(sub) -> None:
     )
     composition_guide.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         default=None,
         help="Executor profile the composer prepares for; selects the per-turn or mid-conversation effort policy for models with a documented contract.",
     )
@@ -3984,6 +4004,7 @@ def _add_coding_commands(sub) -> None:
     )
     model_contract.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         default=None,
         help="Executor profile to resolve the effort policy against; omit for the per-turn policy.",
     )
@@ -4004,6 +4025,7 @@ def _add_coding_commands(sub) -> None:
     delegate.add_argument("--limit", type=int, default=3, help="Maximum catalog recommendations to include.")
     delegate.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         choices=CODING_EXECUTOR_TARGETS,
         default=None,
         help="Optional coding executor target for wrapper handoff payloads.",
@@ -4154,7 +4176,7 @@ def _add_coding_commands(sub) -> None:
         help="Source surface that received the coding request.",
     )
     lifecycle_start.add_argument("--limit", type=int, default=3, help="Maximum catalog recommendations to include.")
-    lifecycle_start.add_argument("--executor", choices=CODING_EXECUTOR_TARGETS, default="codex", help="Coding executor target.")
+    lifecycle_start.add_argument("--executor", type=canonical_executor_profile, choices=CODING_EXECUTOR_TARGETS, default="codex", help="Coding executor target.")
     lifecycle_start.add_argument("--record", action="store_true", help="Record a metadata-only prepared lifecycle run.")
     lifecycle_start.add_argument("--stdin", action="store_true", help="Read the raw coding task from stdin.")
     lifecycle_start.add_argument(
@@ -4215,7 +4237,7 @@ def _add_coding_commands(sub) -> None:
         "executor-readiness",
         help="Probe or preview first-use coding agent readiness for wrapper fallback decisions.",
     )
-    readiness.add_argument("--executor", choices=EXECUTOR_READINESS_PROFILES, required=True)
+    readiness.add_argument("--executor", type=canonical_executor_profile, choices=EXECUTOR_READINESS_PROFILES, required=True)
     readiness.add_argument("--force", action="store_true", help="Run the probe even if a first-use result is already cached.")
     readiness.add_argument("--dry-run", action="store_true", help="Return the probe contract without running or caching it.")
     readiness.set_defaults(func=cmd_coding_executor_readiness)
@@ -4229,6 +4251,7 @@ def _add_coding_commands(sub) -> None:
     )
     executor_skills.add_argument(
         "--profile",
+        type=canonical_executor_profile,
         choices=EXECUTOR_PROFILES,
         required=True,
         help="Coding-agent profile to probe. Hermes-native selection is rejected; maestro never routes it here.",
@@ -4273,6 +4296,7 @@ def _add_capability_snapshot_commands(coding_sub) -> None:
 def _add_capability_snapshot_build_arguments(parser) -> None:
     parser.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         choices=_CAPABILITY_SNAPSHOT_EXECUTOR_TARGETS,
         required=True,
         help="Selected coding executor profile.",
@@ -4288,6 +4312,7 @@ def _add_capability_snapshot_build_arguments(parser) -> None:
 def _add_capability_snapshot_read_arguments(parser) -> None:
     parser.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         choices=_CAPABILITY_SNAPSHOT_EXECUTOR_TARGETS,
         required=True,
         help="Selected coding executor profile.",
