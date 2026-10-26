@@ -216,7 +216,9 @@ class UlwGeneratedSurfaceTests(unittest.TestCase):
         # declared drift sites for `ulw_canonical_engine_count`. The zh word is
         # derived from the same count (a literal here once matched an unrelated
         # row and kept passing after the engine count moved).
-        zh_count = "一二三四五六七八九十"[expected - 1] + "个"
+        zh_words = "一二三四五六七八九十"
+        self.assertTrue(1 <= expected <= len(zh_words), f"no zh count word for {expected}; extend zh_words")
+        zh_count = zh_words[expected - 1] + "个"
         for name, numeral in (
             ("README.ko.md", f"{expected}개"),
             ("README.ja.md", f"{expected} 個"),

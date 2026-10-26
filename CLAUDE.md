@@ -245,8 +245,8 @@ language are in `AGENTS.md`. Two rules live here:
   directory under `src/` can still resolve through `__path__`). It never heals
   on ordinary `uv run` / `uv sync`; only
   `uv sync --reinstall-package oh-my-hermes` or a change that invalidates uv's
-  build cache, such as a new `pyproject.toml` mtime, rebuilds it. So resync after the branch's last new
-  file exists, not before. Bisecting across the commit that adds a module then
+  build cache, such as a new `pyproject.toml` mtime, rebuilds it. So resync
+  after the branch's last new file exists, not before. Bisecting across the commit that adds a module then
   shows green-then-red, the exact shape of a real regression. CI cannot reach
   this state (its test jobs `pip install -e .` on a fresh checkout), so it
   cannot warn you. A `-P` spawn or the `omh` console script reads the

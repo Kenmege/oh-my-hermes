@@ -218,5 +218,6 @@ only, never test, review, merge-readiness, or merge evidence.
 ## Rolling Back
 
 Revert the `plan` and `aggregate` jobs and the quarantine steps in
-`.github/workflows/ci.yml`, and change the ruleset's required check from
-`aggregate` in the same step.
+`.github/workflows/ci.yml`, and in the same step change the ruleset's required
+checks from `aggregate` to the restored full-suite matrix jobs (named
+`test (<version>)` and `test-windows`, one per matrix leg), keeping `DCO`.

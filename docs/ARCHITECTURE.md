@@ -218,8 +218,7 @@ DAG), and `dashboard/plugin_api.py`, which the gateway
 mounts at `/api/plugins/omh/hud` while `omh` is registered in
 `plugins.enabled`, serving the HUD payload the Desktop pane reads. The
 plugin registers deterministic tools and passive lifecycle hooks; the current
-list, with each tool's purpose, is
-`omh capabilities export --section hooks --json`. A recorded
+tool and hook list is `omh capabilities export --section hooks --json`. A recorded
 route answer changes no route; it is written so the answerer can be scored
 against OMH's own routing corpora with `omh chat route-questions score`. The
 `pre_llm_call` hook can also add

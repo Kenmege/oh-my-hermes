@@ -174,7 +174,12 @@ Run every `docs ... --check` gate in the Build & Test list of
 [`CLAUDE.md`](../CLAUDE.md), plus `uv run python -m omh.cli harness validate`
 and `git diff --check`; that list is the one maintained copy. For a page added,
 moved, or deleted under `docs/`, the gate that matters first is
-`uv run python -m omh.cli docs navigation --check`.
+`uv run python -m omh.cli docs navigation --check`. The docs-content contract
+tests run with:
+
+```sh
+PYTHONPATH=tests uv run python -m unittest tests/test_router_content.py -v
+```
 
 Three separate evidence classes answer three different questions, and a failure
 in one is repaired differently from a failure in another:
