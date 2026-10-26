@@ -95,6 +95,29 @@ class SpokenPhraseEdgeTests(unittest.TestCase):
         self.assertFalse(phrase_is_spoken("asked", "ask"))
         self.assertFalse(phrase_is_spoken("looping over the rows", "loop"))
 
+    def test_a_cyrillic_phrase_does_not_match_inside_a_longer_word(self) -> None:
+        # #2284. Russian is written with spaces, so it gets the Latin edges:
+        # `ревью пр` started inside `превью`, and the one-word `выкати` and
+        # `запомни` matched their own past tenses.
+        self.assertFalse(phrase_is_spoken("посмотри превью приложения", "ревью пр"))
+        self.assertFalse(phrase_is_spoken("я выкатил машину из гаража", "выкати"))
+        self.assertFalse(phrase_is_spoken("запомнил её номер", "запомни"))
+        self.assertFalse(phrase_is_spoken("ξαναελεγχος κωδικα", "ελεγχος κωδικα"))
+
+    def test_a_cyrillic_phrase_still_matches_as_its_own_words(self) -> None:
+        self.assertTrue(phrase_is_spoken("сделай ревью кода", "ревью кода"))
+        self.assertTrue(phrase_is_spoken("запомни это, пожалуйста", "запомни"))
+        self.assertTrue(phrase_is_spoken("«запомни»", "запомни"))
+        # A multi-word phrase may still be inflected on its last word.
+        self.assertTrue(phrase_is_spoken("проверь доступность сайтов", "доступность сайт"))
+        self.assertTrue(phrase_is_spoken("ελεγχος κωδικα τωρα", "ελεγχος κωδικα"))
+
+    def test_an_edge_is_checked_only_against_its_own_script(self) -> None:
+        # A Latin name glued to a Russian word keeps the reading it had before
+        # the Cyrillic edge existed, in both directions.
+        self.assertTrue(phrase_is_spoken("запусти e2eтесты", "e2e"))
+        self.assertTrue(phrase_is_spoken("ciупал", "упал"))
+
     def test_cjk_has_no_spaces_so_the_left_edge_is_ascii_only(self) -> None:
         # A script-agnostic left edge would reject every CJK trigger, because
         # the character before the phrase is always a word character there.
