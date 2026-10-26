@@ -216,7 +216,8 @@ run_step() {
 }
 
 run_omh() {
-  "$OMH_RUNTIME_PYTHON" -m omh.cli "$@"
+  # Keep user-site packages visible for python mode, but ignore cwd/PYTHONPATH.
+  "$OMH_RUNTIME_PYTHON" -P -E -m omh.cli "$@"
 }
 
 find_omh_command() {
@@ -228,7 +229,7 @@ find_omh_command() {
     command -v omh
     return 0
   fi
-  "$OMH_RUNTIME_PYTHON" - "$OMH_BIN_DIR" "$OMH_VENV_DIR/bin" <<'PY'
+  "$OMH_RUNTIME_PYTHON" -I - "$OMH_BIN_DIR" "$OMH_VENV_DIR/bin" <<'PY'
 import os
 import shutil
 import site
@@ -312,12 +313,13 @@ install_into_venv() {
     say "Set OMH_VENV_DIR to an explicit directory and retry."
     exit 1
   fi
-  run_step "$(step_label 1)" "$(msg step_create_venv) $OMH_VENV_DIR" "$OMH_PYTHON" -m venv "$OMH_VENV_DIR"
+  # -Im combines isolated mode and module execution in one Python option.
+  run_step "$(step_label 1)" "$(msg step_create_venv) $OMH_VENV_DIR" "$OMH_PYTHON" -Im venv "$OMH_VENV_DIR"
   OMH_RUNTIME_PYTHON="$OMH_VENV_DIR/bin/python"
   run_step "$(step_label 2)" "$(msg step_install_package)" sh -c '
     # Intentional shell splitting: OMH_PIP_ARGS is an advanced operator escape hatch.
     # shellcheck disable=SC2086
-    PIP_DISABLE_PIP_VERSION_CHECK=1 "$1" -m pip install --disable-pip-version-check -q --no-cache-dir --force-reinstall $2 --upgrade "$3"
+    PIP_DISABLE_PIP_VERSION_CHECK=1 "$1" -I -m pip install --disable-pip-version-check -q --no-cache-dir --force-reinstall $2 --upgrade "$3"
   ' sh "$OMH_RUNTIME_PYTHON" "$OMH_PIP_ARGS" "$OMH_PACKAGE_URL"
   OMH_COMMAND_HINT="$OMH_VENV_DIR/bin/omh"
   link_omh_command
@@ -329,9 +331,10 @@ install_into_python() {
     OMH_DIRECT_PIP_ARGS="--user"
   fi
   run_step "$(step_label 1)" "$(msg step_install_python)" sh -c '
+    # -I disables the user site and breaks pip --user; -P -E excludes cwd/PYTHONPATH.
     # Intentional shell splitting: OMH_DIRECT_PIP_ARGS is an advanced operator escape hatch.
     # shellcheck disable=SC2086
-    PIP_DISABLE_PIP_VERSION_CHECK=1 "$1" -m pip install --disable-pip-version-check -q --no-cache-dir --force-reinstall $2 --upgrade "$3"
+    PIP_DISABLE_PIP_VERSION_CHECK=1 "$1" -P -E -m pip install --disable-pip-version-check -q --no-cache-dir --force-reinstall $2 --upgrade "$3"
   ' sh "$OMH_PYTHON" "$OMH_DIRECT_PIP_ARGS" "$OMH_PACKAGE_URL"
   OMH_RUNTIME_PYTHON="$OMH_PYTHON"
 }
@@ -621,7 +624,7 @@ if [ -n "$OMH_COMMAND_PATH" ]; then
   fi
 else
   say "omh installer: installed the package, but could not locate the omh command."
-  say "Use '$OMH_RUNTIME_PYTHON -m omh.cli setup' as a fallback and check the selected Python scripts directory."
+  say "Use '$OMH_RUNTIME_PYTHON -P -E -m omh.cli setup' as a fallback and check the selected Python scripts directory."
 fi
 
 if [ "$OMH_RUN_SETUP" = "1" ]; then
@@ -704,5 +707,5 @@ if command -v omh >/dev/null 2>&1; then
 elif [ -n "$OMH_COMMAND_PATH" ]; then
   say "$(msg next_command_path "$OMH_COMMAND_PATH")"
 else
-  say "Next: run '$OMH_PYTHON -m omh.cli setup' to connect OMH to Hermes, then '$OMH_PYTHON -m omh.cli doctor' to verify."
+  say "Next: run '$OMH_PYTHON -P -E -m omh.cli setup' to connect OMH to Hermes, then '$OMH_PYTHON -P -E -m omh.cli doctor' to verify."
 fi

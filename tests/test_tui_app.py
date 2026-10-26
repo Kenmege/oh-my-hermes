@@ -4,10 +4,11 @@ Each test runs `omh.tui.app.main` (or the `App` it builds) with a scripted
 terminal whose output lands in the VT screen model, a fake HUD poller, and the
 real `GatewayClient` talking to the replay gateway, which plays recorded Hermes
 6c61c3e27d frames and checks every frame the TUI sends against the recording.
-The TUI's startup differs from the recording client's (it asks `config.get`
-and `commands.catalog` after `session.create`, without waiting for either), so
-those two are answered from the scenario's answer table: the catalog with its
-recorded answer, the config with an empty one.
+The TUI's startup differs from the recording client's (it asks `config.get`,
+`commands.catalog`, `session.list` and `model.options` after `session.create`,
+without waiting for any), so those are answered from the scenario's answer
+table: the catalog and the session list with their recorded answers, the
+config with an empty one and the configured default with no model.
 
 A script step waits for a condition on what the screen shows, then delivers
 its bytes (or a resize); one silent read follows every step, so a lone Esc
@@ -60,7 +61,7 @@ from omh.tui.app import (
 )
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
-from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
+from omh.tui.launch import CLOSED_EXIT, FALLBACK_EXIT, FALLBACK_SENTINEL_ENV, SESSION_FILE_ENV
 from omh.tui.modes import ACCEPT_LABEL, IDLE_HINT, PLAN_LABEL, STEER_COMMAND_HINT, STEER_KEY_HINT, info_line
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, ERASE_SCROLLBACK
 from omh.tui.style import Span
@@ -80,8 +81,12 @@ WORKING_CLOCK = re.compile(r"\(\d+(?:m \d+)?s(?: · |\))")
 # Between the composer and the info line on these 24-row terminals: the bottom rule.
 UNDER_COMPOSER = 1
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
-# are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
-STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog", "session.list"]
+# are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one. Last,
+# the config file's mtime and Hermes' configured default model, which a later move is measured from.
+STARTUP_METHODS = [
+    "client.capabilities", "session.create", "config.get", "commands.catalog", "session.list", "config.get",
+    "model.options",
+]
 NO_TERMIOS = terminal_module.termios is None
 # The block logo a start shows above the banner on these 24-row terminals from 100 columns: six rows and a blank.
 LOGO = [line_text(row) for row in banner_logo(default_theme(), None, 100, 24)]
@@ -93,12 +98,20 @@ TURN_CANCELLED = "Turn cancelled before the agent was ready"
 INTERRUPTED = ("session.interrupt", {"result": {"status": "interrupted"}})
 
 
-def startup_answers() -> tuple[tuple[str, dict], ...]:
+# Hermes' configured default (a `model.options` naming no session): the same at every read, so nothing moves.
+NO_DEFAULT = ("model.options", {"result": {"model": "", "provider": ""}})
+# A launch whose default read Hermes refused: nothing to measure a move from, so a turn starts without the check
+# (`App._start_turn`). Tests of what input typed in one burst does during a turn use it.
+UNREAD_DEFAULT = ("model.options", {"error": {"code": 4001, "message": "no default"}})
+
+
+def startup_answers(default: tuple[str, dict] = NO_DEFAULT) -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
         # The last-session lookup a fresh session makes: the recording lists only the session itself.
         ("session.list", recorded_answer("session", "session_list")),
+        default,
     )
 
 
@@ -430,6 +443,7 @@ class StartupRefusalTests(AppTestCase):
             ("config.get", drift),
             ("commands.catalog", recorded_answer("session", "commands_catalog")),
             ("session.list", recorded_answer("session", "session_list")),
+            NO_DEFAULT,
         )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         run.terminal.script(
@@ -539,6 +553,8 @@ class ExitSignalTests(AppTestCase):
                 # leaves this runner alive and the script below exits it.
                 self.addCleanup(signal.signal, signum, signal.signal(signum, outer))
                 run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+                # Under `omh` too: a signal's code is never the closed-session one.
+                run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
                 run.terminal = SignalledTerminal(signum)
                 run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
                 with self.assertRaises(SystemExit) as raised:
@@ -555,9 +571,10 @@ class ExitSignalTests(AppTestCase):
 class SessionTests(AppTestCase):
     def test_startup_draws_status_and_composer_and_writes_the_active_session_file(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
         run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="ready", label="the first frame"))
         self.run_main(run)
-        self.assert_clean_run(run)
+        self.assert_clean_run(run, CLOSED_EXIT)  # `omh` launched it: Hermes prints no epilogue, `omh` its card
         screen = run.terminal.captures["ready"]
         info = info_index(screen)
         self.assertTrue(screen[info].startswith(INFO_INSET + IDLE_HINT), screen)
@@ -570,6 +587,11 @@ class SessionTests(AppTestCase):
         self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
         self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
+        # `omh`'s own copy names the home whose state database holds the session, for the exit card.
+        omh_session = Path(run.environ[SESSION_FILE_ENV])
+        self.assertEqual(json.loads(omh_session.read_text(encoding="utf-8")),
+                         {"session_id": STORED_ID, "hermes_home": str(run.root), "opened": []})
+        self.assertEqual(stat.S_IMODE(os.stat(omh_session).st_mode), 0o600)
         self.assertEqual(run.poller.sessions, [STORED_ID])
         self.assertTrue(run.poller.started and run.poller.stopped)
         # A new HUD snapshot wakes the loop as gateway news does: through the app, whichever client is live.
@@ -631,6 +653,46 @@ class SessionTests(AppTestCase):
         self.assert_clean_run(run)
         (interrupt,) = run.calls("session.interrupt")
         self.assertEqual(interrupt["params"], {"session_id": LIVE_ID})
+
+    def test_ctrl_c_twice_during_a_turn_interrupts_once_and_exits_0(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
+        )
+        run.terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"\x03", when=run.terminal.running, label="running"),
+            Step(b"\x03", when=run.terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("session.interrupt")], [{"session_id": LIVE_ID}])
+
+    def test_a_session_closed_under_omh_exits_closed_exit_and_elsewhere_0(self) -> None:
+        # Hermes' launcher prints its exit summary, naming `hermes --tui --resume`, for 0 and 130 only.
+        closes = {
+            "ctrl+c twice": lambda run: (Step(b"\x03", when=run.terminal.idle, label="idle"),
+                                         Step(b"\x03", when=run.terminal.shows(EXIT_HINT), label="the exit hint")),
+            "ctrl+d": lambda run: (Step(b"\x04", when=run.terminal.idle, label="idle"),),
+            "/exit": lambda run: (self.submit(run, "/exit"),),
+        }
+        for launched_by_omh in (True, False):
+            for name, steps in closes.items():
+                with self.subTest(omh=launched_by_omh, close=name):
+                    answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
+                    run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+                    if launched_by_omh:
+                        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
+                    run.terminal.script(*steps(run))
+                    self.run_main(run)
+                    self.assert_clean_run(run, CLOSED_EXIT if launched_by_omh else 0)
+
+    def test_a_gateway_exit_under_omh_still_returns_1(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=EXIT)
+        )
+        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
+        self.run_main(run)
+        self.assertEqual(run.code, 1)
 
     def test_ctrl_c_twice_while_idle_exits_0(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
@@ -782,6 +844,14 @@ class SessionTests(AppTestCase):
         answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         run.terminal.script(self.submit(run, "/quit"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("session.close")], [{"session_id": LIVE_ID}])
+
+    def test_exit_is_quit(self) -> None:
+        answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(self.submit(run, "/exit"))
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual([frame["params"] for frame in run.calls("session.close")], [{"session_id": LIVE_ID}])
@@ -1166,6 +1236,16 @@ class SlashCommandTests(AppTestCase):
                 self.assertEqual(run.calls("command.dispatch"), [])
                 self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
 
+    def test_under_omh_a_drift_reply_ends_the_session_naming_omh_resume(self) -> None:
+        answers = (*startup_answers(), ("slash.exec", {"error": {"code": 4000, "message": "extra fields not permitted"}}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.environ[SESSION_FILE_ENV] = str(run.root / "omh-session.json")
+        run.terminal.script(self.submit(run, "/xyz"))
+        self.run_main(run)
+        self.assertEqual(run.code, 1)
+        self.assertIn(f"Resume the session: omh --resume {STORED_ID}", run.stderr.getvalue())
+        self.assertNotIn("hermes --tui", run.stderr.getvalue())
+
     def test_tab_completes_a_local_command_and_history_pages_on_the_alternate_screen(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
@@ -1525,6 +1605,7 @@ def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
         ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
         ("session.list", recorded_answer("session", "session_list")),
+        UNREAD_DEFAULT,
     )
 
 
@@ -2073,7 +2154,7 @@ class LocalCommandTests(AppTestCase):
             Scenario(
                 "session",
                 spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
-                answers=startup_answers(),
+                answers=startup_answers(UNREAD_DEFAULT),
             )
         )
         terminal = run.terminal
@@ -2141,7 +2222,7 @@ CLIP = {
 }
 OTHER_STORED_ID = "20261012_090000_router"
 OTHER_LIVE_ID = "c0ffee01"
-INTERRUPT_ROW = re.compile(r"\(\d+s · esc to interrupt\)")
+INTERRUPT_ROW = re.compile(r"\(\d+s( · ↓[\d.]+k? tokens)? · esc to interrupt\)")
 
 
 def bracketed(text: str) -> bytes:
@@ -2406,7 +2487,7 @@ class KeyTests(AppTestCase):
     def test_the_activity_row_counts_the_seconds_since_the_prompt(self) -> None:
         run = self.interrupted_run()
         terminal = run.terminal
-        two_seconds = re.compile(r"\(2s · esc to interrupt\)")
+        two_seconds = re.compile(r"\(2s( · ↓[\d.]+k? tokens)? · esc to interrupt\)")  # the replay streams
         terminal.script(
             self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
             Step(b"\x03", when=lambda: any(two_seconds.search(line) for line in terminal.screen.lines()),

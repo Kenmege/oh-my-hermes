@@ -21,6 +21,7 @@ from .curator_ledger import (
 )
 from .plugin_pack import host_managed_plugin
 from .lifecycle_safety import command_runtime_owned, store_removal_plan
+from .uninstall_safety import configured_link_reason, linked_removal_reason, unsafe_removal_reason
 from ..local_store import atomic_write_text, discard_path, is_directory_link, read_json_object_result
 from ..manifest import (
     local_modifications,
@@ -40,6 +41,7 @@ from ..paths import (
     managed_command_self_update_state_path,
     managed_command_filenames,
     managed_command_venv_dir,
+    managed_command_venv_scripts_dir,
 )
 from ..profiles.team import TEAM_PROFILE_SCHEMA_VERSION
 from ..skills.catalog import omh_skill_display_name, omh_skill_install_path
@@ -1766,8 +1768,13 @@ def uninstall_skill_pack(
     force: bool = False,
     remove_command_package: bool = False,
     store_plan: dict[str, object] | None = None,
+    home_refusal: str | None = None,
 ) -> dict:
-    """Remove OMH-managed local files without deleting unrelated Hermes state."""
+    """Remove OMH-managed local files without deleting unrelated Hermes state.
+
+    `home_refusal` is a caller's reason to keep `omh_home`: one only the caller
+    can know, such as a configured spelling that resolution already erased.
+    """
     removed: list[str] = []
     would_remove: list[str] = []
     kept: list[dict[str, str]] = []
@@ -1786,6 +1793,7 @@ def uninstall_skill_pack(
             dry_run=dry_run,
             force=force,
             managed_plugin=True,
+            boundary=paths.hermes_home,
         )
         for team_file in _managed_team_profile_files(paths):
             _collect_removal(
@@ -1795,10 +1803,16 @@ def uninstall_skill_pack(
                 kept=kept,
                 dry_run=dry_run,
                 force=force,
+                managed_team_file=True,
+                boundary=paths.hermes_agents_dir,
             )
 
     if (remove_files or remove_all) and plan.get("status") != "kept":
-        _collect_removal(paths.omh_home, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+        reason = home_refusal or _omh_home_removal_refusal(paths)
+        if reason:
+            kept.append({"path": str(paths.omh_home), "reason": reason})
+        else:
+            _collect_removal(paths.omh_home, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
 
     command_removed_at = len(removed)
     command_would_remove_at = len(would_remove)
@@ -1858,12 +1872,26 @@ def uninstall_profile_plugin(paths: OmhPaths, *, dry_run: bool = False, force: b
         dry_run=dry_run,
         force=force,
         managed_plugin=True,
+        boundary=paths.hermes_home,
     )
     return {
         "removed_paths": removed,
         "would_remove": would_remove,
         "kept_paths": kept,
     }
+
+
+def _omh_home_removal_refusal(paths: OmhPaths) -> str | None:
+    reason = unsafe_removal_reason(paths.omh_home, hermes_home=paths.hermes_home) or configured_link_reason(paths.omh_home, "OMH_HOME")
+    if reason:
+        return reason
+    marker = paths.manifest_path
+    if is_directory_link(marker):
+        return "OMH home ownership is unproven: manifest.json is a symlink"
+    manifest, error = read_json_object_result(marker)
+    if error or not manifest or manifest.get("package") != "oh-my-hermes" or manifest.get("schema_version") != 1:
+        return "OMH home ownership is unproven: no readable OMH manifest.json"
+    return None
 
 
 def _collect_removal(
@@ -1875,8 +1903,20 @@ def _collect_removal(
     dry_run: bool,
     force: bool,
     managed_plugin: bool = False,
+    managed_team_file: bool = False,
+    boundary: Path | None = None,
 ) -> None:
     if not path.exists() and not is_directory_link(path):
+        return
+    reason = None
+    if managed_plugin or managed_team_file:
+        reason = unsafe_removal_reason(path)
+        if boundary is not None:
+            reason = reason or linked_removal_reason(path, boundary)
+    if managed_team_file and not path.is_file():
+        reason = reason or "team-profile ownership authorizes only individual files, not directories"
+    if reason:
+        kept.append({"path": str(path), "reason": reason})
         return
     if managed_plugin and host_managed_plugin(path) is not None:
         # `hermes plugins install` wrote this tree and recorded it in its own
@@ -1902,6 +1942,33 @@ def _looks_like_managed_plugin(path: Path) -> bool:
     return (path / ".omh-plugin-manifest.json").exists()
 
 
+def _command_venv_scripts_dirs(venv: Path) -> tuple[Path, ...]:
+    """Executable directories a venv can use on this host.
+
+    Windows venvs normally use `Scripts`, but MSYS2/Cygwin-built Pythons there
+    lay out `bin`; POSIX venvs only ever use `bin`.
+    """
+    native = managed_command_venv_scripts_dir(venv)
+    return (native,) if native.name == "bin" else (native, venv / "bin")
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    """Compare as the filesystem does: case-insensitive and 8.3-expanded on Windows."""
+    return os.path.normcase(os.path.realpath(left)) == os.path.normcase(os.path.realpath(right))
+
+
+def _command_venv_owned(path: Path) -> bool:
+    """A runtime containment match alone cannot claim an arbitrary ancestor."""
+    marker = path / "pyvenv.cfg"
+    if not marker.is_file() or is_directory_link(marker):
+        return False
+    return any(
+        not linked_removal_reason(scripts, path)
+        and any((scripts / name).is_file() for name in ("omh", "omh.exe"))
+        for scripts in _command_venv_scripts_dirs(path)
+    )
+
+
 def _collect_command_package_removal(
     *,
     removed: list[str],
@@ -1913,27 +1980,69 @@ def _collect_command_package_removal(
     if venv_dir is None:
         kept.append({"path": "omh", "reason": "no home directory is available, so the installer-managed command venv cannot be located"})
         return
+    reason = unsafe_removal_reason(venv_dir) or configured_link_reason(venv_dir, "OMH_VENV_DIR")
+    if reason:
+        kept.append({"path": str(venv_dir), "reason": reason})
+        return
     executable = Path(sys.executable).expanduser()
-    if not command_runtime_owned(executable, venv_dir):
+    interpreter_dir = _normalize_without_final_symlink(executable).parent
+    runtime = interpreter_dir.parent
+    if (
+        not command_runtime_owned(executable, venv_dir)
+        or not any(_same_path(interpreter_dir, scripts) for scripts in _command_venv_scripts_dirs(runtime))
+        or not _command_venv_owned(runtime)
+    ):
         kept.append(
             {
                 "path": str(executable.resolve()),
-                "reason": "current omh command is not running from the installer-managed OMH venv",
+                "reason": "current omh command is not running from a verified installer-managed OMH venv",
             }
         )
         return
 
+    # A verified runtime owns neither arbitrary sibling directories nor a real
+    # directory named current. Attribute every recursive target separately.
+    generations = managed_command_generations_dir()
+    owned_generations: list[Path] = []
+    if generations is not None and generations.exists():
+        reason = unsafe_removal_reason(generations)
+        if reason:
+            kept.append({"path": str(generations), "reason": reason})
+        else:
+            for generation in sorted(generations.iterdir()):
+                reason = unsafe_removal_reason(generation)
+                if not reason and not _command_venv_owned(generation / "venv"):
+                    reason = "generation ownership is unproven: no OMH command venv"
+                if reason:
+                    kept.append({"path": str(generation), "reason": reason})
+                else:
+                    owned_generations.append(generation)
+    current = managed_command_current_dir()
+    if current is not None and (current.exists() or is_directory_link(current)):
+        if is_directory_link(current) and current.resolve() in owned_generations:
+            _collect_removal(current, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+        else:
+            kept.append({"path": str(current), "reason": "current pointer ownership is unproven"})
+
     for link in _managed_command_links(venv_dir):
         _collect_removal(link, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
-    # Generation metadata is installer-owned only after attribution above has
-    # proved this command is ours; `_collect_removal` unlinks pointer links.
-    for path in (managed_command_current_dir(), managed_command_generations_dir(), managed_command_self_update_state_path()):
-        if path is not None:
-            _collect_removal(path, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+    for generation in owned_generations:
+        _collect_removal(generation, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
     state_path = managed_command_self_update_state_path()
-    if state_path is not None:
-        _collect_removal(state_path.with_name(f".{state_path.name}.lock"), removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
-    _collect_removal(venv_dir, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+    if state_path is not None and state_path.exists():
+        state, error = read_json_object_result(state_path)
+        if not is_directory_link(state_path) and not error and state and state.get("schema_version") == "self_update_state/v1":
+            _collect_removal(state_path, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+            lock = state_path.with_name(f".{state_path.name}.lock")
+            if lock.is_file() and not is_directory_link(lock):
+                _collect_removal(lock, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+        else:
+            kept.append({"path": str(state_path), "reason": "self-update state ownership is unproven"})
+    if venv_dir.exists():
+        if _command_venv_owned(venv_dir):
+            _collect_removal(venv_dir, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+        else:
+            kept.append({"path": str(venv_dir), "reason": "legacy command venv ownership is unproven"})
 
 
 def _managed_command_links(venv_dir: Path) -> list[Path]:
@@ -1977,7 +2086,7 @@ def _manifest_team_profile_files(paths: OmhPaths) -> list[Path]:
         for raw_path in manifest.get("files", []):
             if not isinstance(raw_path, str):
                 continue
-            path = Path(raw_path).expanduser().resolve()
+            path = Path(os.path.abspath(Path(raw_path).expanduser()))
             if path in seen or not _is_relative_to(path, paths.hermes_agents_dir):
                 continue
             seen.add(path)

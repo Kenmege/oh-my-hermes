@@ -4,6 +4,7 @@ from .. import runtime_paths
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 from ..delegation_route_restore import (
@@ -17,13 +18,19 @@ from ..delegation_route_restore import (
 # Every write of the three keys now goes through `delegation_route_restore`,
 # which pairs it with the baseline bookkeeping under one lock. Reaching for
 # the raw writer here again would reopen the window this PR closed.
-from ..delegation_routing import read_child_endpoint, read_delegation_route, read_session_provider
+from ..delegation_routing import (
+    read_child_endpoint,
+    read_config_snapshot,
+    read_delegation_route,
+    read_session_provider,
+)
 from ..hermes_delegation import (
     HERMES_MIXTURE_CATEGORY_CHAINS,
     append_delegation_route_provenance,
     chain_alias_for,
     load_mixture_chain_overrides,
     load_model_provider_routes,
+    load_provider_entitlements,
     effective_provider_entitlements,
     provider_serves_alias,
     providers_serving_alias,
@@ -32,6 +39,8 @@ from ..hermes_delegation import (
     resolve_provider_model,
     effective_mixture_category_chains,
 )
+from ..route_endpoint_guard import managed_config_layer, route_endpoint_refusal
+from ..provider_detection import config_provider_base_url_hosts, configured_provider_ids
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
 from ..kanban_board_reader import conversation_session_ids
 from ..orchestration_say import route_say, with_say
@@ -98,6 +107,105 @@ def _chain_entry(
         entry["provider"] = provider
         entry["model"] = wire_model
     return entry
+
+
+def _legacy_custom_provider_names(config_text: str) -> set[str]:
+    """`name:` of each top-level `custom_providers:` list entry, normalized.
+
+    Hermes names such an entry `custom:<name>` with the display name
+    lowercased and spaces dashed (`custom_provider_slug`), so the same
+    normalization is applied here.
+    """
+    names: set[str] = set()
+    in_section = False
+    item_indent = -1
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0 and not stripped.startswith("- "):
+            in_section = stripped.split(":", 1)[0].strip().strip("\"'") == "custom_providers"
+            item_indent = -1
+            continue
+        if not in_section:
+            continue
+        if stripped.startswith("- "):
+            if item_indent < 0:
+                item_indent = indent
+            if indent != item_indent:
+                continue
+            stripped = stripped[2:].strip()
+        elif indent != item_indent + 2:
+            continue
+        key, separator, rest = stripped.partition(":")
+        if separator and key.strip().strip("\"'") == "name":
+            value = rest.split("#", 1)[0].strip().strip("\"'").casefold().replace(" ", "-")
+            if value:
+                names.add(value)
+    return names
+
+
+def _configured_providers(hermes_home: Any, omh_home: Any) -> frozenset[str]:
+    """Provider ids the person configured for Hermes themselves, casefolded.
+
+    A delegated child sends its whole task context to the provider a route
+    names, so a route may only name one of these: the providers counted by
+    `effective_provider_entitlements` (linked in auth.json, config.yaml, or
+    `.env`, plus the recorded document, minus what the operator excluded),
+    every `providers.<id>` block and `model.provider` in config.yaml (a
+    loopback block is configured even though entitlements skip it), the
+    `custom:<name>` identities of `providers.<id>` blocks with a `base_url`
+    and of legacy `custom_providers` entries, and the session's own provider.
+    """
+    recorded, _ = load_provider_entitlements(omh_home)
+    excluded = {str(item).casefold() for item in (recorded or {}).get("excluded_providers", [])}
+    entitlements, _status, _rows = effective_provider_entitlements(omh_home, hermes_home)
+    configured = {str(item).casefold() for item in ((entitlements or {}).get("providers") or {})}
+    text, _signature, error = read_config_snapshot(Path(hermes_home).expanduser() / "config.yaml")
+    if not error:
+        config_ids = {item.casefold() for item in configured_provider_ids(text)} - excluded
+        custom_names = {
+            item.casefold() for item in config_provider_base_url_hosts(text) if not item.startswith("custom:")
+        }
+        custom_names |= _legacy_custom_provider_names(text)
+        configured |= config_ids | {f"custom:{name}" for name in custom_names - excluded}
+    session = read_session_provider(hermes_home).casefold()
+    if session:
+        configured.add(session)
+    return frozenset(configured)
+
+
+def _unconfigured_provider_error(
+    provider: str, configured: frozenset[str], *, origin: str, hermes_home: Any
+) -> dict[str, Any]:
+    # The endpoint refusals the writer applies are more specific than this
+    # one -- they name the person's own keys that send the child elsewhere --
+    # so a route both would refuse keeps their reason.
+    text, _signature, error = read_config_snapshot(Path(hermes_home).expanduser() / "config.yaml")
+    if not error:
+        refusal = route_endpoint_refusal(
+            text,
+            provider=provider,
+            current_provider=read_delegation_route(hermes_home).get("provider", ""),
+            managed=managed_config_layer(),
+        )
+        if refusal:
+            return refusal
+    listed = ", ".join(sorted(configured)) or "none found"
+    return {
+        "status": "error",
+        "reason": "provider_not_configured",
+        "error": (
+            f"provider {provider!r} ({origin}) is not one you configured for Hermes; "
+            f"configured: {listed}. A delegated child sends its task to the provider its "
+            "route names, so a route only names a provider you linked yourself "
+            "(config.yaml providers/custom_providers, a Hermes login or key, or this "
+            "session's provider). No route was written."
+        ),
+        "provider": provider,
+        "configured_providers": sorted(configured),
+    }
 
 
 def _clear_to_baseline(
@@ -521,6 +629,21 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
         category, index = matches[0]
         chain = chains[category]
+        # A candidate whose route names a provider the person never
+        # configured is passed over, never written: model-providers.json is a
+        # file a model with a file tool can write too, and the child would
+        # carry its whole task to that provider.
+        configured = _configured_providers(hermes_home, omh_home)
+        skipped_unconfigured: list[dict[str, str]] = []
+        while index + 1 < len(chain):
+            candidate_alias = chain[index + 1][0]
+            _candidate_wire, candidate_provider = resolve_provider_model(
+                candidate_alias, routes=provider_routes
+            )
+            if not candidate_provider or candidate_provider.casefold() in configured:
+                break
+            skipped_unconfigured.append({"alias": candidate_alias, "provider": candidate_provider})
+            index += 1
         if index + 1 >= len(chain):
             # Chain exhausted: put the person's own delegation keys back so the
             # next dispatch runs on a model known to work -- their pinned one
@@ -550,6 +673,8 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             result["category"] = category
             result["from"] = current_model
             result["position_source"] = position_source
+            if skipped_unconfigured:
+                result["skipped_unconfigured"] = skipped_unconfigured
             result["evidence_boundary"] = _EVIDENCE_BOUNDARY
             return json.dumps(attach_public_observation(with_say(result, route_say(result)), observation), sort_keys=True)
         next_model, next_effort = chain[index + 1]
@@ -599,6 +724,8 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
                 _chain_entry(alias, chain_effort, provider_routes)
                 for alias, chain_effort in chain[index + 2 :]
             ]
+        if skipped_unconfigured:
+            result["skipped_unconfigured"] = skipped_unconfigured
         result["evidence_boundary"] = _EVIDENCE_BOUNDARY
         return json.dumps(attach_public_observation(with_say(result, route_say(result)), observation), sort_keys=True)
 
@@ -713,6 +840,15 @@ def omh_delegate_route_handler(args: dict[str, Any], **kwargs) -> str:
             "error": "a wire-shaped model requires an explicit provider",
         }
         return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
+    if provider:
+        # The provider is model-supplied (tool arg) or read from
+        # routing/model-providers.json; either way the person must have
+        # configured it before a delegated child's task goes there.
+        configured = _configured_providers(hermes_home, omh_home)
+        if provider.casefold() not in configured:
+            origin = "explicit provider argument" if args.get("provider") else "routing/model-providers.json"
+            payload = _unconfigured_provider_error(provider, configured, origin=origin, hermes_home=hermes_home)
+            return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
     result = write_route_with_baseline(
         hermes_home,
         omh_home=omh_home,

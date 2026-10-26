@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import subprocess
 from collections.abc import Mapping
@@ -467,7 +468,7 @@ def _atomic_json(path: Path, value: Mapping[str, object]) -> None:
             raise BrowserSkillPromotionApprovalError(
                 "promotion receipt symlink escape refused"
             )
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(8)}.tmp")
     try:
         with temporary.open("x", encoding="utf-8", newline="") as handle:
             handle.write(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")

@@ -58,7 +58,8 @@ class ClientMethodTests(unittest.TestCase):
     def test_the_two_calls_this_phase_adds_carry_exactly_what_hermes_names(self) -> None:
         # Read from Hermes 6c61c3e27d's registry (tui_gateway/contracts/): ConfigSetParams is key, value,
         # session_id, scope, confirm_expensive_model, profile; SessionCorrectionParams is session_id, text, profile.
-        self.assertEqual(contract.CLIENT_METHODS["config.set"], {"key", "value", "session_id"})
+        # `confirm_expensive_model` goes only with a model the person said to switch to anyway.
+        self.assertEqual(contract.CLIENT_METHODS["config.set"], {"key", "value", "session_id", "confirm_expensive_model"})
         self.assertEqual(contract.CLIENT_METHODS["session.steer"], {"session_id", "text"})
         self.assertEqual(set(contract.CONFIG_SET_VALUES), {"yolo", "reasoning"})
         self.assertEqual(contract.CONFIG_SET_VALUES["yolo"], {"on", "off"})
@@ -84,7 +85,8 @@ class ClientMethodTests(unittest.TestCase):
             "a yolo word Hermes also reads": {**good, "value": "1"},
             "an effort as a yolo value": {**good, "value": "high"},
             "another key": {**good, "key": "approvals.mode", "value": "off"},
-            "the model key": {**good, "key": "model", "value": "x"},
+            # A model value that could widen the switch: `--global` writes every new session's default.
+            "the model key with --global": {**good, "key": "model", "value": "x --global"},
             "no key": {"value": "on", "session_id": "live-1"},
         }
         for name, params in refused.items():

@@ -81,6 +81,11 @@ class LifecycleCompatibilityTests(unittest.TestCase):
         self.assertTrue(payload["command_package_kept"])
 
     def test_default_primary_full_cleanup_removes_unshared_store(self):
+        code, _, stderr = run_cli([
+            "--hermes-home", str(self.hermes), "--omh-home", str(self.store),
+            "setup", "--core", "--yes", "--no-interactive", "--no-menubar", "--json",
+        ])
+        self.assertEqual(code, 0, stderr)
         self.binding(self.hermes, self.store)
         code, payload, stderr = self.uninstall(self.hermes, "--keep-command")
         self.assertEqual(code, 0, stderr)

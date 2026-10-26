@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -169,14 +170,27 @@ def append_ledger_record(omh_home: Path, record: Mapping[str, Any]) -> bool:
             lines = _ledger_lines(path)
             lines.append(json.dumps(dict(record), sort_keys=True, ensure_ascii=True))
             lines = lines[-MAX_LEDGER_LINES:]
-            temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-            with temporary.open("w", encoding="utf-8") as handle:
-                handle.write("\n".join(lines) + "\n")
+            # A random, exclusively created name: a predictable one let a
+            # planted symlink redirect this write and its chmod at any file.
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+            )
+            replaced = False
             try:
-                temporary.chmod(0o600)
-            except OSError:
-                pass
-            os.replace(temporary, path)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    try:
+                        os.fchmod(handle.fileno(), 0o600)
+                    except (AttributeError, OSError):
+                        pass  # mkstemp already created it 0600; best-effort as before
+                    handle.write("\n".join(lines) + "\n")
+                os.replace(temporary, path)
+                replaced = True
+            finally:
+                if not replaced:
+                    try:
+                        os.unlink(temporary)
+                    except OSError:
+                        pass
     except OSError:
         return False
     return True

@@ -18,6 +18,110 @@ All notable changes will be documented here.
   before returning it and refuses, with the file untouched, when it would
   not hold exactly the earlier `plugins.enabled` names plus `omh`.
 
+- **The installers no longer run Python modules from the current directory
+  or `PYTHONPATH`.** `install.sh` and `install.ps1` start venv creation, pip,
+  the command-discovery probes, and the OMH CLI with `-I`, or with `-P -E` in
+  direct-Python mode so `pip --user` still sees the user site; the printed
+  fallback commands carry the same flags. A `venv.py`, `pip.py`, or `omh.py`
+  in the directory the installer runs from is no longer imported.
+
+- **`omh uninstall --remove-files` / `--all` refuses to delete an OMH home it
+  cannot prove OMH created.** OMH_HOME is removed only when it holds a
+  readable, unlinked `oh-my-hermes` schema-1 manifest; otherwise it is kept
+  and listed in `kept_paths` with the reason, and `--dry-run` reports the same.
+  HOME, HERMES_HOME, their ancestors, and the filesystem root are never
+  removed, and a home configured through a symlink or junction (by
+  `--omh-home`, the persisted `omh_home` binding, or `OMH_HOME`) is kept even
+  with `--force`. Linked plugin directories are not followed, team manifests
+  authorize single files rather than directories, the command venv is removed
+  only when it carries a venv marker and an OMH entry, and the menu-bar app
+  directory only with a matching OMH LaunchAgent.
+
+- **`omh_delegate_route` refuses providers you have not configured.** `set`
+  returns an error and writes nothing when the explicit provider, or the one a
+  `routing/model-providers.json` route resolves to, is not linked through
+  auth.json, config.yaml, `.env`, or `routing/providers.json`, is not a
+  configured custom provider, and is not the session provider. `fallback`
+  skips such candidates, lists them in `skipped_unconfigured`, and falls back
+  to inherit when none remain.
+
+- **Temp and lock files no longer use predictable names that a planted
+  symlink can redirect.** The jev ask ledger writes through `mkstemp`; the
+  awareness delivery lock opens with `O_NOFOLLOW` and refuses anything that
+  is not a regular file; the self-update pointer and launcher swaps use random
+  names created exclusively; and browser skill promotion temp names gain a
+  random token.
+- **A dag-ulw run that ended leaves the area under the composer on its own.**
+  Once a run was over its tree folded into one line, `DAG · <name> · done
+  9/9`, which stayed under the info line for as long as the HUD kept the
+  settled graph (15 minutes). The whole finished tree also came back while
+  the next turn ran. The run's end print in the transcript already holds the
+  final graph, and `/dag` draws the whole of it, so the view under the
+  composer now empties when the turn that ended the run ends. It goes in the
+  frame that prints the end, from the end print's own read, even when the
+  panel's slower read still shows a lane running. A run that later turns
+  move on (lanes still running, a repair or an extend round) keeps its tree
+  between turns and into the next one, as before. On the bottom rows the
+  rows the tree gave up stay blank under the info line until output fills
+  them, so the composer does not move up and no blank band opens between
+  the run's last lines and the composer. The run's finished children leave
+  the agent list with it, so they are not listed in its place once the
+  graph leaves the HUD. Subagent rows outside a dag run are unchanged: a
+  finished turn still shows each agent's verdict until the next prompt.
+
+- **The TUI's working row counts tokens while the turn streams.** The
+  `↓N tokens` on the working row moved only when Hermes sent a usage report,
+  which it does after an API call ends, so a one-call reply showed nothing
+  until it was over. It also read the wrong number. A fresh session's first
+  turn took its first report as the starting point and showed no tokens at
+  all, and the done line said `✻ 4s` with no `↓`. Hermes' gateway now starts
+  its counters over at every turn, so every later turn subtracted the last
+  turn's total: nothing showed until the new count passed it, and then a
+  small wrong number (`↓48 tokens` after 2m 37s). The row now counts up from
+  the reply, the reasoning (when `display.show_reasoning` sends it) and each
+  tool call's arguments as they arrive, at about four characters a token and
+  one per CJK character, and moves to Hermes' count at each report without
+  ever going back during the turn. A counter that starts over is detected
+  and counted from zero, and the done line carries Hermes' count.
+
+- **Leaving the OMH TUI says which session it was, only the `omh` way, and
+  Ctrl+C leaves during a turn.** Closing a session `omh` opened now prints
+  an OMH card in place of Hermes' exit summary: the title, the session id,
+  turns, messages, how long `omh` ran, tokens split and summed over a
+  `/branch` chain as Hermes does it, the model, and `omh --resume <id>`
+  plus `omh -c "<title>"` when Hermes' title lookup would open that same
+  session (it prefers a newer `<title> #N`) and the title does not start
+  with `-`. After a `/new` with nothing said, the card names the newest
+  earlier session of the launch that has messages. Hermes' summary, which
+  named `hermes --tui --resume`, no longer prints: the OMH TUI exits with
+  a code of OMH's own, which Hermes' launcher prints no summary for, and
+  `omh` returns 0 to the shell as before. A resumed session gets the card
+  too: the old line came from the state database's end stamps, and Hermes
+  leaves a resumed session's old `ended_at` in place until a prompt
+  reopens it, so reopening a session and leaving printed no `omh` line.
+  The OMH TUI now records the open session and its Hermes home in a
+  private file `omh` names for the launch, and the end stamps are only the
+  fallback for Hermes' own terminal. A session nothing was said in gets
+  one line saying there is nothing to resume. The Ctrl+C that interrupts a
+  turn also arms the exit, so a second press within 2 s leaves while the
+  turn is still `interrupting…` (it used to be swallowed, with no hint),
+  and the info line says `ctrl+c again to exit` then too. The info line
+  also leads its right side with the session's title, cut to 24 cells, and
+  drops it first on a narrow terminal.
+
+- **Esc, Ctrl+C and an approval deny stop the turn again on a Hermes whose
+  TUI attaches to the shared gateway.** On Hermes bf0203a794 the OMH TUI sent
+  `session.interrupt` the way the stdio entry takes it, with only the session
+  id. The canonical gateway stops a turn only for the execution generation it
+  runs, so it refused every stop with `stale_generation`. The TUI said
+  "Hermes did not interrupt the turn: stale_generation", and the turn ran on
+  in the shared gateway, after the TUI exited too. The attach child now sends
+  the stop with the generation it tracks from the session's snapshot, events
+  and prompt receipts, as Hermes' Ink TUI does. Refused as stale, or with no
+  generation known, it reads the session once and sends the stop once more at
+  the generation read, only while that read says a turn runs. The stdio wire is
+  unchanged.
+
 - **The OMH TUI shows this machine's Hermes bots on a read-only board.**
   Ctrl+S, or `/bots`, opens it full screen. The first page lists the Hermes
   home the TUI runs under and each named profile beside it, each with its
@@ -34,6 +138,29 @@ All notable changes will be documented here.
   read-only, and immutable when nothing has it open, so not even SQLite's
   `-wal` and `-shm` appear beside it; the only signal is a signal-0
   liveness probe, and nothing is sent to the gateway.
+
+- **The OMH TUI switches models the way Hermes' own TUI does.** Attached to
+  a shared Hermes gateway, every `/model` the TUI sent (a picker pick, a
+  typed `/model <name>`, `/model --refresh`) was refused as
+  `Unsupported_command.`, because that gateway runs no `/model` through
+  `slash.exec`. A pick and a typed `/model <name> [--provider <slug>]` now go
+  as the `config.set model` Hermes' own TUI sends, which the gateway child
+  turns into the owner's `session.mutate model`. A pick is for this session
+  only; a typed one keeps Hermes' own `model.persist_switch_by_default` rule
+  on the stdio entry, as before; `/model
+  --refresh` opens the picker over a list Hermes asks the providers for again.
+  When Hermes' configured default model changes while a session runs (the
+  person, a bot or the agent edited the config), the session switches to it
+  at the next turn boundary, before the next prompt goes, and says so in one
+  line, and the info line shows the new model; a
+  model picked with `/model` stays until the default itself changes. Hermes'
+  refusal codes (`unsupported_command`, `model_resolution_failed`,
+  `session_busy` and the rest) now read as sentences that say what to do
+  instead. A model Hermes asks to confirm (cost, data policy, a large
+  context) is asked about in the prompt slot, as Hermes' own TUI asks it:
+  keeping the session's model is the first choice and the one selected, and
+  only "switch anyway" sends the switch again with Hermes' confirmation.
+
 
 - **Byte-identical managed plugin files no longer block setup or update
   (#2300).** A managed plugin file whose current bytes match the incoming
@@ -88,6 +215,18 @@ All notable changes will be documented here.
   exits 1. Piped answers into `--interactive` therefore stop working; pass
   the choices as flags instead. A closed stdin no longer crashes bare `omh`,
   `omh theme`, `omh model-chains` or `omh model-chains interview` either.
+
+- **The OMH TUI no longer opens a blank band above the running calls.** On
+  the bottom rows, a frame that got shorter (an approval or other question
+  answered mid-turn, a picker or menu closing, live thinking folding while
+  details are shown) turned the freed rows into blank rows at the top of the
+  live region. The running calls, the working row and its tip jumped down,
+  leaving up to a third of the screen blank between the last settled call and
+  the running ones until more output filled it. The freed rows now go under
+  the live block and above the working row. The running calls stay right under
+  the transcript they continue, the working row and its tip stay on the
+  composer, and the composer still holds its row. Output arriving later fills
+  the blank rows downward, as printed output would.
 
 - **`omh setup` records the release that is installed.** After the
   documented stable curl install, a plain `omh setup` recorded

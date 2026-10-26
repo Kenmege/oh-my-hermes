@@ -313,7 +313,8 @@ function Invoke-OmhCli {
     <#  install.sh run_omh: always the interpreter, never the exposed shim.  #>
     param([string[]]$Arguments)
     $ErrorActionPreference = 'Continue'
-    & $OmhRuntimePython -m omh.cli @Arguments
+    # Python mode installs into the user site; -I would hide that installation.
+    & $OmhRuntimePython -P -E -m omh.cli @Arguments
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         # Propagate omh's own status, the way install.sh's `set -e` does.
@@ -508,7 +509,7 @@ function Find-OmhCommand {
     try {
         [System.IO.File]::WriteAllText($probeFile, $OmhProbeSource)
         $scriptsDir = if ($OmhVenvDir) { Join-Path $OmhVenvDir 'Scripts' } else { '' }
-        $result = Invoke-OmhCapture -FilePath $OmhRuntimePython -Arguments @($probeFile, $OmhBinDir, $scriptsDir)
+        $result = Invoke-OmhCapture -FilePath $OmhRuntimePython -Arguments @('-I', $probeFile, $OmhBinDir, $scriptsDir)
         if ($result.ExitCode -eq 0) { return $result.Output.Trim() }
         return ''
     } finally {
@@ -634,7 +635,7 @@ function Get-OmhPipArguments {
     # The default does not apply when $null is passed explicitly, and
     # <array> + $null appends a null element that reaches pip as ''.
     if ($null -eq $Extra) { $Extra = @() }
-    return ,(@('-m', 'pip', 'install', '--disable-pip-version-check', '-q', '--no-cache-dir', '--force-reinstall') +
+    return ,(@('install', '--disable-pip-version-check', '-q', '--no-cache-dir', '--force-reinstall') +
         $Extra + @('--upgrade', $OmhPackageUrl))
 }
 
@@ -646,12 +647,12 @@ function Install-OmhIntoVenv {
         )
     }
     $createLabel = (Get-OmhMessage 'step_create_venv') + ' ' + $OmhVenvDir
-    Invoke-OmhStep -Prefix (Get-OmhStepLabel 1) -Label $createLabel -FilePath $OmhRuntimePython -Arguments @('-m', 'venv', $OmhVenvDir)
+    Invoke-OmhStep -Prefix (Get-OmhStepLabel 1) -Label $createLabel -FilePath $OmhRuntimePython -Arguments @('-I', '-m', 'venv', $OmhVenvDir)
 
     $script:OmhRuntimePython = Join-Path $OmhVenvDir 'Scripts\python.exe'
     $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
     Invoke-OmhStep -Prefix (Get-OmhStepLabel 2) -Label (Get-OmhMessage 'step_install_package') `
-        -FilePath $OmhRuntimePython -Arguments (Get-OmhPipArguments -Extra (Split-OmhArgString $OmhPipArgs))
+        -FilePath $OmhRuntimePython -Arguments (@('-I', '-m', 'pip') + (Get-OmhPipArguments -Extra (Split-OmhArgString $OmhPipArgs)))
 
     $script:OmhCommandHint = Join-Path $OmhVenvDir 'Scripts\omh.exe'
     New-OmhCommandShim
@@ -662,8 +663,9 @@ function Install-OmhIntoPython {
     $extra = Split-OmhArgString $OmhPipArgs
     if (-not $OmhPipArgsWasSet) { $extra = @('--user') }
     $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
+    # -I disables the user site and breaks pip --user; exclude cwd/PYTHONPATH only.
     Invoke-OmhStep -Prefix (Get-OmhStepLabel 1) -Label (Get-OmhMessage 'step_install_python') `
-        -FilePath $OmhRuntimePython -Arguments (Get-OmhPipArguments -Extra $extra)
+        -FilePath $OmhRuntimePython -Arguments (@('-P', '-E', '-m', 'pip') + (Get-OmhPipArguments -Extra $extra))
 }
 
 function Get-OmhNormalizedTag {
@@ -870,7 +872,7 @@ try {
         }
     } else {
         Write-OmhLine 'omh installer: installed the package, but could not locate the omh command.'
-        Write-OmhLine "Use '$OmhRuntimePython -m omh.cli setup' as a fallback and check the selected Python scripts directory."
+        Write-OmhLine "Use '$OmhRuntimePython -P -E -m omh.cli setup' as a fallback and check the selected Python scripts directory."
     }
 
     if ($OmhRunSetup -eq '1') {
@@ -916,7 +918,7 @@ try {
     } elseif ($OmhCommandPath) {
         Write-OmhLine (Get-OmhMessage 'next_command_path' $OmhCommandPath)
     } else {
-        Write-OmhLine "Next: run '$OmhRuntimePython -m omh.cli setup' to connect OMH to Hermes, then '$OmhRuntimePython -m omh.cli doctor' to verify."
+        Write-OmhLine "Next: run '$OmhRuntimePython -P -E -m omh.cli setup' to connect OMH to Hermes, then '$OmhRuntimePython -P -E -m omh.cli doctor' to verify."
     }
 } catch {
     Write-OmhLine $_.Exception.Message

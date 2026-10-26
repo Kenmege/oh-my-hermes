@@ -282,7 +282,7 @@ class WorkingRowTests(unittest.TestCase):
         app, clock = self.busy()
         app.transcript.activity = "(⌐■_■) synthesizing..."
         app.effort = "xhigh"
-        app.usage_output, app.turn_output_base = 4200, 0
+        app.turn_shown = 4200
         clock.now += 84
         working = working_rows(app)[0]
         self.assertEqual(working[2:], "Synthesizing… (1m 24s · ↓4.2k tokens · thinking with xhigh effort · esc to interrupt)")
@@ -317,7 +317,7 @@ class WorkingRowTests(unittest.TestCase):
         # Review B at 40 columns: `✶ Working… (4s · ↓170 tokens · esc to i…`.
         app, clock = self.busy()
         app.effort = "high"
-        app.usage_output, app.turn_output_base = 170, 0
+        app.turn_shown = 170
         clock.now += 4
         for width, said in ((100, "Working… (4s · ↓170 tokens · thinking with high effort · esc to interrupt)"),
                             (60, "Working… (4s · ↓170 tokens · esc to interrupt)"), (40, "Working… (4s · esc to interrupt)"),
@@ -603,7 +603,7 @@ class DocumentedLookTests(unittest.TestCase):
         app, _client = make_app(busy=True, clock=clock)
         app.busy_since = clock.now
         app.transcript.activity, app.effort = "(⌐■_■) synthesizing...", "high"
-        app.usage_output, app.turn_output_base = 4200, 0
+        app.turn_shown = 4200
         clock.now += 84
         working, tip = working_rows(app)
         self.assertTrue(f"`✶ {working[2:]}`" in prose, working)
@@ -611,7 +611,7 @@ class DocumentedLookTests(unittest.TestCase):
         self.assertTrue("(`· ✢ ✳ ✶ ✻ ✽`)" in prose)
         self.assertEqual(set(WORKING_GLYPHS), set("·✢✳✶✻✽"))
         self.assertTrue(f"On a terminal {TIP_MIN_ROWS} rows tall or more a tip sits under it" in prose)
-        app.interrupting, app.usage_output = True, None  # the example has written nothing yet
+        app.interrupting, app.turn_shown = True, 0  # the example has written nothing yet
         (row,) = [line for line in lines_text(app._tail(100)) if INTERRUPTING in line]
         self.assertTrue(f"`{row.replace('1m 24s', '12s')}`" in prose, row)
 

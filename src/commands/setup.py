@@ -1318,6 +1318,33 @@ def _configured_path_contains_symlink(value: object) -> bool:
         current = current.parent
 
 
+def _configured_omh_home_link_refusal(args: argparse.Namespace, paths: OmhPaths) -> str | None:
+    """Resolution erases a configured home's symlink; uninstall still sees its spelling.
+
+    Checks the spelling `resolve_paths` used for the standalone lane: the
+    explicit `--omh-home`, else the home's persisted `omh_home` binding, else
+    the process `OMH_HOME`.
+    """
+    explicit = getattr(args, "omh_home", None)
+    if explicit not in (None, ""):
+        source, value = "--omh-home", str(explicit)
+    else:
+        try:
+            binding = plugin_omh_home_setting(read_config(paths.hermes_config_path))
+        except (OSError, UnicodeError):
+            return "OMH home ownership is unproven: the persisted omh_home binding is unreadable"
+        if binding:
+            raw_hermes = Path(str(getattr(args, "hermes_home", None) or os.environ.get("HERMES_HOME") or "~/.hermes")).expanduser()
+            binding = re.sub(r"\$\{(?:env:)?HERMES_HOME\}|\$HERMES_HOME\b|%HERMES_HOME%", lambda _: str(raw_hermes), binding)
+            bound = Path(os.path.expandvars(binding)).expanduser()
+            source, value = "the persisted omh_home binding", str(bound if bound.is_absolute() else raw_hermes / bound)
+        else:
+            source, value = "OMH_HOME", os.environ.get("OMH_HOME") or ""
+    if _configured_path_contains_symlink(value):
+        return f"refusing to remove an OMH home whose path configured by {source} passes through a symlink or directory junction"
+    return None
+
+
 def _command_package_self_update_plan(args: argparse.Namespace) -> dict[str, object]:
     if bool(getattr(args, "command_package_updated", False)):
         return {"should_update": False, "reason": "command package update already observed"}
@@ -2631,6 +2658,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         force=bool(args.force),
         remove_command_package=bool(remove_all and not args.keep_command),
         store_plan=plan,
+        home_refusal=_configured_omh_home_link_refusal(args, paths),
     )
     legacy_files = (
         _remove_legacy_display_files(

@@ -27,6 +27,8 @@ class LifecycleOrderingTests(unittest.TestCase):
         self.python = self.command / "bin" / "python"
         self.python.parent.mkdir(parents=True)
         self.python.write_bytes(b"owned\n")
+        (self.command / "pyvenv.cfg").write_text("home = synthetic-python\n", encoding="utf-8")
+        (self.python.parent / "omh").write_text("# synthetic OMH entry\n", encoding="utf-8")
         self.environment = patch.dict(os.environ, {"OMH_VENV_DIR": str(self.command),
                                                    "OMH_BIN_DIR": str(self.root / "bin"),
                                                    "HOME": str(self.root / "home"),
