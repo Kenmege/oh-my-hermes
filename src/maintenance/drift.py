@@ -882,7 +882,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The Russian trigger pack adds three chat turns its generic words
             # dispatched or named before they were held back to whole phrases:
             # a weekend chores plan, a family trip plan and a bank site down (3).
-            expected=1118,
+            # The ru pack review (#2301): twenty everyday Russian turns that say
+            # a pack word in its everyday sense or inside a longer word -- a
+            # fence to fix, a lift that does not work, a film review, an app
+            # preview, a past-tense remembered, a car rolled out of a garage,
+            # a family budget, an estate agent (+20).
+            expected=1138,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1392,7 +1397,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # error), an implementation plan, a bare make-a-plan clarify, a
             # site accessibility check, deep research, a task graph, what is
             # running, prod down and save to memory (11).
-            expected=1142,
+            # The ru pack review (#2301): five of those now ask instead of
+            # dispatching, because their words are everyday ones (the build,
+            # site accessibility, task graph, what agents do, save to memory;
+            # same count), plus a screen-reader check, remember-this, a bug, a
+            # landing page, a tech-debt audit, a commit message, the logs and
+            # IT-jargon research, which dispatch on a software word (+8).
+            expected=1150,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

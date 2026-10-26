@@ -244,21 +244,28 @@ All notable changes will be documented here.
   suggests `OMH_VERSION=1.0.6`, and `install.ps1` now prints the interpreter it
   picked and probes it with `-I`, as `install.sh` does.
 
-- **Russian ships as a trigger language pack, and a later turn in a pack's
-  language re-arms the route hint (#2284).** `src/routing/trigger_packs/ru.json`,
-  contributed in #2284, carries 457 phrases across 49 skills, such as
-  `сделай ревью кода`, `сборка упала` and `составь план реализации`, with
-  generic words held back in `whole_phrase_only_tokens` (`план` among them, so
-  a weekend chores list or a family trip plan no longer dispatches `plan`).
-  `ultrawork` carries no Russian phrase: its body would exceed the 27,300-byte
-  shipped-body ceiling, as with `vi`. On later turns the
-  awareness gate read only shipped cues and ASCII tokens, so a message written
-  wholly in Cyrillic (or any user pack's non-Latin script) never recomputed
-  its route hint, while the same message on a first turn was hinted. The gate
-  now also asks the router's trigger-pack phrase match, the question the hint
-  bridge starts from. The phrases have not been reviewed by a native speaker.
-  `ru` is an input language only: it is not a `--language` / `OMH_LANG`
-  output choice.
+- **Russian ships as a trigger language pack, and a later turn in a
+  user-installed pack's language re-arms the route hint (#2284).**
+  `src/routing/trigger_packs/ru.json`, contributed in #2284, carries 285
+  phrases across 49 skills, such as `сделай ревью кода`, `найди баг`,
+  `сделай лендинг` and `составь план реализации`. A Russian word scores on its
+  own only when it is a software word (`баг`, `лендинг`, `рефакторинг`,
+  `деплоя`); every other word scores only inside its phrase, so a phrase made
+  of everyday words (`составь план`, `сборка упала`) asks one question instead
+  of dispatching, and phrases an everyday sentence contains (`починить`,
+  `по расписанию`, `в чём проблема`, `убедись`) are not in the pack.
+  Cyrillic and Greek now get the word edges Latin has, so a phrase no longer
+  matches inside a longer word: `ревью` inside `превью`, `выкати` inside
+  `выкатил`. `ultrawork` carries no Russian phrase: its body would exceed the
+  27,300-byte shipped-body ceiling, as with `vi`. On later turns the awareness
+  gate read only shipped cues and ASCII tokens, so a message written wholly
+  in a user pack's non-Latin script never recomputed its route hint, while
+  the same message on a first turn was hinted. The gate now arms when that
+  user pack earns the message a hint, and not on a pack phrase alone.
+  Shipped packs, `ru` included, stay outside this gate on purpose: a later
+  turn in Russian does not re-arm the hint through it. The phrases have not
+  been reviewed by a native speaker. `ru` is an input language only: it is
+  not a `--language` / `OMH_LANG` output choice.
 
 ## 4.0.2 - 2026-10-24
 

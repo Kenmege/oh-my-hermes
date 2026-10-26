@@ -64,8 +64,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # 522331 -> 522376 and the digest re-derived: the ru trigger pack
             # moves 48 sibling rows' trigger previews, five of them in length (+45, itemized at
             # FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the career row is unchanged.
-            (skill_capabilities, 522376, FULL_ROW_DELTA_CAP,
-             'a8cdacc33d3b6300ad903d40d9ecf26ce81568202dbf555cd79b0b66a5df412a',
+            # 522376 -> 522375 and the digest re-derived: the pack review drops its
+            # everyday phrases, which moves the `+N more` count of 40 sibling rows;
+            # only jit-learn's loses a digit (-1).
+            (skill_capabilities, 522375, FULL_ROW_DELTA_CAP,
+             '5f36f164fa28749f86b48d4369abd1573fdac0c325673b2b74a0036f07c2d143',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -96,9 +99,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         legacy = [line.replace(', `ai-job-search`', '') for line in lines if line not in added]
         # Re-derived for the ru trigger pack: `running-work-board` gains
         # `что сейчас делается` and `dag-ulw` three Cyrillic triggers (+123 bytes).
-        self.assertEqual(_digest(legacy), 'b17809e96f77c59e353c66700f562e2773fdc2a253367c231f11bee17861ef9c')
+        # The pack review replaces `что сейчас делается` with `что делают
+        # агенты` (-4 bytes).
+        self.assertEqual(_digest(legacy), '71240381ad2738a6e954085a6c1a6c0fd32c1503a90fd4fb575c370a803abd98')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 32997)
+        self.assertEqual(baseline, 32993)
         self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
@@ -130,7 +135,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
         # Re-derived for the ru trigger pack: the 49 bodies it covers gain
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
-        self.assertEqual(_digest(legacy_hashes), '2f7f7767cc72d8106e8bda84bbada6d0eb3a4f3d60e4c33d0b49d8ff9ed1cf4e')
+        # Re-derived for the pack review, which drops its everyday phrases from
+        # those lines.
+        self.assertEqual(_digest(legacy_hashes), '6ed0b6fc9c2d1325364622de24c85c922cc7481be0c42135b6a03eae47315528')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

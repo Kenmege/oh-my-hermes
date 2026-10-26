@@ -79,9 +79,10 @@ class SkillContextCostTests(unittest.TestCase):
         # feature changes opening actions only, never indexed descriptions.
         self.assertEqual(skill_index_chars(), 13_243)  # Career adds its bounded 86-character entry.
         # research and web-research add the shipped `ru` trigger pack's routing
-        # signals (+702 and +493 bytes) to their pre-feature bodies; the search
-        # guidance increment itself (286 and 305) is unchanged.
-        baseline = {'research': 20_289, 'web-research': 11_988, 'source-finder': 9_221}
+        # signals (+446 and +351 bytes, after its review dropped the everyday
+        # phrases) to their pre-feature bodies; the search guidance increment
+        # itself (286 and 305) is unchanged.
+        baseline = {'research': 20_033, 'web-research': 11_846, 'source-finder': 9_221}
         for name, before in baseline.items():
             record = skill_record(name)
             body = record.body().content

@@ -74,7 +74,7 @@ Bad example:
 
 Use when the request is a job of several parts that can run in parallel or in an order (a feature across modules, a migration, a broad cleanup, research then build then verify), or when the person says dag ulw.
 
-    Strong routing signals: `dag-ulw`, `$dag-ulw`, `dag ulw`, `ulw dag`, `dag ultrawork`, `ultrawork dag`, `даг ультраворк`, `граф задач`, `задачи графом`, `много частей параллельно`, `большая работа по кускам`
+    Strong routing signals: `dag-ulw`, `$dag-ulw`, `dag ulw`, `ulw dag`, `dag ultrawork`, `ultrawork dag`, `даг ультраворк`, `граф задач`, `задачи графом`
 
 ## Catalog Metadata
 

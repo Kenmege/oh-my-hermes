@@ -840,7 +840,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # trades its eighth trigger for `+7 more triggers` (+4), and three rows'
 # `+N more` counts widen a digit (+3). No other row field moved.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525448
+# 525448 -> 525447: the ru pack review (#2301) drops the Russian phrases that
+# everyday sentences contain; only `jit-learn`'s count changes length
+# (`+11 more triggers` -> `+8 more triggers`, -1). Every other row keeps its
+# preview and its count's width. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525447
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

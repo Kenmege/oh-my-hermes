@@ -233,7 +233,9 @@ class EfficiencyContractTests(unittest.TestCase):
         # routing-signal lines of three core bodies (`plan` +144,
         # `executor-runtime-readiness` +155, `agent-ops-review` +145). Main
         # measures 82,816 and this tree 83,260; the ceiling restores the
-        # ~1.6k headroom this gate carried.
+        # ~1.6k headroom this gate carried. The pack's review (#2301) drops
+        # its everyday phrases and the tree measures 83,092, still over the old
+        # ceiling, so this one stands.
         self.assertLess(core["skill_body"]["bytes"], 85_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
