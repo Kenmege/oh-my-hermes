@@ -12,9 +12,11 @@ All notable changes will be documented here.
   `herdr pane report-agent` (source `omh:tui`, agent `omh`): a question or
   approval waiting on you is `blocked`, a running turn `working`, otherwise
   `idle`. It reports only on a change, off the render loop, sends only the
-  newest state when herdr is slow, and releases the pane on exit. herdr's pane
-  environment is kept from the Hermes gateway the TUI starts, so herdr's own
-  Hermes plugin cannot claim the pane and lock those reports out. Outside
+  newest state when herdr is slow, and releases the pane on exit. The Hermes
+  gateway the TUI starts does not get the pane's `HERDR_PANE_ID`, so herdr's
+  own Hermes plugin cannot claim the pane and lock those reports out; herdr's
+  CLI and skill still work from Hermes' tools, without a current-pane
+  default. Outside
   herdr nothing changes and nothing is spawned; a missing or unresponsive
   herdr is ignored.
 

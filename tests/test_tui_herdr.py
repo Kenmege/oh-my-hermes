@@ -12,6 +12,7 @@ flight. Each `--seq` is above the last, and every failure is dropped.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 import time
@@ -25,6 +26,9 @@ from omh.tui.herdr import HerdrReporter, finish, herdr_binary, herdr_pane, spawn
 
 PANE = "w1:p1"
 IN_HERDR = {"HERDR_ENV": "1", "HERDR_PANE_ID": PANE}
+# Absolute on every platform: `ntpath.isabs("/opt/...")` is False from Python 3.13 (no drive).
+ABSOLUTE_HERDR = os.path.abspath(os.path.join(os.sep, "opt", "herdr", "bin", "herdr"))
+SETTLE_SECONDS = 5.0  # the most a test waits for the worker; never the time it asserts
 
 
 class FakeProcess:
@@ -56,6 +60,7 @@ class Herdr:
         self.environ: list[dict[str, str]] = []
         self.processes: list[FakeProcess] = []
         self.started = threading.Event()  # the first call is in flight
+        self.release_started = threading.Event()  # the release-agent call was started
 
     def __call__(self, argv, environ) -> FakeProcess:
         first = not self.argv
@@ -64,6 +69,8 @@ class Herdr:
         process = FakeProcess(self.first_delay if first and self.first_delay is not None else self.delay)
         self.processes.append(process)
         self.started.set()
+        if argv[2] == "release-agent":
+            self.release_started.set()
         return process
 
     def commands(self) -> list[tuple[str, str]]:
@@ -119,15 +126,15 @@ class GatingTests(unittest.TestCase):
         self.assertEqual(fake.argv, [])
 
     def test_herdr_bin_path_names_the_binary_only_when_absolute(self) -> None:
-        self.assertEqual(herdr_binary({"HERDR_BIN_PATH": "/opt/herdr/bin/herdr"}), "/opt/herdr/bin/herdr")
+        self.assertEqual(herdr_binary({"HERDR_BIN_PATH": ABSOLUTE_HERDR}), ABSOLUTE_HERDR)
         for value in ("", "herdr-dev", "./bin/herdr", "bin/herdr"):
             self.assertEqual(herdr_binary({"HERDR_BIN_PATH": value}), "herdr", value)
         self.assertEqual(herdr_binary({}), "herdr")
         fake = Herdr()
-        reporter = HerdrReporter({**IN_HERDR, "HERDR_BIN_PATH": "/opt/herdr/bin/herdr"}, spawn=fake)
+        reporter = HerdrReporter({**IN_HERDR, "HERDR_BIN_PATH": ABSOLUTE_HERDR}, spawn=fake)
         reporter.report("idle")
         reporter.release()
-        self.assertEqual({argv[0] for argv in fake.argv}, {"/opt/herdr/bin/herdr"})
+        self.assertEqual({argv[0] for argv in fake.argv}, {ABSOLUTE_HERDR})
 
 
 class ReportTests(unittest.TestCase):
@@ -174,7 +181,9 @@ class ReportTests(unittest.TestCase):
             reporter.report(state)  # returns at once: none of these waits on herdr
         began = time.monotonic()
         reporter.release()
-        self.assertLess(time.monotonic() - began, 0.5)
+        elapsed = time.monotonic() - began
+        self.assertTrue(fake.release_started.wait(SETTLE_SECONDS))
+        self.assertLess(elapsed, 2.0)  # five queued calls of 0.9 s would be 4.5 s; the old queue never sent the release
         self.assertEqual(fake.commands(), [("report-agent", "idle"), ("release-agent", "")])
         self.assertTrue(fake.processes[0].killed.is_set())  # the stale report in flight was stopped
         self.assertFalse(fake.processes[1].killed.is_set())  # the release ran to its end
@@ -210,13 +219,61 @@ class ReportTests(unittest.TestCase):
         reporter = HerdrReporter(IN_HERDR, spawn=fake)
         reporter.report("working")
         self.assertTrue(fake.started.wait(5))
-        with patch.object(herdr, "RELEASE_WAIT_SECONDS", 0.1):
+        with patch.object(herdr, "RELEASE_WAIT_SECONDS", 0.5):
             began = time.monotonic()
             reporter.release()
             elapsed = time.monotonic() - began
-        self.assertLess(elapsed, 0.5)
+        self.assertLess(elapsed, 2.0)  # the release herdr holds is 30 s
+        self.assertTrue(fake.release_started.wait(SETTLE_SECONDS))
         self.assertEqual(fake.commands(), [("report-agent", "working"), ("release-agent", "")])
-        self.assertTrue(all(process.killed.is_set() for process in fake.processes))  # no herdr call outlives the TUI
+        for process in fake.processes:  # no herdr call outlives the TUI: the worker stops each
+            self.assertTrue(process.killed.wait(SETTLE_SECONDS))
+
+    def test_a_release_that_starts_after_the_exit_gave_up_is_stopped(self) -> None:
+        # The exit's wait ran out while the worker was still starting the release: it must not outlive the TUI.
+        gate = threading.Event()
+        processes: list[FakeProcess] = []
+
+        def spawn(argv, environ):
+            if argv[2] == "release-agent":
+                gate.wait(SETTLE_SECONDS)  # a fork that takes its time
+            processes.append(FakeProcess(30 if argv[2] == "release-agent" else 0))
+            return processes[-1]
+
+        reporter = HerdrReporter(IN_HERDR, spawn=spawn)
+        reporter.report("idle")
+        settle(reporter)
+        with patch.object(herdr, "RELEASE_WAIT_SECONDS", 0.1), patch.object(herdr, "STOP_WAIT_SECONDS", 0.05):
+            reporter.release()
+        gate.set()
+        deadline = time.monotonic() + SETTLE_SECONDS
+        while len(processes) < 2 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertEqual(len(processes), 2)
+        self.assertTrue(processes[1].killed.wait(SETTLE_SECONDS))
+
+    def test_a_report_never_waits_on_a_call_being_started(self) -> None:
+        gate = threading.Event()
+        fake = Herdr()
+
+        def spawn(argv, environ):
+            gate.wait(SETTLE_SECONDS)  # a fork that takes its time
+            return fake(argv, environ)
+
+        reporter = HerdrReporter(IN_HERDR, spawn=spawn)
+        reporter.report("idle")
+        deadline = time.monotonic() + SETTLE_SECONDS
+        while reporter.running is None and time.monotonic() < deadline:
+            time.sleep(0.005)
+        caller = threading.Thread(target=reporter.report, args=("working",))
+        caller.start()
+        caller.join(SETTLE_SECONDS / 2)
+        returned = not caller.is_alive()
+        gate.set()
+        reporter.release()
+        self.assertTrue(returned)
+        commands = fake.commands()  # `working` may or may not start before the release replaces it
+        self.assertEqual((commands[0], commands[-1]), (("report-agent", "idle"), ("release-agent", "")))
 
     def test_a_report_after_the_release_sends_nothing_and_starts_no_worker(self) -> None:
         fake = Herdr()
@@ -253,7 +310,7 @@ class SilentFailureTests(unittest.TestCase):
         with patch.object(herdr, "CALL_SECONDS", 0.05):
             began = time.monotonic()
             finish(process)
-        self.assertLess(time.monotonic() - began, 0.5)
+        self.assertLess(time.monotonic() - began, 2.0)  # the call would hold 30 s
         self.assertTrue(process.killed.is_set())
 
     def test_a_call_that_could_not_start_does_not_stop_the_next(self) -> None:

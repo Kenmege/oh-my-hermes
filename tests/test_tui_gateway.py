@@ -88,14 +88,15 @@ class GatewaySpawnTests(unittest.TestCase):
     def test_import_path_is_just_the_hermes_root_when_nothing_was_handed_over(self) -> None:
         self.assertEqual(gateway_spawn(LAUNCHER_ENV).env["PYTHONPATH"], "/hermes/agent")
 
-    def test_herdrs_pane_environment_stays_with_the_tui(self) -> None:
+    def test_herdrs_pane_id_stays_with_the_tui_and_the_rest_of_herdrs_environment_goes_on(self) -> None:
         # herdr's Hermes plugin, loaded where the gateway runs, would report a `herdr:hermes` session for the pane,
-        # and herdr then refuses the TUI's own state reports (measured on herdr 0.9.5).
-        env = {**LAUNCHER_ENV, "HERDR_ENV": "1", "HERDR_PANE_ID": "w1:p1", "HERDR_SOCKET_PATH": "/run/herdr.sock",
-               "HERDR_BIN_PATH": "/opt/herdr", "TERM": "xterm-256color"}
-        child = gateway_spawn(env).env
-        self.assertEqual([name for name in child if name.startswith("HERDR")], [])
-        self.assertEqual(child["TERM"], "xterm-256color")
+        # and herdr then refuses the TUI's own state reports (measured on herdr 0.9.5). The plugin needs the pane id;
+        # herdr's CLI and skill need the rest (its socket, `HERDR_ENV=1`), as for herdr's own pane-less popups.
+        herdr_env = {"HERDR_ENV": "1", "HERDR_SOCKET_PATH": "/run/herdr.sock", "HERDR_WORKSPACE_ID": "w1",
+                     "HERDR_TAB_ID": "w1:t1", "HERDR_BIN_PATH": "/opt/herdr"}
+        child = gateway_spawn({**LAUNCHER_ENV, **herdr_env, "HERDR_PANE_ID": "w1:p1"}).env
+        self.assertNotIn("HERDR_PANE_ID", child)
+        self.assertEqual({name: child.get(name) for name in herdr_env}, herdr_env)
 
     def test_sidecar_attach_and_frontend_names_are_removed_and_the_rest_kept(self) -> None:
         env = {

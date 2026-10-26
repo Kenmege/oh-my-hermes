@@ -287,13 +287,14 @@ before it stops the release. herdr's CLI reaches herdr over its own local
 socket: no network call. Outside herdr nothing is spawned. No session id is
 sent: herdr keeps one only from its own `herdr:*` sources.
 
-The gateway child does not get herdr's pane environment (every `HERDR_` name
-is removed from it). Where the gateway runs, herdr's Hermes plugin would
-otherwise report a `herdr:hermes` session for the pane, and herdr then refuses
-the TUI's own reports from then on (measured on herdr 0.9.5:
-the pane stayed at `working`, or left the list); a gateway daemon started from
-the child would also keep the pane's id after the pane closed. So a command
-Hermes' tools run there does not see that pane's `HERDR_PANE_ID` either.
+The gateway child does not get the pane's `HERDR_PANE_ID`; herdr's CLI and
+skill still work there, without a current-pane default. herdr drops the same
+one name for its own pane-less popups. Where the gateway runs, herdr's Hermes
+plugin (gated on `HERDR_ENV=1` and that id) would otherwise report a
+`herdr:hermes` session for the pane, and herdr then refuses the TUI's own
+reports from then on (measured on herdr 0.9.5: the pane stayed at `working`,
+or left the list); a gateway daemon started from the child would also keep the
+pane's id after the pane closed.
 
 ## Job control, and what OMH does not do
 

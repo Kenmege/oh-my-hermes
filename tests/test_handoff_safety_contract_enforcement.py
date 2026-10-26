@@ -303,9 +303,9 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
     "src/tui/herdr.py": (
         "the OMH TUI's state report to herdr: `herdr pane report-agent` / `release-agent` with fixed "
         "verbs and flags; only the binary path and pane id come from herdr's pane env. Only inside a "
-        "herdr pane the person launched, gated on the same pane environment (HERDR_ENV, "
-        "HERDR_PANE_ID, HERDR_BIN_PATH) as herdr's own Hermes plugin, on the person's own `herdr` "
-        "binary (an absolute HERDR_BIN_PATH or PATH): a local state report over herdr's own unix "
+        "herdr pane the person launched, gated on the same pane environment (HERDR_ENV=1, "
+        "HERDR_PANE_ID) as herdr's own Hermes plugin; the binary is the person's own, an absolute "
+        "HERDR_BIN_PATH or `herdr` on PATH: a local state report over herdr's own unix "
         "socket, no network call. Reached only from the TUI's title state and exit; never from a "
         "prepared-handoff path."
     ),

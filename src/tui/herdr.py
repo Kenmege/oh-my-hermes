@@ -11,10 +11,13 @@ a state); anywhere else nothing here spawns anything. The binary is an
 absolute `HERDR_BIN_PATH` or `herdr` on PATH, and the report reaches herdr over
 its local socket through its CLI: no network call.
 
-One call runs at a time, on a worker thread, so the loop never waits on herdr.
-Only the newest call waits behind it: a change made while a call runs replaces
-the one still waiting, and the release replaces any report and stops the call
-in flight, as herdr's integration guide asks of a reporter. Every failure (no
+One call runs at a time, on a worker thread, so the loop never waits on herdr
+(not even on starting one). Only the newest call waits behind it: a change
+made while a call runs replaces the one still waiting, as herdr's integration
+guide asks (send only the latest state, drop the older ones). The release also
+replaces any report waiting and stops the report in flight, and an exit that
+gives up waiting on the release stops that too, so no herdr call outlives the
+TUI; every stop is made on the worker, which also reaps. Every failure (no
 herdr, a dead socket, a call past `CALL_SECONDS`) is dropped. Each call
 carries a `--seq` from the wall clock in nanoseconds, as herdr's plugins send,
 never lower than the last: herdr ignores a report whose seq is not above the
@@ -42,6 +45,9 @@ SOURCE = "omh:tui"
 AGENT = "omh"
 CALL_SECONDS = 1.0  # as long as herdr's own plugin waits on one call
 RELEASE_WAIT_SECONDS = 2.0  # the most an exit waits for the release to finish
+STOP_WAIT_SECONDS = 0.2  # past that, how long it waits for the worker to stop the release
+SLICE_SECONDS = 0.05  # how often a call in flight checks whether it should stop
+RELEASE = "release-agent"
 
 
 class Process(Protocol):
@@ -77,13 +83,18 @@ def spawn_herdr(argv: Sequence[str], environ: Mapping[str, str]) -> Process | No
         return None
 
 
-def finish(process: Process) -> None:
-    """Wait for a call for at most `CALL_SECONDS`, then stop it."""
-    try:
-        process.wait(timeout=CALL_SECONDS)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
+def finish(process: Process, stop: Callable[[], bool] = lambda: False) -> None:
+    """Wait for a call for at most `CALL_SECONDS`, or until `stop()` says so, then stop it; reaped either way."""
+    deadline = time.monotonic() + CALL_SECONDS
+    while True:
+        try:
+            process.wait(timeout=max(min(SLICE_SECONDS, deadline - time.monotonic()), 0.0))
+            return
+        except subprocess.TimeoutExpired:
+            if stop() or time.monotonic() >= deadline:
+                process.kill()
+                process.wait()
+                return
 
 
 class HerdrReporter:
@@ -104,10 +115,11 @@ class HerdrReporter:
         self.state: str | None = None  # the last state reported; None: herdr holds nothing from this TUI
         self.released = False  # the exit has run: nothing more is sent
         self.seq = 0
-        self.ready = threading.Condition()  # guards the three below
+        self.ready = threading.Condition()  # guards the four below
         self.pending: list[str] | None = None  # the newest call not started yet
-        self.running: Process | None = None  # the call in flight
-        self.closing = False  # the worker ends once nothing is pending
+        self.running: list[str] | None = None  # the call in flight
+        self.closing = False  # the release is in: a report in flight stops, and the worker ends after the release
+        self.abandoned = False  # the exit stopped waiting: nothing more starts, and the call in flight stops
         self.worker: threading.Thread | None = None
 
     def report(self, state: str) -> None:
@@ -123,19 +135,16 @@ class HerdrReporter:
         if not reported or self.worker is None:
             return
         self.state = None
-        argv = self._argv("release-agent")
+        argv = self._argv(RELEASE)
         with self.ready:
             self.pending, self.closing = argv, True
-            stale = self.running  # a report the release supersedes
             self.ready.notify()
-        if stale is not None:
-            stale.kill()
         self.worker.join(RELEASE_WAIT_SECONDS)
-        if self.worker.is_alive():  # a herdr that holds the release: it does not outlive the TUI
+        if self.worker.is_alive():  # a herdr that holds the release: the worker stops it, so it does not outlive the TUI
             with self.ready:
-                stuck = self.running
-            if stuck is not None:
-                stuck.kill()
+                self.abandoned = True
+                self.ready.notify()
+            self.worker.join(STOP_WAIT_SECONDS)
         self.worker = None
 
     def _argv(self, command: str, *options: str) -> list[str]:
@@ -152,19 +161,24 @@ class HerdrReporter:
             self.worker = threading.Thread(target=self._work, name="omh-tui-herdr", daemon=True)
             self.worker.start()
 
+    def _stop(self, argv: list[str]) -> bool:
+        """Whether the call `argv` in flight should stop: the exit gave up, or it is a report the release replaced."""
+        with self.ready:
+            return self.abandoned or (self.closing and argv[2] != RELEASE)
+
     def _work(self) -> None:
         while True:
             with self.ready:
                 while self.pending is None and not self.closing:
                     self.ready.wait()
                 argv, self.pending = self.pending, None
-                if argv is None:
+                if argv is None or self.abandoned:
                     return
-                self.running = self.spawn(argv, self.environ)
-                process = self.running
+                self.running = argv
             try:
+                process = self.spawn(argv, self.environ)  # outside the lock: `report` never waits on a fork
                 if process is not None:
-                    finish(process)
+                    finish(process, lambda: self._stop(argv))
             finally:
                 with self.ready:
                     self.running = None
