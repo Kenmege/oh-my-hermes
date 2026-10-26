@@ -461,12 +461,22 @@ class ReadOnlyTests(FixtureRoot):
         self.assertEqual(tree_state(self.root), before)
 
 
-BODY = 2 + bot_board.AVATAR_COLS + len(bot_board.AVATAR_GAP)  # the edge, its pad, the face and the gap after it
+HEAD = bot_board.BOARD_HEAD_ROWS  # level 1's totals box and the gap after it
 
 
-def box_row(text: list[str], label: str, start: int = 2) -> int:
-    """The index of the first box row from `start` whose words beside the face begin with `label`."""
-    return next(index for index in range(start, len(text)) if text[index][BODY:].startswith(label))
+def field(rows: list[str], label: str, separator: str = "│") -> str:
+    """The words of the first box cell, in any row, whose words begin with `label`; "" when there is none."""
+    for row in rows:
+        for cell in row.split(separator)[1:-1]:
+            words = squeeze(cell)
+            if words == label or words.startswith(label + " "):
+                return words
+    return ""
+
+
+def field_row(rows: list[str], label: str, separator: str = "│") -> int:
+    """The index of the row holding the cell `field` finds."""
+    return next(index for index, row in enumerate(rows) if field([row], label, separator))
 
 
 def gauge(percent: int, cells: int) -> str:
@@ -481,22 +491,20 @@ class SummaryTests(FixtureRoot):
         return read_profile(name, home, self.root, NOW)
 
     def row(self, profile, name: str, cols: int = 400) -> str:
-        """One of `profile`'s level-1 rows, padding squeezed to single spaces; a body row without its edge and face."""
+        """`profile`'s card on level 1: its top or bottom edge, or the cell labelled `name`, padding squeezed."""
         lines, _span = profile_lines([profile], 0, NOW, cols, DEFAULT_THEME)
-        text = lines_text(lines)
+        text = lines_text(lines)[HEAD:]
         if name == "top":
-            return squeeze(text[2])
+            return squeeze(text[0])
         if name == "bottom":
             return squeeze(next(row for row in text if row.startswith(("╰", "+"))))
-        label = {"day": "24 h"}.get(name, name)
-        found = [row[BODY:-2] for row in text[3:] if row[BODY:].startswith(label)]
-        return squeeze(found[0]) if found else ""
+        return field(text, {"day": "24 h"}.get(name, name))
 
     def detail(self, name: str = "default") -> str:
-        """Level 2's box for the profile under its title, its rows squeezed and joined."""
+        """Level 2's box for the profile, its rows squeezed and joined."""
         lines, _span = session_lines(snapshot(self.environ, BoardView(name)), 0, NOW, 400, DEFAULT_THEME)
         text = lines_text(lines)
-        return "\n".join(squeeze(row) for row in text[1 : text.index("")])
+        return "\n".join(squeeze(row) for row in text[: text.index("")])
 
     def test_the_configured_model_and_the_one_the_newest_session_ran(self) -> None:
         write_usage_store(self.root, [
@@ -553,7 +561,8 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(profile.active, 5)
         self.assertEqual(profile.usage, bot_board.Usage(1_251_000, 244_500, 12_400_000, 4.12, True, 1, 1))
         self.assertTrue(self.row(profile, "day").endswith(" 5 active · 6 stored"))
-        self.assertEqual(self.row(profile, "tokens"), "tokens 1.3M in · 244.5k out · 12.4M cached · ~$4.12 + 1 unpriced")
+        self.assertEqual(self.row(profile, "tokens"), "tokens 1.3M in · 244.5k out · 12.4M cached")
+        self.assertEqual(self.row(profile, "cost"), "cost ~$4.12 + 1 unpriced")
 
     def test_a_cost_hermes_never_priced_is_never_shown_as_zero(self) -> None:
         for statuses, said in (
@@ -564,7 +573,8 @@ class SummaryTests(FixtureRoot):
                 write_usage_store(self.root, [
                     (f"s{n}", "cli", "t", NOW - 60, 2, "m", 10, 10, 0, 0.0, None, status) for n, status in enumerate(statuses)
                 ])
-                self.assertEqual(self.row(self.profile(), "tokens"), f"tokens 20 in · 20 out · 0 cached · {said}")
+                self.assertEqual(self.row(self.profile(), "tokens"), "tokens 20 in · 20 out · 0 cached")
+                self.assertEqual(self.row(self.profile(), "cost"), f"cost {said}")
 
     def test_older_stores_without_the_columns_show_less_and_no_number_they_lack(self) -> None:
         # The fixture's own store has no model, token or cost column at all.
@@ -573,17 +583,19 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(self.row(profile, "now"), "now Release notes slack · 10m ago")
         self.assertEqual(self.row(profile, "model"), "model claude-opus-5-5 claude-proxy")
         self.assertEqual(self.row(profile, "day"), "24 h 2 active · 4 stored", "no sparkline drawn flat")
-        self.assertEqual(self.row(profile, "tokens"), "", "and no tokens")
+        self.assertEqual((self.row(profile, "tokens"), self.row(profile, "cost")), ("", ""), "and no tokens or cost")
         sessions = snapshot(self.environ, BoardView("default"))
         self.assertEqual((sessions.sessions[0].model, sessions.sessions[0].usage), ("", None))
-        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-len(sessions.sessions):]
-        self.assertEqual(squeeze(rows[0]), "❯ Release notes slack 10m ago 12 messages")
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-1 - len(sessions.sessions):-1]
+        self.assertEqual(squeeze(rows[0]), "│ ❯ Release notes │ slack 10m ago 12 │", "no model or token column")
         tail = snapshot(self.environ, BoardView("default", "s-new"))
-        self.assertEqual(lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[2], "")
+        head = lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))
+        self.assertEqual(head.index(""), 3, "the session's box has its facts row only: no model, no tokens")
         write_usage_store(self.root, [("t", "cli", "t", NOW - 60, 2, 5, 7)], "input_tokens INTEGER, output_tokens INTEGER")
         profile = self.profile()
         self.assertEqual(profile.usage, bot_board.Usage(5, 7, None, None, False, 0, 1))
-        self.assertEqual(self.row(profile, "tokens"), "tokens 5 in · 7 out · cost unknown", "no cache read column")
+        self.assertEqual(self.row(profile, "tokens"), "tokens 5 in · 7 out", "no cache read column")
+        self.assertEqual(self.row(profile, "cost"), "cost cost unknown")
 
     def test_levels_two_and_three_show_each_sessions_model_tokens_and_cost(self) -> None:
         write_usage_store(self.root, [
@@ -591,12 +603,12 @@ class SummaryTests(FixtureRoot):
             ("b", "cli", "Probe", NOW - 120, 2, "glm-5.3", 192, 67_200, 0, 0.0, None, "unknown"),
         ])
         sessions = snapshot(self.environ, BoardView("default"))
-        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-2:]
-        self.assertEqual(squeeze(rows[0]), "❯ Release notes claude-opus-5-5 325.2k in 89k out ~$0.43 slack 1m ago 12 messages")
-        self.assertEqual(squeeze(rows[1]), "Probe glm-5.3 192 in 67.2k out cli 2m ago 2 messages", "no unpriced cost")
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-3:-1]
+        self.assertEqual(squeeze(rows[0]), "│ ❯ Release notes │ claude-opus-5-5 325.2k 89k ~$0.43 slack 1m ago 12 │")
+        self.assertEqual(squeeze(rows[1]), "│ Probe │ glm-5.3 192 67.2k cli 2m ago 2 │", "no unpriced cost")
         tail = snapshot(self.environ, BoardView("default", "a"))
-        head = lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[:3]
-        self.assertEqual(head[2], "anthropic/claude-opus-5-5 · 325.2k in · 89k out · 12.5M cache read · ~$0.43")
+        head = lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[:4]
+        self.assertEqual(squeeze(head[2]), "│ anthropic/claude-opus-5-5 · 325.2k in · 89k out · 12.5M cache read · ~$0.43 │")
 
     def test_memory_is_counted_as_hermes_counts_it_against_the_configured_limits(self) -> None:
         memory, user = self.profile().memory
@@ -604,13 +616,15 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(memory, bot_board.MemoryFile("memory", 2, joined, 2200, True))
         self.assertEqual(user, bot_board.MemoryFile("user", 0, 0, 1375, True), "no USER.md yet: empty")
         percent = joined * 100 // 2200
-        self.assertEqual(self.row(self.profile(), "memory"), f"memory {gauge(percent, 1)} user {gauge(0, 0)} OMH 2 records")
+        self.assertEqual(self.row(self.profile(), "memory"), f"memory {gauge(percent, 1)}")
+        self.assertEqual(self.row(self.profile(), "user"), f"user {gauge(0, 0)}")
+        self.assertEqual(self.row(self.profile(), "OMH"), "OMH 2 records")
         detail = self.detail()
         self.assertIn(f"memory {gauge(percent, 1)} 2 entries · {joined}/2,200 chars", detail, "the exact numbers are level 2's")
         self.assertIn(f"user {gauge(0, 0)} 0 entries · 0/1,375 chars", detail)
         write_memory(self.root, "USER.md", ["x" * 1400])
         lines, _span = profile_lines([self.profile()], 0, NOW, 400, DEFAULT_THEME)
-        over = next(span for span in lines[box_row(lines_text(lines), "memory")] if span.text.endswith(" 101%"))
+        over = next(span for span in lines[field_row(lines_text(lines), "user")] if span.text.endswith(" 101%"))
         self.assertIs(over.style, DEFAULT_THEME.error, "past its limit")
 
     def test_memory_gauges_are_coloured_by_how_full_they_are(self) -> None:
@@ -627,9 +641,9 @@ class SummaryTests(FixtureRoot):
         config = ROOT_CONFIG.replace("memory_enabled: true", "memory_enabled: false")
         (self.root / "config.yaml").write_text(config.replace("  user_char_limit: 1375\n", ""), encoding="utf-8")
         write_memory(self.root, "USER.md", b"caf\xe9")
-        self.assertTrue(self.row(self.profile(), "memory").startswith("memory off user unreadable OMH"))
+        self.assertEqual((self.row(self.profile(), "memory"), self.row(self.profile(), "user")), ("memory off", "user unreadable"))
         write_memory(self.root, "USER.md", ["a", "b"])
-        self.assertTrue(self.row(self.profile(), "memory").startswith("memory off user 2 entries OMH"), "no limit: no gauge")
+        self.assertEqual(self.row(self.profile(), "user"), "user 2 entries", "no limit: no gauge")
         huge = write_memory(self.root, "MEMORY.md", b"x" * (2 * bot_board.MEMORY_FILE_BYTES))
         (self.root / "config.yaml").write_text(ROOT_CONFIG, encoding="utf-8")
         read: list[int] = []
@@ -646,7 +660,7 @@ class SummaryTests(FixtureRoot):
             memory = self.profile().memory[0]
         self.assertEqual((memory.problem, memory.entries), ("too large to read (2 MB)", 0))
         self.assertEqual(read, [bot_board.MEMORY_FILE_BYTES + 1], "one bounded read")
-        self.assertTrue(self.row(self.profile(), "memory").startswith("memory too large to read (2 MB) user "))
+        self.assertEqual(self.row(self.profile(), "memory"), "memory too large to read (2 MB)")
 
     def test_the_omh_store_is_the_one_config_names_and_only_regular_json_files_count(self) -> None:
         records = self.root / "omh-store" / "memory" / "records"
@@ -665,7 +679,7 @@ class SummaryTests(FixtureRoot):
                 profile = self.profile()
                 self.assertEqual((profile.omh_records, profile.omh), (records_seen, said))
         (self.root / "config.yaml").write_text(ROOT_CONFIG.split("plugins:")[0], encoding="utf-8")
-        self.assertNotIn("OMH", self.row(self.profile(), "memory"), "no setting: no store named, ~/.omh not guessed")
+        self.assertEqual(self.row(self.profile(), "OMH"), "", "no setting: no store named, ~/.omh not guessed")
 
     @POSIX_ONLY
     def test_a_live_gateway_shows_its_uptime_agents_and_memory_and_level_two_its_record(self) -> None:
@@ -696,7 +710,7 @@ class SummaryTests(FixtureRoot):
         with patch.object(bot_board, "resident_bytes") as rss:
             top, bottom = self.row(self.profile("miku"), "top"), self.row(self.profile("miku"), "bottom")
         rss.assert_not_called()
-        self.assertTrue(top.startswith("╭─ ◌ miku ─") and top.endswith("──╮"), "no running gateway: no facts on top")
+        self.assertTrue(top.startswith("╭──────────┬─ ◌ miku ─") and top.endswith("──╮"), "no running gateway: no facts on top")
         self.assertNotIn(" up ", top)
         self.assertIn("its record still says running (pid 4194301 is gone) slack ○", bottom)
         self.assertIn("its record still says running (pid 4194301 is gone) · updated 3d ago", self.detail("miku"))
@@ -713,7 +727,7 @@ class SummaryTests(FixtureRoot):
         self.assertEqual((len(hourly), hourly[-1], hourly[-4], sum(hourly)), (24, 100, 50, 150))
         self.assertEqual(bot_board._spark(hourly, "unicode"), "▁" * 20 + "▅▁▁█")
         lines, _span = profile_lines([self.profile()], 0, NOW, 150, DEFAULT_THEME)
-        spark = next(span for span in lines[box_row(lines_text(lines), "24 h")] if "▅▁▁█" in span.text)
+        spark = next(span for span in lines[field_row(lines_text(lines), "24 h")] if "▅▁▁█" in span.text)
         self.assertIs(spark.style, DEFAULT_THEME.running)
         write_usage_store(self.root, [("idle", "cli", "t", NOW - 60, 2, "m", 0, 0, 0, None, None, None)])
         self.assertNotIn("▁", self.row(self.profile(), "day"), "no tokens in the day: no flat line")
@@ -724,18 +738,19 @@ class SummaryTests(FixtureRoot):
         text = lines_text(lines)
         self.assertFalse({character for row in text for character in row if ord(character) > 127} - {"·", "…"},
                          "no block, box or chip glyph is left")
-        self.assertIn("#.........", text[box_row(text, "memory")])
-        self.assertTrue(text[box_row(text, "24 h")][BODY:].split()[2].endswith("#"), "the busiest hour is the tallest cell")
-        self.assertTrue(text[2].startswith("+- ") and text[2].endswith("+"))
-        bottoms = [squeeze(row) for row in text if row.startswith("+-") and row is not text[2]]
-        self.assertTrue(bottoms[0].startswith("+- discord o slack * -"), "chips, as last recorded: o")
-        self.assertTrue(any(row.startswith("+- ? miku -") for row in text), "a gateway whose record outlived it: ?")
+        self.assertIn("#.........", field(text, "memory", "|"))
+        self.assertTrue(field(text, "24 h", "|").split()[2].endswith("#"), "the busiest hour is the tallest cell")
+        self.assertTrue(text[0].startswith("+- Hermes bots -") and text[0].endswith("+"))
+        self.assertTrue(text[HEAD].startswith("+----------+- * default"), "the face's column meets the edge in a joint")
+        bottom = next(squeeze(row) for row in text[HEAD + 1 :] if row.startswith("+"))
+        self.assertTrue(bottom.startswith("+----------+- discord o slack * -"), "chips, as last recorded: o")
+        self.assertTrue(any(row.startswith("+----------+- ? miku -") for row in text), "a gateway whose record outlived it: ?")
 
     def test_hermes_display_name_is_read_from_profile_yaml(self) -> None:
         self.assertEqual(self.profile().display, "")
         (self.root / "profile.yaml").write_text("display_name: Kami Sama\nui_meta: {}\n", encoding="utf-8")
         self.assertEqual(self.profile().display, "Kami Sama")
-        self.assertTrue(self.row(self.profile(), "top").startswith("╭─ ● Kami Sama (default) (this TUI) ─"))
+        self.assertTrue(self.row(self.profile(), "top").startswith("╭──────────┬─ ● Kami Sama (default) (this TUI) ─"))
         (self.root / "profile.yaml").write_bytes(b"display_name: \xff\n")
         self.assertEqual(self.profile().display, "", "an unreadable profile.yaml names nothing")
 
@@ -782,7 +797,7 @@ def bots() -> tuple:
 
 
 class LayoutTests(unittest.TestCase):
-    """Level 1's layout: a header of totals, then each bot in its own box, two to a row at 150 columns, one at 80."""
+    """Level 1: the totals in a box, then one full-width card a row, its columns lined up down the page."""
 
     def lines(self, cols: int, selected: int = 2, theme=DEFAULT_THEME) -> list:
         lines, _span = profile_lines(bots(), selected, NOW, cols, theme)
@@ -792,103 +807,204 @@ class LayoutTests(unittest.TestCase):
     def rows(self, cols: int, selected: int = 2) -> list[str]:
         return lines_text(self.lines(cols, selected))
 
-    def test_the_header_adds_up_only_what_was_read(self) -> None:
-        self.assertEqual(self.rows(150)[0], "Hermes bots · 3 profiles · 2 gateways up · 4 agents running · "
-                                            "24 h: 6.1M in · 459.7k out · ~$6.73 + 1 unpriced")
-        self.assertEqual(self.rows(60)[0], "Hermes bots · 3 profiles · 2 gateways up · 4 agents running",
-                         "the totals give way first")
+    def cards(self, cols: int) -> list[list[str]]:
+        rows, cards = self.rows(cols)[HEAD:], []
+        while rows:
+            end = rows.index("")
+            cards.append(rows[:end])
+            rows = rows[end + 1 :]
+        return cards
 
-    def test_at_150_columns_two_even_boxes_share_a_row(self) -> None:
+    def test_the_totals_sit_in_a_box_of_their_own(self) -> None:
         rows = self.rows(150)
-        pair, single = rows[2:8], rows[9:16]
-        self.assertEqual({len(row) for row in pair}, {150}, "two boxes of 74 and the gap between them: one height")
-        self.assertEqual({row[74:76] for row in pair}, {"  "})
-        self.assertTrue(pair[0].startswith("╭─ ● default (this TUI) ") and pair[0][:74].endswith(" up 1h 0m · 1 agent ─╮"))
-        self.assertTrue(pair[0][76:].startswith("╭─ ● kami ─") and pair[0].endswith("─╮"), "no facts without its own gateway")
-        self.assertEqual(rows[8], "", "a blank row between rows of boxes")
-        self.assertTrue(single[0].startswith("╭─ ● miku ─") and single[0].endswith(" up 6d 2h · 3 agents · 512 MB ─╮"))
-        self.assertEqual(single[1].rstrip(" │"), "│ " + avatar("miku")[0] + "  model   deepseek-v4.1-flash  deepseek · newest kimi-k3.1-pro")
-        self.assertEqual({len(row) for row in single}, {74}, "a lone box keeps the width of a pair's")
-        self.assertEqual(single[2], "│ " + avatar("miku")[1] + "  now     #live-stage · setlist for Satu…   discord · just now │",
-                         "the title gives way with an ellipsis, its source and age kept at the right")
-        self.assertTrue(single[3].startswith("│ " + avatar("miku")[2] + "  24 h    ▁"))
-        self.assertTrue(single[3].rstrip(" │").endswith("█   31 active · 1,032 stored"))
-        self.assertEqual(squeeze(single[4]), f"│ {squeeze(avatar('miku')[3])} tokens 5.9M in · 418k out · ~$4.87 + 1 unpriced │",
-                         "cache reads give way first in a box of 74")
-        self.assertTrue(single[5].startswith("│ " + " " * 8 + "  memory  "), "the face is four rows; the fifth is blank")
-        self.assertIn(f"memory  {gauge(89, 8)}  user {gauge(90, 9)}  OMH 139 records", single[5])
-        self.assertTrue(squeeze(single[6]).startswith("╰─ discord ● whatsapp ●! slack ●! ─"))
-        self.assertEqual({row.index("model") for row in rows if " model " in row} - {88}, {12},
-                         "one label column, after the face")
+        self.assertTrue(rows[0].startswith("╭─ Hermes bots ─") and rows[0].endswith("─╮"))
+        self.assertEqual(squeeze(rows[1]), "│ 3 profiles · 2 gateways up · 4 agents running · "
+                                           "24 h: 6.1M in · 459.7k out · ~$6.73 + 1 unpriced │")
+        self.assertTrue(rows[2].startswith("╰─") and rows[2].endswith("─╯"))
+        self.assertEqual(squeeze(self.rows(60)[1]), "│ 3 profiles · 2 gateways up · 4 agents running │",
+                         "the day's totals give way first")
 
-    def test_the_kami_box_says_its_gateway_serves_it_and_it_had_no_day(self) -> None:
-        pair = self.rows(150)[2:8]
-        self.assertEqual(squeeze(pair[2][76:]),
-                         f"│ {squeeze(avatar('kami')[1])} 24 h no activity · last active 20d ago · 9 stored │")
-        self.assertTrue(squeeze(pair[5][76:]).startswith("╰─ served by the default gateway ─"))
+    def test_one_card_a_row_at_every_width_and_every_card_alike(self) -> None:
+        for cols in (150, 120, 80):
+            with self.subTest(cols=cols):
+                cards = self.cards(cols)
+                self.assertEqual(len(cards), 3, "one card a row: no grid")
+                self.assertEqual({len(row) for card in cards for row in card}, {cols}, "every card full width")
+                joints = [{index for index, glyph in enumerate(card[0]) if glyph == "┬"} for card in cards]
+                self.assertEqual(len({frozenset(found) for found in joints}), 1, "the same inner grid in every card")
+                for card in cards:
+                    for row in card[1:-1]:
+                        self.assertEqual({row[index] for index in joints[0]}, {"│"}, "each divider runs top to bottom")
+                    self.assertEqual({card[-1][index] for index in joints[0]}, {"┴"}, "and meets the bottom edge in a joint")
 
-    def test_the_selected_box_takes_the_highlight_and_the_rest_the_rule(self) -> None:
+    def test_at_150_and_120_the_fields_sit_in_two_columns_beside_the_face(self) -> None:
+        for cols in (150, 120):
+            with self.subTest(cols=cols):
+                miku = self.cards(cols)[2]
+                self.assertEqual(len(miku), 6, "the edges and four rows: the face's height")
+                self.assertTrue(miku[0].startswith("╭──────────┬─ ● miku ─"))
+                self.assertTrue(miku[0].endswith(" up 6d 2h · 3 agents · 512 MB ─╮"))
+                self.assertTrue(miku[1].startswith("│ " + avatar("miku")[0] + " │ model   deepseek-v4.1-flash"))
+                cells = [[squeeze(cell) for cell in row.split("│")[2:-1]] for row in miku[1:-1]]
+                self.assertEqual([left.split()[0] for left, _right in cells], ["model", "now", "tokens", "cost"])
+                self.assertEqual([right.split()[0] for _left, right in cells], ["24", "memory", "user", "OMH"])
+                self.assertTrue(cells[1][0].startswith("now #live-stage"))
+                self.assertTrue(cells[1][0].endswith("discord · just now"), "source and age at the right")
+                self.assertEqual(cells[2][0], "tokens 5.9M in · 418k out · 41.3M cached")
+                self.assertEqual(cells[3][0], "cost ~$4.87 + 1 unpriced")
+                self.assertTrue(cells[0][1].endswith("█ 31 active · 1,032 stored"))
+                self.assertEqual(cells[1][1], f"memory {gauge(89, 8)}")
+                self.assertEqual(cells[2][1], f"user {gauge(90, 9)}")
+                self.assertEqual(cells[3][1], "OMH 139 records")
+                self.assertTrue(squeeze(miku[-1]).startswith("╰──────────┴─ discord ● whatsapp ●! slack ●! ─"))
+
+    def test_at_80_the_fields_stack_in_one_column(self) -> None:
+        miku = self.cards(80)[2]
+        labels = [squeeze(row.split("│")[2]).split(" ")[0] for row in miku[1:-1]]
+        self.assertEqual(labels, ["model", "now", "tokens", "cost", "24", "memory", "user", "OMH"])
+        self.assertEqual([row[1:11] for row in miku[1:5]], [f" {line} " for line in avatar("miku")])
+        self.assertEqual({row[1:11] for row in miku[5:-1]}, {" " * 10}, "the face is four rows; the rest are blank")
+
+    def test_the_kami_card_says_its_gateway_serves_it_and_it_had_no_day(self) -> None:
+        kami = self.cards(150)[1]
+        self.assertEqual(field(kami, "24 h"), "24 h no activity · last active 20d ago · 9 stored")
+        self.assertEqual(field(kami, "now"), "now no session yet")
+        self.assertTrue(squeeze(kami[-1]).startswith("╰──────────┴─ served by the default gateway ─"))
+
+    def test_the_selected_card_takes_the_accent_and_the_rest_the_rule(self) -> None:
         lines = self.lines(150)
-        self.assertEqual({span.style for span in lines[9] if span.text.strip("╭─ ╮") == ""}, {DEFAULT_THEME.brand})
-        self.assertEqual({span.style for span in lines[2] if span.text.strip("╭─ ╮") == "" and span.text.strip()},
-                         {DEFAULT_THEME.rule})
+        edges = lambda line: {span.style for span in line if span.text.strip() and set(span.text) <= set("╭╮╰╯─┬┴│ ")}
+        self.assertEqual(edges(lines[HEAD + 6 + 1 + 6 + 1]), {DEFAULT_THEME.brand}, "miku's top edge")
+        self.assertEqual(edges(lines[HEAD]), {DEFAULT_THEME.rule})
 
-    def test_at_80_columns_one_box_to_a_row(self) -> None:
-        rows = self.rows(80)
-        self.assertEqual([row[:4] for row in rows if row.startswith("╭")], ["╭─ ●"] * 3)
-        self.assertEqual({len(row) for row in rows[2:8]}, {80})
-        miku = rows[16:23]
-        self.assertIn(f"memory  {gauge(89, 8)}  user {gauge(90, 9)}  OMH 139 records", miku[5])
-        self.assertIn("tokens  5.9M in · 418k out · 41.3M cached · ~$4.87 + 1 unpriced", miku[4])
-        self.assertIn("now     #live-stage · setlist for Saturday's…   discord · just now", miku[2], "more of it at 80")
-
-    def test_a_narrow_box_gives_up_its_face_its_facts_and_its_last_chips_first(self) -> None:
+    def test_a_narrow_card_gives_up_its_figures_its_face_and_its_last_chips(self) -> None:
         states = []
         for cols in range(80, 24, -1):
-            rows = self.rows(cols)
-            top, body, bottom = rows[16], rows[17], squeeze(rows[22])
+            miku = self.cards(cols)[2]
+            top, body, bottom = miku[0], miku[1], squeeze(miku[-1])
             state = ("up 6d" in top, avatar("miku")[0] in body, "slack" in bottom, "whatsapp" in bottom)
             if not states or state != states[-1]:
                 states.append(state)
-        self.assertEqual(states, [
-            (True, True, True, True), (True, False, True, True), (False, False, True, True),
-            (False, False, False, True), (False, False, False, False),
-        ], "the face, then the top edge's facts, then the last chips")
+        self.assertEqual(states[0], (True, True, True, True))
+        self.assertEqual(states[-1], (False, False, False, False))
+        self.assertEqual(states[1], (False, True, True, True), "the top edge's figures go first")
+        self.assertFalse([state for state in states if not state[3] and state[2]], "the last chip goes before the one ahead of it")
+        self.assertIn((False, False, False, True), states, "and the face before the first chip")
 
     def test_the_chips_say_each_platforms_state_in_its_colour(self) -> None:
-        row = self.lines(150)[15]
-        marks = [(span.text, span.style) for span in row if span.text in ("●", "●!")]
+        lines = self.lines(150)
+        bottom = lines[HEAD + 6 + 1 + 6 + 1 + 5]
+        marks = [(span.text, span.style) for span in bottom if span.text in ("●", "●!")]
         self.assertEqual(marks, [("●", DEFAULT_THEME.ok), ("●!", DEFAULT_THEME.warn), ("●!", DEFAULT_THEME.error)])
 
 
 class ProfileBoxTests(unittest.TestCase):
-    """Level 2's header: the profile's box, whole at 150 and 120 columns, giving up fields rather than cutting words."""
+    """Level 2: the profile's box, then the sessions in a table box, whole at 150 and 120 columns."""
 
-    def box(self, cols: int) -> list[str]:
-        snapshot_ = BoardSnapshot(BoardView("miku"), bots(), (), read_at=NOW)
+    def page(self, cols: int, sessions=()) -> list[str]:
+        snapshot_ = BoardSnapshot(BoardView("miku"), bots(), tuple(sessions), 41, read_at=NOW)
         lines, _span = session_lines(snapshot_, 0, NOW, cols, DEFAULT_THEME)
-        text = lines_text(lines)
-        return text[1 : text.index("")]
+        self.assertLessEqual(max(line_width(line) for line in lines), cols)
+        return lines_text(lines)
 
-    def test_the_header_box_holds_the_record_gauges_and_sources(self) -> None:
+    def test_the_profile_box_holds_the_record_gauges_and_sources(self) -> None:
         for cols in (150, 120):
             with self.subTest(cols=cols):
-                box = self.box(cols)
+                text = self.page(cols)
+                box = text[: text.index("")]
                 self.assertEqual({len(row) for row in box}, {cols})
-                self.assertTrue(box[0].startswith("╭─ ● miku ─") and box[0].endswith(" up 6d 2h · 3 agents · 512 MB ─╮"))
-                self.assertIn("gateway running · pid 52417 · 3 agents running", box[1])
-                self.assertIn("error   slack: token revoked", box[2])
-                self.assertIn(f"memory  {gauge(89, 8)}  18 entries · 3,120/3,500 chars", box[3])
-                self.assertIn(f"user    {gauge(90, 9)}  11 entries · 2,260/2,500 chars", box[4])
-                self.assertIn("sources discord 688 · telegram 344", box[5])
-                self.assertTrue(squeeze(box[6]).startswith("╰─ discord ● whatsapp ●! slack ●! ─"))
+                self.assertTrue(box[0].startswith("╭──────────┬─ ● miku ─") and box[0].endswith(" up 6d 2h · 3 agents · 512 MB ─╮"))
+                self.assertEqual(field(box, "gateway"), "gateway running · pid 52417 · 3 agents running")
+                self.assertEqual(field(box, "error"), "error slack: token revoked")
+                self.assertEqual(field(box, "memory"), f"memory {gauge(89, 8)} 18 entries · 3,120/3,500 chars")
+                self.assertEqual(field(box, "user"), f"user {gauge(90, 9)} 11 entries · 2,260/2,500 chars")
+                self.assertEqual(field(box, "sources"), "sources discord 688 · telegram 344")
+                self.assertTrue(squeeze(box[-1]).startswith("╰──────────┴─ discord ● whatsapp ●! slack ●! ─"))
                 self.assertFalse([row for row in box if "…" in row], "nothing is cut")
 
-    def test_a_narrow_header_box_gives_up_whole_fields(self) -> None:
-        box = self.box(60)
+    def test_a_narrow_profile_box_gives_up_whole_fields(self) -> None:
+        box = self.page(60)
+        box = box[: box.index("")]
         self.assertFalse([row for row in box if "…" in row], box)
-        self.assertIn(f"memory  {gauge(89, 8)}", box[3])
-        self.assertNotIn("3,120/3,500", box[3], "the exact figures give way first")
+        self.assertEqual(field(box, "memory"), f"memory {gauge(89, 8)} 18 entries", "the characters give way first")
+
+    def test_the_sessions_sit_in_a_table_box_with_a_header_and_one_separator(self) -> None:
+        sessions = [
+            bot_board.SessionRow("s1", "#live-stage · setlist for Saturday's stream", "discord", NOW - 12, 48, "kimi-k3.1-pro",
+                                 bot_board.Usage(412_300, 38_900, 3_100_000, 0.41, True)),
+            bot_board.SessionRow("s2", "Poll", "x", NOW - 2 * 3600, 9, "glm-5.3", bot_board.Usage(192, 4_100)),
+        ]
+        for cols in (150, 120):
+            with self.subTest(cols=cols):
+                text = self.page(cols, sessions)
+                table = text[text.index("") + 1 :]
+                self.assertEqual(len(table), 6, "top edge, header, rule, two rows, bottom edge")
+                self.assertEqual({len(row) for row in table}, {cols})
+                joint = table[0].index("┬")
+                self.assertEqual([row[joint] for row in table], ["┬", "│", "┼", "│", "│", "┴"], "one separator, joined")
+                self.assertTrue(table[2].startswith("├") and table[2].endswith("┤"))
+                self.assertEqual(squeeze(table[1][joint:]), "│ model in out cost source age msgs │")
+                self.assertTrue(table[0].startswith("╭─ 2 sessions"))
+                self.assertFalse([row for row in table if "…" in row], "the titles fit at this width")
+                for unit in ("k ", " ago", "48 │"):
+                    if unit in table[3]:
+                        self.assertEqual(table[3].index(unit) if unit != "48 │" else table[3].rindex("│"),
+                                         table[3].index(unit) if unit != "48 │" else table[4].rindex("│"))
+
+    def test_the_selection_band_runs_from_edge_to_edge_inside_the_table(self) -> None:
+        sessions = [bot_board.SessionRow(f"s{n}", f"chat {n}", "cli", NOW - n, 1) for n in range(3)]
+        snapshot_ = BoardSnapshot(BoardView("miku"), bots(), tuple(sessions), read_at=NOW)
+        lines, span = session_lines(snapshot_, 1, NOW, 120, DEFAULT_THEME)
+        band = lines[span[0]]
+        self.assertEqual({item.style.bg for item in band[1:-1]}, {DEFAULT_THEME.menu_current.bg}, "inside the edges")
+        self.assertEqual({band[0].style.bg, band[-1].style.bg}, {None}, "the edges keep the page")
+        self.assertTrue(line_text(band).startswith("│ ❯ chat 1"))
+        self.assertEqual({item.style.bg for item in lines[span[0] + 1][1:-1]}, {None}, "only the selected row is banded")
+
+
+class MessageBoxTests(unittest.TestCase):
+    """Level 3: the session in a box, its messages in a second one with the time and role in a column of their own."""
+
+    def page(self, cols: int, charset: str = "unicode") -> list[str]:
+        session = bot_board.SessionRow("s1", "#live-stage · setlist for Saturday's stream", "discord", NOW - 12, 48,
+                                       "kimi-k3.1-pro", bot_board.Usage(412_300, 38_900, 3_100_000, 0.41, True))
+        messages = (
+            bot_board.MessageRow("user", "can you lock the setlist for saturday? " * 6, NOW - 600),
+            bot_board.MessageRow("tool", "omh_memory: recall · setlist", NOW - 590),
+            bot_board.MessageRow("assistant", "Locked.", NOW - 580),
+        )
+        snapshot_ = BoardSnapshot(BoardView("miku", "s1"), bots(), (session,), messages=messages, read_at=NOW)
+        lines = message_lines(snapshot_, session, NOW, cols, DEFAULT_THEME, charset)
+        self.assertLessEqual(max(line_width(line) for line in lines), cols)
+        self.lines = lines
+        return lines_text(lines)
+
+    def test_the_session_and_its_messages_are_two_boxes(self) -> None:
+        for cols in (150, 120):
+            with self.subTest(cols=cols):
+                text = self.page(cols)
+                head, body = text[: text.index("")], text[text.index("") + 1 :]
+                self.assertTrue(head[0].startswith("╭─ miku › #live-stage · setlist for Saturday's stream ─"))
+                self.assertEqual(squeeze(head[1]), "│ discord · 48 messages · last active just now │")
+                self.assertEqual(squeeze(head[2]), "│ kimi-k3.1-pro · 412.3k in · 38.9k out · 3.1M cache read · ~$0.41 │")
+                joint = body[0].index("┬")
+                self.assertEqual({row[joint] for row in body[1:-1]}, {"│"})
+                self.assertEqual(body[-1][joint], "┴")
+                self.assertTrue(body[0].endswith(" the last 40 at most, oldest first ─╮"))
+                self.assertTrue(body[1].startswith("│ ") and squeeze(body[1][:joint]).endswith("user"))
+                self.assertEqual(body[2][:joint], "│" + " " * (joint - 1), "a wrapped row keeps to its own column")
+                self.assertEqual({len(row) for row in head + body}, {cols})
+
+    def test_a_tool_row_takes_the_tool_style(self) -> None:
+        text = self.page(150)
+        row = next(index for index, line in enumerate(text) if "omh_memory: recall" in line)
+        style = next(item.style for item in self.lines[row] if "omh_memory: recall" in item.text)
+        self.assertEqual(style, DEFAULT_THEME.tool)
+
+    def test_the_ascii_charset_draws_the_same_boxes(self) -> None:
+        text = self.page(120, "ascii")
+        self.assertFalse({character for row in text for character in row if ord(character) > 127} - {"·", "›", "…"})
+        self.assertTrue(text[0].startswith("+- miku"))
 
 
 class AvatarTests(unittest.TestCase):
@@ -918,7 +1034,7 @@ class AvatarTests(unittest.TestCase):
     def test_hermes_display_name_titles_the_box_beside_the_profile_name(self) -> None:
         profile = replace(bots()[2], display="Miku Hatsune")
         top = lines_text(bot_board.bot_box(profile, "", False, NOW, 80, DEFAULT_THEME))[0]
-        self.assertTrue(top.startswith("╭─ ● Miku Hatsune (miku) ─"), top)
+        self.assertTrue(top.startswith("╭──────────┬─ ● Miku Hatsune (miku) ─"), top)
 
 
 class ThemeBandTests(unittest.TestCase):
@@ -952,7 +1068,7 @@ class ThemeBandTests(unittest.TestCase):
 
 
 class TableTests(FixtureRoot):
-    """Level 2 is a table under one band."""
+    """Level 2's table: which columns it keeps at a width."""
 
     def sessions(self) -> BoardSnapshot:
         write_usage_store(self.root, [
@@ -962,32 +1078,6 @@ class TableTests(FixtureRoot):
             ("c", "discord", "Merch drop", NOW - 3 * DAY, 12, "deepseek/deepseek-v4.1-flash", 44_600, 9_300, 0, 0.0, None, "included"),
         ])
         return snapshot(self.environ, BoardView("default"))
-
-    def test_level_two_columns_line_up_and_the_band_spans_every_row_alike(self) -> None:
-        sessions = self.sessions()
-        for cols in (150, 80):
-            with self.subTest(cols=cols):
-                lines, _span = session_lines(sessions, 1, NOW, cols, DEFAULT_THEME)
-                rows = lines[-3:]
-                self.assertEqual({line_width(row) for row in rows}, {cols}, "every row runs to the edge, never wraps")
-                text = lines_text(rows)
-                for unit in (" out", " ago", " messages"):
-                    if unit in text[0]:
-                        self.assertEqual(len({row.index(unit) for row in text}), 1, f"{unit!r} ends one column")
-                models = {next(row.index(name) for name in ("kimi", "glm", "deepseek") if name in row) for row in text}
-                self.assertEqual(len(models), 1, "the title column is one width, the model column starts alike")
-                for index, row in enumerate(rows):
-                    band = DEFAULT_THEME.menu_current if index == 1 else DEFAULT_THEME.menu
-                    self.assertEqual({span.style.bg for span in row}, {band.bg}, "one band from the mark to the edge")
-        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[-3:]
-        ends = {row.index(" in") for row in rows}
-        self.assertEqual(len(ends), 1, "token counts are right-aligned on their unit")
-        self.assertIn("   192 in", rows[1])
-        self.assertEqual(len({row.index("ago") for row in rows}), 1)
-        self.assertEqual(rows[0].index("~$0.52") + len("~$0.52"), rows[2].index("included") + len("included"), "cost too")
-        self.assertIn("Rehearsal schedule for the anniversary", rows[0])
-        narrow = lines_text(session_lines(sessions, 0, NOW, 70, DEFAULT_THEME)[0])[-3]
-        self.assertIn("…", narrow, "the title gives way, cut with an ellipsis")
 
     def test_a_narrow_board_gives_up_source_then_cost_then_tokens(self) -> None:
         table = bot_board._session_table(self.sessions().sessions, NOW)
@@ -1003,13 +1093,20 @@ class TableTests(FixtureRoot):
             ["model", "input", "output", "age", "messages"],
             ["model", "age", "messages"],
         ])
-        rows = session_lines(self.sessions(), 0, NOW, 30, DEFAULT_THEME)[0][-3:]
-        self.assertEqual({line_width(row) for row in rows}, {30}, "past every drop, the title alone, still one row")
+        lines, _span = session_lines(self.sessions(), 0, NOW, 40, DEFAULT_THEME)
+        self.assertEqual({line_width(row) for row in lines if row}, {40}, "past every drop, the title alone, one row each")
 
     def test_a_column_no_session_fills_is_left_out(self) -> None:
         sessions = snapshot(self.environ, BoardView("default"))  # a store with no model or token column
         self.assertEqual(bot_board._session_columns(bot_board._session_table(sessions.sessions, NOW), 150),
                          ["source", "age", "messages"])
+
+    def test_right_aligned_figures_end_in_one_column(self) -> None:
+        lines, _span = session_lines(self.sessions(), 0, NOW, 150, DEFAULT_THEME)
+        rows = lines_text(lines)[-4:-1]
+        self.assertEqual(len({row.index(" │", row.index("┼") if "┼" in row else 2) for row in rows}), 1)
+        self.assertEqual(len({row.rindex(" │") for row in rows}), 1)
+        self.assertIn("   192  ", rows[1], "a short count is padded on its left")
 
 
 def squeeze(text: str) -> str:
@@ -1033,19 +1130,18 @@ class DrawingTests(FixtureRoot):
                 if cols == 150:
                     text = "\n".join(squeeze(row) for row in lines_text(lines))
                     self.assertIn(BOARD_TITLE, text)
-                    self.assertIn("╭─ ● default (this TUI) ─", text)
-                    self.assertIn("╰─ discord ○ slack ● ─", text, "a platform as last recorded: ○")
+                    self.assertIn("╭──────────┬─ ● default (this TUI) ─", text)
+                    self.assertIn("╰──────────┴─ discord ○ slack ● ─", text, "a platform as last recorded: ○")
                     self.assertIn("2 agents", text)
                     self.assertIn("24 h 2 active · 4 stored", text)
-                    self.assertIn("╭─ ◌ miku ─", text)
-                    self.assertIn("╰─ gateway not running · its record still says running", text)
-                    self.assertIn("╭─ ○ broken ─", text)
-                    self.assertIn("╰─ gateway record unreadable ─", text)
+                    self.assertIn("╭──────────┬─ ◌ miku ─", text)
+                    self.assertIn("╰──────────┴─ gateway not running · its record still says running", text)
+                    self.assertIn("╭──────────┬─ ○ broken ─", text)
+                    self.assertIn("╰──────────┴─ gateway record unreadable ─", text)
                     self.assertIn("24 h sessions: no state.db", text)
-                    self.assertIn("╰─ gateway stopped (signal) ─", text)
-                    edges = [item for item in lines[span[0]] if item.text.startswith("╭")]
-                    self.assertEqual([item.style for item in edges], [DEFAULT_THEME.rule, DEFAULT_THEME.brand],
-                                     "the highlighted profile (broken, beside default) is the box in the accent")
+                    self.assertIn("╰──────────┴─ gateway stopped (signal) ─", text)
+                    self.assertTrue(lines_text(lines)[span[0]].startswith("╭──────────┬─ ○ broken"), "the highlighted card")
+                    self.assertEqual(lines[span[0]][0].style, DEFAULT_THEME.brand, "takes the accent")
 
     @POSIX_ONLY
     def test_a_profile_the_default_gateway_serves_reads_as_served(self) -> None:
@@ -1053,8 +1149,8 @@ class DrawingTests(FixtureRoot):
         write_record(self.root, {**record, "served_profiles": ["default", "miku"]})
         lines, _span = profile_lines(snapshot(self.environ).profiles, 0, NOW, 150, DEFAULT_THEME)
         text = "\n".join(squeeze(row) for row in lines_text(lines))
-        self.assertIn("╭─ ● miku ─", text)
-        self.assertIn("╰─ served by the default gateway slack ○ ─", text)
+        self.assertIn("╭──────────┬─ ● miku ─", text)
+        self.assertIn("╰──────────┴─ served by the default gateway slack ○ ─", text)
 
     def test_levels_two_and_three_fit_any_width_and_show_the_tail(self) -> None:
         sessions = snapshot(self.environ, BoardView("default"))
@@ -1066,12 +1162,12 @@ class DrawingTests(FixtureRoot):
                 self.assertLessEqual(max(line_width(line) for line in listed + tail), cols)
         listed, span = session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)
         text = lines_text(listed)
-        self.assertIn("1 subagent session not listed", text[0])
-        self.assertTrue(text[span[0]].startswith("❯ Release notes"))
-        self.assertTrue(squeeze(text[span[0]]).endswith("slack 10m ago 12 messages"))
+        self.assertIn("1 subagent session not listed", next(row for row in text if "sessions" in row and row.startswith("╭─")))
+        self.assertTrue(text[span[0]].startswith("│ ❯ Release notes"))
+        self.assertTrue(squeeze(text[span[0]]).endswith("slack 10m ago 12 │"))
         tail = "\n".join(lines_text(message_lines(messages, sessions.sessions[0], NOW, 150, DEFAULT_THEME)))
         self.assertIn("default › Release notes", tail)
-        self.assertIn("assistant red done now", tail)
+        self.assertIn("assistant │ red done now", "\n".join(squeeze(row) for row in tail.splitlines()))
         self.assertNotIn("pwned", tail)
         self.assertNotIn("\x1b", tail)
 
@@ -1263,7 +1359,7 @@ class BoardKeysTests(FixtureRoot):
         board.take(read_board(self.environ, BoardView("default"), NOW))  # the next refresh: s-old, s-new, s-cli
         board.frame(100, 24, DEFAULT_THEME)
         self.assertEqual([row.id for row in board.snapshot.sessions], ["s-old", "s-new", "s-cli"])
-        self.assertTrue(lines_text(board.lines)[board._span[0]].startswith("❯ Local run"))
+        self.assertTrue(lines_text(board.lines)[board._span[0]].startswith("│ ❯ Local run"))
         self.press(board, reader, Key(ENTER))
         self.assertEqual(reader.views[-1], BoardView("default", "s-cli"), "Enter opens the row the highlight is on")
 
@@ -1289,7 +1385,7 @@ class BoardKeysTests(FixtureRoot):
         board.take(held.pop())  # the list arrives a frame later
         board.frame(100, 12, DEFAULT_THEME)
         shown = lines_text(board.lines)[board.top : board.top + board.body_rows(12)]
-        self.assertTrue([row for row in shown if row.startswith("❯ chat 30")], shown)
+        self.assertTrue([row for row in shown if row.startswith("│ ❯ chat 30")], shown)
 
     def test_level_three_heads_with_the_sessions_row_as_read_now(self) -> None:
         board, reader = self.board()

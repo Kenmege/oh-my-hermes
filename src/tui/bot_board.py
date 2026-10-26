@@ -4,36 +4,40 @@ The board lists the Hermes home this TUI runs under, resolved as the input
 history resolves it (`history.history_path`), and the root's every named
 profile (`<root>/profiles/<name>/` that carries one of the files Hermes reads
 as a profile's identity and has no deletion tombstone). It has three levels,
-Enter going down one and ← or Esc up one:
+Enter going down one and ← or Esc up one. Every region is a rounded box in
+the launch card's style (`_panel`), its columns divided by lines that meet
+the edges in joints, in the delegation view's charset (`unicode`, or
+`ascii`):
 
-1. the profiles, under a header of what they add up to (gateways up, agents
-   running, the active sessions' tokens and cost), each in a rounded box
-   (`bot_box`, two to a row from `BOX_MIN` up): its gateway's mark, its name
-   (and Hermes' `display_name` from `profile.yaml`) and, while it runs, its
-   uptime, agents and resident memory in the top edge; its platforms as chips
-   and a requested restart in the bottom edge; inside, a face drawn from the
-   name (`avatar`) beside labelled rows (`bot_rows`): its configured default
-   model (`config.yaml`) and the model its newest session ran when it differs;
-   that newest session (`now`: its title, source and age); the last 24 hours (tokens by the hour each active session was last active as a
-   sparkline, how many were active, how many are stored); those sessions'
-   tokens and cost; and what it remembers (Hermes' `memories/MEMORY.md` and
-   `USER.md` as gauges against their configured limits, and the record count of
-   the OMH store its `config.yaml` names). Box edges, faces, gauges, the
-   sparkline and the chips take the delegation view's charset names
-   (`unicode`, or `ascii`); a narrow row gives up its least important pieces
-   (`Piece` drop ranks) and never wraps;
-2. one profile's sessions, under that profile's box (`profile_box`: the
-   gateway record in full, each platform's error, each memory target's gauge
-   with its exact figures, and sessions by source), newest activity first, as
-   a table under one band
-   per row: title, model, tokens, cost, source, last activity and message
-   count, each column as wide as its widest cell, numbers right-aligned, and
-   `SESSION_DROPS` given up in order when the title would run short.
-   Delegated children (`source = 'subagent'`) are counted on level 1 and not
-   listed;
-3. one session's last `MESSAGE_ROWS_READ` messages the model still sees,
-   oldest of them first: time, role and the start of the text (one row for a
-   tool result, a few for the talk), under its model, tokens and cost.
+1. the profiles: a box of what they add up to (gateways up, agents running,
+   the active sessions' tokens and cost), then one full-width card a row
+   (`bot_box`), every card at one width on the same inner grid. Its top edge
+   carries the gateway's mark, the name (and Hermes' `display_name` from
+   `profile.yaml`) and, while the gateway runs, its uptime, agents and
+   resident memory; its bottom edge the platforms as chips and a requested
+   restart. Inside: a face drawn from the name (`avatar`), a divider, and the
+   fields in two columns where the width allows (`model`, `now`, `tokens`,
+   `cost` beside `24 h`, `memory`, `user`, `OMH`), else stacked in one: the
+   configured default model and the newest session's model when it differs;
+   that newest session's title, source and age; the active sessions' tokens
+   and cost; their tokens by the hour each was last active as a sparkline, how
+   many were active and how many are stored; Hermes' `MEMORY.md` and `USER.md`
+   as gauges against their configured limits; and the record count of the OMH
+   store `config.yaml` names. A narrow card gives up its least important
+   pieces (`Piece` drop ranks) and never wraps;
+2. one profile's sessions: that profile's box (`profile_box`: the gateway
+   record in full, each platform's error, each memory target's gauge with its
+   exact figures, and sessions by source), then a table box, newest activity
+   first, under a muted header row and a rule, one divider between the title
+   and the figures, numbers right-aligned, the highlighted row banded from edge
+   to edge, and `SESSION_DROPS` given up in order when the title would run
+   short. Delegated children (`source = 'subagent'`) are counted on level 1
+   and not listed;
+3. one session: a box of its source, messages, age, model, tokens and cost,
+   then its last `MESSAGE_ROWS_READ` messages the model still sees, oldest of
+   them first, in a second box: time and role in a column of their own, then
+   the start of the text (one row for a tool result, in the tool's style; a
+   few for the talk).
 
 Tokens and cost are the totals each session's row records, so the active
 sessions' sum is what those sessions spent in their lifetime, not in the last
@@ -175,27 +179,32 @@ SESSION_RIGHT = frozenset({"input", "output", "cost", "age", "messages"})
 SESSION_DROPS = (("source",), ("cost",), ("input", "output"))
 SESSION_GAP = "  "
 SESSION_TITLE_MIN = 16
+SESSION_HEADERS = {"model": "model", "input": "in", "output": "out", "cost": "cost", "source": "source", "age": "age",
+                   "messages": "msgs"}
+MESSAGE_LEAD = 21  # level 3's time and role column: "10-26 13:52 " and the longest role, "assistant"
 NOW_TITLE_MIN = 12  # a level-1 "now" row keeps its source and age only while its title has this much room
 # Level 1's rows: the label column, the gaps a row's pieces keep, and its glyphs in each of the delegation view's
 # charsets (`delegation_view.CHARSETS`).
 LABEL_WIDTH = 8
 FIT_GAP = 3  # the least gap before a row's right-pushed part
+COST_RANK = 4
 SPARK_GAP = "   "
-MEMORY_GAP = "  "
 GAUGE_CELLS = 10
 GAUGE_WARN, GAUGE_ERROR = 70, 90  # ok below 70 %, warn through 90 %, error past it
 SPARK_GLYPHS = {"unicode": "▁▂▃▄▅▆▇█", "ascii": "_.,:-=+*#"}
-# A bot's box: the least width that takes two side by side, the gap between them, and its edges in each charset
-# (the launch card's rounded corners, or `+` `-` `|`); every box holds the same rows, so a row of boxes is even.
-BOX_MIN = 72
-BOX_GAP = "  "
-BOX_PAD = 1
-BOX_BODY_ROWS = 4
-BOX_GLYPHS = {"unicode": ("╭", "╮", "╰", "╯", "─", "│"), "ascii": ("+", "+", "+", "+", "-", "|")}
-# A bot's face: rows and cells, the gap after it, the narrowest box inside that still takes one, and its pixels in
-# each charset (none, top, bottom, both).
-AVATAR_ROWS, AVATAR_COLS = BOX_BODY_ROWS, 8
-AVATAR_GAP = "  "
+# Every box's edges and joints, in the launch card's rounded style, and in each charset.
+BOX_GLYPHS = {
+    "unicode": {glyph: glyph for glyph in "╭╮╰╯─│┬┴├┤┼"},
+    "ascii": {**{glyph: "+" for glyph in "╭╮╰╯┬┴├┤┼"}, "─": "-", "│": "|"},
+}
+# A bot's card: the right field column's width (the 24 h row: label, sparkline, gap, active and stored), the least
+# the left one may have beside it (else the fields stack in one column), and the header box's rows with the gap after.
+CARD_RIGHT = 59
+CARD_LEFT_MIN = 40
+BOARD_HEAD_ROWS = 4
+# A bot's face: rows and cells, the narrowest box inside that still takes one, and its pixels in each charset (none,
+# top, bottom, both).
+AVATAR_ROWS, AVATAR_COLS = 4, 8
 AVATAR_MIN_INNER = 44
 AVATAR_GLYPHS = {"unicode": (" ", "▀", "▄", "█"), "ascii": (" ", "'", ",", "#")}
 GAUGE_GLYPHS = {"unicode": ("▰", "▱"), "ascii": ("#", ".")}
@@ -1098,20 +1107,21 @@ def _figure(number: str, unit: str, theme: Theme) -> tuple[Span, ...]:
     return (Span(number, theme.user), Span(f" {unit}", theme.muted)) if unit else (Span(number, theme.user),)
 
 
-def _usage_pieces(usage: Usage, theme: Theme, *, cached: bool = True) -> list[Piece]:
-    """Tokens and cost as row pieces: cache reads go first on a narrow row, then cost, then output, then input."""
+def _usage_pieces(usage: Usage, theme: Theme, *, cached: bool = True, priced: bool = True) -> list[Piece]:
+    """Tokens and (with `priced`) cost as row pieces: cache reads go first on a narrow row, then cost, then output,
+    then input. The cost piece carries `COST_RANK`."""
     pieces: list[Piece] = [
         (2, " · ", _figure(compact_count(usage.input), "in", theme)),
         (3, " · ", _figure(compact_count(usage.output), "out", theme)),
     ]
     if cached and usage.cache_read is not None:
         pieces.append((6, " · ", _figure(compact_count(usage.cache_read), "cached", theme)))
-    cost = _cost_text(usage)
+    cost = _cost_text(usage) if priced else ""
     if cost:
         price, _plus, unpriced = cost.partition(" + ")
         figure = (Span(price, theme.user),) if usage.cost is not None else (Span(cost, theme.muted),)
         tail = (Span(f" + {unpriced}", theme.muted),) if usage.cost is not None and unpriced else ()
-        pieces.append((4, " · ", (*figure, *tail)))
+        pieces.append((COST_RANK, " · ", (*figure, *tail)))
     return pieces
 
 
@@ -1173,6 +1183,101 @@ def _gauge(memory: MemoryFile, theme: Theme, charset: str) -> tuple[Span, ...]:
     return (Span(full * filled, style), Span(empty * (GAUGE_CELLS - filled), theme.dim), Span(f" {percent}%", style))
 
 
+def _cells_line(cells: Sequence[tuple[str, Style]]) -> Line:
+    """Cells, one character each ("" for the second cell of a wide one), as spans of one style each."""
+    spans: list[Span] = []
+    for character, style in cells:
+        if spans and spans[-1].style == style:
+            spans[-1] = Span(spans[-1].text + character, style)
+        else:
+            spans.append(Span(character, style))
+    return tuple(spans)
+
+
+def _place(cells: list[tuple[str, Style]], at: int, line: Line) -> int:
+    """Write `line` into `cells` from `at`, a wide character taking two cells; where it ended."""
+    for span in line:
+        for character in span.text:
+            size = cell_width(character)
+            if size <= 0 or at + size > len(cells):
+                continue
+            cells[at] = (character, span.style)
+            for extra in range(1, size):
+                cells[at + extra] = ("", span.style)
+            at += size
+    return at
+
+
+def _joints(widths: Sequence[int]) -> list[int]:
+    """Where the separators between a box's columns fall, each column `width` wide plus a pad on either side."""
+    at, joints = 0, []
+    for width in widths[:-1]:
+        at += width + 3
+        joints.append(at)
+    return joints
+
+
+def _box_width(widths: Sequence[int]) -> int:
+    return sum(width + 2 for width in widths) + len(widths) + 1
+
+
+def _edge(kind: str, width: int, joints: Sequence[int], edge: Style, charset: str,
+          left: Line = (), right: Line = (), after: int = 0) -> Line:
+    """A box's top or bottom edge, or a rule across it (`kind`), with a tee wherever a column separator meets it;
+    `left` set into it past `after` (a corner or a joint) and before the next joint, `right` before the far corner
+    when it crosses no joint and clears `left`. A text that does not fit is cut to the room it has."""
+    glyphs = BOX_GLYPHS[charset]
+    first, last, tee = {"top": ("╭", "╮", "┬"), "bottom": ("╰", "╯", "┴"), "rule": ("├", "┤", "┼")}[kind]
+    cells = [(glyphs["─"], edge)] * width
+    cells[0], cells[-1] = (glyphs[first], edge), (glyphs[last], edge)
+    for at in joints:
+        cells[at] = (glyphs[tee], edge)
+    end = after + 1
+    stop = min([at for at in joints if at > after] + [width - 1])
+    room = stop - (after + 3) - 2
+    if left and room > 0:
+        cells[after + 2] = (" ", edge)
+        end = _place(cells, after + 3, truncate_line(left, room))
+        cells[end] = (" ", edge)
+    begin = width - 3 - line_width(right)
+    if right and begin - 1 > end + 1 and not [at for at in joints if begin - 1 <= at <= width - 3]:
+        cells[begin - 1] = (" ", edge)
+        cells[_place(cells, begin, right)] = (" ", edge)
+    return _cells_line(cells)
+
+
+def _box_row(columns: Sequence[tuple[Line, int]], edge: Style, charset: str, band: Style | None = None) -> Line:
+    """One row of a box: each column's line padded to its width, a pad either side, separators between them; on a
+    `band`, everything between the outer edges takes it, so the band runs from edge to edge."""
+    vertical = BOX_GLYPHS[charset]["│"]
+    inner: list[Span] = []
+    for number, (line, width) in enumerate(columns):
+        if number:
+            inner.append(Span(vertical, edge))
+        inner += [Span(" "), *_pad(line, width), Span(" ")]
+    if band is not None:
+        inner = [Span(span.text, _on(band, span.style, span.text)) for span in inner]
+    return (Span(vertical, edge), *inner, Span(vertical, edge))
+
+
+def _panel(widths: Sequence[int], rows: Sequence[Sequence[Line]], edge: Style, charset: str, *,
+           top: tuple[Line, Line] = ((), ()), bottom: Line = (), after_first: bool = False,
+           rules: Sequence[int] = (), bands: Mapping[int, Style] | None = None) -> list[Line]:
+    """A rounded box in the launch card's style (`launch_card.boxed`) with columns `widths` wide: its top edge
+    carries `top` (left, right), its bottom edge `bottom`, both past the first column when `after_first`; a rule
+    goes in before each row numbered in `rules`, and a row numbered in `bands` runs on that band."""
+    width = _box_width(widths)
+    joints = _joints(widths)
+    after = joints[0] if after_first and joints else 0
+    lines = [_edge("top", width, joints, edge, charset, *top, after=after)]
+    for number, row in enumerate(rows):
+        if number in rules:
+            lines.append(_edge("rule", width, joints, edge, charset))
+        lines.append(_box_row(list(zip(row, widths)), edge, charset, (bands or {}).get(number)))
+    lines.append(_edge("bottom", width, joints, edge, charset, bottom, after=after))
+    return lines
+
+
 def avatar(name: str, charset: str = "unicode") -> list[str]:
     """`AVATAR_ROWS` rows of `AVATAR_COLS` cells drawn from `name` alone, as an identicon: a sha256 of the name lays
     out a mirrored grid of pixels, two to a cell (`▀`, `▄`, `█`). The same name draws the same face on every run."""
@@ -1197,30 +1302,10 @@ def _avatar_style(name: str, theme: Theme) -> Style:
     return replace(ramp[hashlib.sha256(name.encode("utf-8")).digest()[8] % len(ramp)], bold=False)
 
 
-def _border(corners: tuple[str, str], left: Line, right: Line, width: int, edge: Style, line: str) -> Line:
-    """One edge of a box `width` wide: `left` set into it after the corner, `right` before the other corner, the
-    rest of the edge between; `right` goes when both do not fit, and `left` is cut to what is left."""
-    first, last = corners
-    head = (Span(f"{first}{line} ", edge),) if left else (Span(f"{first}{line}", edge),)
-    tail = (Span(" ", edge), *right, Span(f" {line}{last}", edge)) if right else (Span(last, edge),)
-    if right and line_width(head) + line_width(left) + line_width(tail) + 2 > width:
-        tail = (Span(last, edge),)
-    left = truncate_line(left, max(width - line_width(head) - line_width(tail) - 1, 0)) if left else ()
-    fill = width - line_width(head) - line_width(left) - line_width(tail)
-    return (*head, *left, Span((" " if left else "") + line * max(fill - (1 if left else 0), 0), edge), *tail)
-
-
-def _box(top: tuple[Line, Line], bottom: Line, body: Sequence[Line], width: int, edge: Style, charset: str) -> list[Line]:
-    """`body` in a rounded box `width` wide, in the launch card's style (`launch_card.boxed`): the top edge carries
-    `top`'s two lines, left and right, the bottom edge `bottom`. The delegation view's charset picks the corners."""
-    glyphs = BOX_GLYPHS[charset]
-    inner = width - 2 - 2 * BOX_PAD
-    rows = [(Span(glyphs[5] + " " * BOX_PAD, edge), *_pad(line, inner), Span(" " * BOX_PAD + glyphs[5], edge))
-            for line in body]
-    return [
-        _border((glyphs[0], glyphs[1]), *top, width, edge, glyphs[4]), *rows,
-        _border((glyphs[2], glyphs[3]), bottom, (), width, edge, glyphs[4]),
-    ]
+def _face_column(name: str, rows: int, theme: Theme, charset: str) -> list[Line]:
+    style = _avatar_style(name, theme)
+    face = avatar(name, charset)
+    return [(Span(face[number], style),) if number < len(face) else () for number in range(rows)]
 
 
 def _bot_title(profile: Profile, served_by: str, highlighted: bool, theme: Theme, charset: str) -> Line:
@@ -1291,60 +1376,11 @@ def _model_row(profile: Profile, cols: int, theme: Theme) -> Line:
     return _fit(_label("model", theme), pieces, cols)
 
 
-def _day_rows(profile: Profile, now: float, cols: int, theme: Theme, charset: str) -> list[Line]:
-    """The last 24 hours over two rows: tokens by hour beside the sessions active in them (of every one stored),
-    then those sessions' tokens and cost."""
-    lead = _label("24 h", theme)
-    if profile.store:
-        style = theme.muted if "no state.db" in profile.store else theme.warn
-        return [_fit(lead, [(0, "", (Span(f"sessions: {profile.store}", style),))], cols), ()]
-    total = sum(count for _source, count in profile.sources)
-    stored = (1, " · ", _figure(f"{total:,}", "stored", theme))
-    if not profile.active:
-        last = f" · last active {age_text(profile.last_activity, now)}" if profile.last_activity else ""
-        return [_fit(lead, [(0, "", (Span(f"no activity{last}", theme.muted),)), stored], cols), ()]
-    pieces: list[Piece] = []
-    if profile.hourly and any(profile.hourly):
-        pieces.append((2, "", (Span(_spark(profile.hourly, charset), theme.running),)))
-    pieces += [(0, SPARK_GAP if pieces else "", _figure(str(profile.active), "active", theme)), stored]
-    spent = _fit(_label("tokens", theme), _usage_pieces(profile.usage, theme), cols) if profile.usage is not None else ()
-    return [_fit(lead, pieces, cols), spent]
-
-
-def _memory_row(profile: Profile, cols: int, theme: Theme, charset: str) -> Line:
-    """Hermes' memory and user profile as gauges, then the OMH store's records."""
-    pieces: list[Piece] = []
-    for memory in profile.memory:
-        named = () if memory.target == "memory" else (Span("user ", theme.muted),)
-        pieces.append((0 if memory.target == "memory" else 2, MEMORY_GAP if pieces else "", (*named, *_gauge(memory, theme, charset))))
-    if profile.omh_records is not None:
-        shown = f"{OMH_RECORDS_CAP:,}+" if profile.omh_records > OMH_RECORDS_CAP else f"{profile.omh_records:,}"
-        pieces.append((3, MEMORY_GAP, (Span("OMH ", theme.muted), *_figure(shown, "record" if profile.omh_records == 1 else "records", theme))))
-    elif profile.omh:
-        pieces.append((3, MEMORY_GAP, (Span(profile.omh, theme.muted),)))
-    return _fit(_label("memory", theme), pieces, cols)
-
-
-def _faced(name: str, rows: Sequence[Line], width: int, theme: Theme, charset: str) -> list[Line]:
-    """`rows` beside the face drawn from `name`, when the box inside is `AVATAR_MIN_INNER` wide or more."""
-    if width < AVATAR_MIN_INNER:
-        return list(rows)
-    face = avatar(name, charset)
-    style = _avatar_style(name, theme)
-    blank = " " * AVATAR_COLS
-    return [(Span(face[number] if number < len(face) else blank, style), Span(AVATAR_GAP), *row)
-            for number, row in enumerate(rows)]
-
-
-def _room(width: int) -> int:
-    """What a box's rows have beside the face, inside its edges and pads."""
-    inner = width - 2 - 2 * BOX_PAD
-    return inner - (AVATAR_COLS + len(AVATAR_GAP) if inner >= AVATAR_MIN_INNER else 0)
-
-
-def _now_row(session: SessionRow, now: float, cols: int, theme: Theme) -> Line:
+def _now_row(session: SessionRow | None, now: float, cols: int, theme: Theme) -> Line:
     """The newest session: its title, cut with an ellipsis to the room it has, and its source and age pushed right."""
     lead = _label("now", theme)
+    if session is None:
+        return (*lead, Span("no session yet", theme.muted))
     where = " · ".join(part for part in (session.source, age_text(session.last_activity, now)) if part)
     room = cols - line_width(lead) - cell_width(where) - FIT_GAP
     if room < NOW_TITLE_MIN:
@@ -1354,65 +1390,138 @@ def _now_row(session: SessionRow, now: float, cols: int, theme: Theme) -> Line:
     return (*lead, Span(title, theme.text), Span(gap), Span(where, theme.muted))
 
 
-def bot_rows(profile: Profile, now: float, width: int, theme: Theme, charset: str = "unicode") -> list[Line]:
-    """The rows inside a bot's box, before its face: model, now (when there is a session), 24 h, tokens, memory."""
-    room = _room(width)
-    latest = (_now_row(profile.newest, now, room, theme),) if profile.newest is not None else ()
-    return [_model_row(profile, room, theme), *latest, *_day_rows(profile, now, room, theme, charset),
-            _memory_row(profile, room, theme, charset)]
+def _day_row(profile: Profile, now: float, cols: int, theme: Theme, charset: str) -> Line:
+    """The last 24 hours: tokens by the hour each active session was last active, how many were, how many are stored."""
+    lead = _label("24 h", theme)
+    if profile.store:
+        style = theme.muted if "no state.db" in profile.store else theme.warn
+        return _fit(lead, [(0, "", (Span(f"sessions: {profile.store}", style),))], cols)
+    total = sum(count for _source, count in profile.sources)
+    stored = (1, " · ", _figure(f"{total:,}", "stored", theme))
+    if not profile.active:
+        last = f" · last active {age_text(profile.last_activity, now)}" if profile.last_activity else ""
+        return _fit(lead, [(0, "", (Span(f"no activity{last}", theme.muted),)), stored], cols)
+    pieces: list[Piece] = []
+    if profile.hourly and any(profile.hourly):
+        pieces.append((2, "", (Span(_spark(profile.hourly, charset), theme.running),)))
+    pieces += [(0, SPARK_GAP if pieces else "", _figure(str(profile.active), "active", theme)), stored]
+    return _fit(lead, pieces, cols)
+
+
+def _tokens_row(profile: Profile, cols: int, theme: Theme) -> Line:
+    if profile.usage is None or not profile.active:
+        return ()
+    return _fit(_label("tokens", theme), [(rank, gap if number else "", piece) for number, (rank, gap, piece)
+                                          in enumerate(_usage_pieces(profile.usage, theme, priced=False))], cols)
+
+
+def _cost_row(profile: Profile, cols: int, theme: Theme) -> Line:
+    if profile.usage is None or not profile.active:
+        return ()
+    pieces = [piece for piece in _usage_pieces(profile.usage, theme) if piece[0] == COST_RANK]
+    return _fit(_label("cost", theme), [(0, "", piece) for _rank, _gap, piece in pieces], cols) if pieces else ()
+
+
+def _memory_target_row(memory: MemoryFile, cols: int, theme: Theme, charset: str, exact: bool = False) -> Line:
+    """A memory target's gauge; with `exact`, its entries and characters beside it, which give way first."""
+    pieces: list[Piece] = [(0, "", _gauge(memory, theme, charset))]
+    if exact and memory.enabled and not memory.problem and memory.limit is not None:
+        pieces.append((1, "  ", _figure(str(memory.entries), "entry" if memory.entries == 1 else "entries", theme)))
+        pieces.append((2, " · ", (Span(f"{memory.chars:,}", theme.user), Span(f"/{memory.limit:,} chars", theme.muted))))
+    return _fit(_label("memory" if memory.target == "memory" else "user", theme), pieces, cols)
+
+
+def _omh_row(profile: Profile, cols: int, theme: Theme) -> Line:
+    if profile.omh_records is not None:
+        shown = f"{OMH_RECORDS_CAP:,}+" if profile.omh_records > OMH_RECORDS_CAP else f"{profile.omh_records:,}"
+        return _fit(_label("OMH", theme), [(0, "", _figure(shown, "record" if profile.omh_records == 1 else "records", theme))], cols)
+    return _fit(_label("OMH", theme), [(0, "", (Span(profile.omh, theme.muted),))], cols) if profile.omh else ()
+
+
+def _card_widths(cols: int) -> tuple[list[int], bool, bool]:
+    """A card's column widths at `cols`, whether it has a face, and whether its fields sit in two columns (the
+    face, then `model` / `now` / `tokens` / `cost` beside `24 h` / `memory` / `user` / `OMH`) or one."""
+    if cols - 4 < AVATAR_MIN_INNER:
+        return [max(cols - 4, 1)], False, False
+    left = cols - 18 - CARD_RIGHT
+    if left >= CARD_LEFT_MIN:
+        return [AVATAR_COLS, left, CARD_RIGHT], True, True
+    return [AVATAR_COLS, cols - 15], True, False
 
 
 def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, width: int, theme: Theme,
-            charset: str = "unicode", height: int = 0) -> list[Line]:
-    """One bot's box: its name and gateway mark in the top edge, the running gateway's facts on its right; its face
-    and `bot_rows` inside, filled out to `height` rows, so boxes side by side are as tall; its platforms in the
-    bottom edge. The highlighted bot's edge takes the theme's accent (`brand`), the others the rule's colour."""
-    rows = bot_rows(profile, now, width, theme, charset)
-    rows += [()] * (height - len(rows))
-    body = _faced(_text(profile.name), rows, width - 2 - 2 * BOX_PAD, theme, charset)
+            charset: str = "unicode") -> list[Line]:
+    """One bot's card, `width` wide: its name and gateway mark in the top edge with the running gateway's figures on
+    its right; its face, a separator, and its fields in two columns where the width allows (one where it does not);
+    its platforms in the bottom edge. Every card at one width has the same columns, so they line up down the page;
+    the highlighted card's edge takes the theme's accent (`brand`), the others the rule's colour."""
+    widths, faced, split = _card_widths(width)
+    fields = widths[1:] if faced else widths
+    left = [_model_row(profile, fields[0], theme), _now_row(profile.newest, now, fields[0], theme),
+            _tokens_row(profile, fields[0], theme), _cost_row(profile, fields[0], theme)]
+    right_width = fields[-1]
+    right = [_day_row(profile, now, right_width, theme, charset),
+             *(_memory_target_row(memory, right_width, theme, charset) for memory in profile.memory),
+             _omh_row(profile, right_width, theme)]
+    if split:
+        height = max(len(left), len(right), AVATAR_ROWS)
+        columns = [left + [()] * (height - len(left)), right + [()] * (height - len(right))]
+    else:
+        stacked = left + right
+        height = max(len(stacked), AVATAR_ROWS if faced else 0)
+        columns = [stacked + [()] * (height - len(stacked))]
+    if faced:
+        columns.insert(0, _face_column(_text(profile.name), height, theme, charset))
+    rows = [[column[number] for column in columns] for number in range(height)]
     edge = theme.brand if highlighted else theme.rule
     top = (_bot_title(profile, served_by, highlighted, theme, charset), _bot_facts(profile, now, theme))
-    return _box(top, _bot_platforms(profile, served_by, max(width - 6, 1), theme, charset), body, width, edge, charset)
-
-
-def _sized(memory: MemoryFile, label: str, cols: int, theme: Theme, charset: str) -> Line:
-    """A memory target's gauge with its exact entries and characters, which give way before the gauge does."""
-    pieces: list[Piece] = [(0, "", _gauge(memory, theme, charset))]
-    if memory.enabled and not memory.problem and memory.limit is not None:
-        pieces.append((1, "  ", _figure(str(memory.entries), "entry" if memory.entries == 1 else "entries", theme)))
-        pieces.append((2, " · ", (Span(f"{memory.chars:,}", theme.user), Span(f"/{memory.limit:,} chars", theme.muted))))
-    return _fit(_label(label, theme), pieces, cols)
+    bottom = _bot_platforms(profile, served_by, max(width - 6 - (widths[0] + 3 if faced else 0), 1), theme, charset)
+    return _panel(widths, rows, edge, charset, top=top, bottom=bottom, after_first=faced)
 
 
 def profile_box(profile: Profile, served_by: str, now: float, width: int, theme: Theme, charset: str = "unicode") -> list[Line]:
-    """Level 2's header: the profile's box as level 1 draws its edges, holding the gateway record (state, pid, how
-    old), each platform's error, each memory target's gauge with its exact figures, and sessions by source. A
+    """Level 2's header: the profile's card edges around its face and its record in full: the gateway (state, pid,
+    how old), each platform's error, each memory target's gauge with its exact figures, and sessions by source. A
     narrow box gives up the least of these whole; nothing is cut mid-word."""
-    room = _room(width)
+    faced = width - 4 >= AVATAR_MIN_INNER
+    widths = [AVATAR_COLS, width - 15] if faced else [max(width - 4, 1)]
+    room = widths[-1]
     gateway = profile.gateway
     _glyph, words, style = _gateway_words(profile, served_by, theme)
-    record: list[Piece] = [(0, "", (Span(words.removeprefix("gateway "), style),))]  # the label says "gateway"
+    if gateway.live:  # in pieces, so a narrow box gives up the pid and the agents whole
+        record: list[Piece] = [(0, "", (Span(gateway.state, style),))]
+        if gateway.pid is not None:
+            record.append((3, " · ", (Span("pid ", theme.muted), Span(str(gateway.pid), theme.text))))
+        if gateway.active_agents:
+            record.append((2, " · ", (Span(f"{_count(gateway.active_agents, 'agent')} running", style),)))
+    else:
+        record = [(0, "", (Span(words.removeprefix("gateway "), style),))]  # the label says "gateway"
     if gateway.updated is not None and not (gateway.problem or served_by or gateway.elsewhere):
         record.append((1, " · ", (Span("updated ", theme.muted), Span(age_text(gateway.updated, now), theme.text))))
-    rows = [_fit(_label("gateway", theme), record, room)]
+    fields = [_fit(_label("gateway", theme), record, room)]
     for platform in gateway.platforms:
         if platform.current and platform.error:
-            rows.append(_fit(_label("error", theme), [(0, "", (Span(f"{platform.name}: {platform.error}", theme.error),))], room))
-    for memory in profile.memory:
-        rows.append(_sized(memory, "memory" if memory.target == "memory" else "user", room, theme, charset))
+            fields.append(_fit(_label("error", theme), [(0, "", (Span(f"{platform.name}: {platform.error}", theme.error),))], room))
+    fields += [_memory_target_row(memory, room, theme, charset, exact=True) for memory in profile.memory]
     sources = [(1 + number, " · " if number else "", (Span(f"{source} ", theme.muted), Span(f"{count:,}", theme.user)))
                for number, (source, count) in enumerate(profile.sources)]
     if sources:
-        rows.append(_fit(_label("sources", theme), sources, room))
-    body = _faced(_text(profile.name), rows, width - 2 - 2 * BOX_PAD, theme, charset)
+        fields.append(_fit(_label("sources", theme), sources, room))
+    height = max(len(fields), AVATAR_ROWS if faced else 0)
+    fields += [()] * (height - len(fields))
+    columns = [_face_column(_text(profile.name), height, theme, charset), fields] if faced else [fields]
+    rows = [[column[number] for column in columns] for number in range(height)]
     top = (_bot_title(profile, served_by, False, theme, charset), _bot_facts(profile, now, theme))
-    return _box(top, _bot_platforms(profile, served_by, max(width - 6, 1), theme, charset), body, width, theme.rule, charset)
+    bottom = _bot_platforms(profile, served_by, max(width - 6 - (widths[0] + 3 if faced else 0), 1), theme, charset)
+    return _panel(widths, rows, theme.rule, charset, top=top, bottom=bottom, after_first=faced)
 
 
-def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme) -> Line:
-    """The title, then what every profile adds up to: gateways up, agents running, the active sessions' tokens."""
+def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme, charset: str) -> list[Line]:
+    """The board's title in a box of its own, around what every profile adds up to: gateways up, agents running,
+    and the active sessions' tokens and cost."""
+    width = max(cols - 4, 1)
     up = [profile.gateway for profile in profiles if profile.gateway.live]
-    pieces: list[Piece] = [(0, "", (Span(BOARD_TITLE, theme.heading), Span(f" · {_count(len(profiles), 'profile')}", theme.muted)))]
+    pieces: list[Piece] = [(0, "", _figure(str(len(profiles)), "profile" if len(profiles) == 1 else "profiles", theme))]
     if up:
         pieces.append((1, " · ", _figure(str(len(up)), "gateway up" if len(up) == 1 else "gateways up", theme)))
         agents = sum(gateway.active_agents for gateway in up)
@@ -1430,33 +1539,21 @@ def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme) -> Line:
         for number, (_rank, gap, piece) in enumerate(_usage_pieces(total, theme, cached=False)):
             day += [*((Span(gap),) if number else ()), *piece]
         pieces.append((3, " · ", tuple(day)))
-    return _fit((), pieces, cols)
+    return _panel([width], [[_fit((), pieces, width)]], theme.rule, charset, top=((Span(BOARD_TITLE, theme.heading),), ()))
 
 
 def profile_lines(
     profiles: Sequence[Profile], selected: int, now: float, cols: int, theme: Theme, charset: str = "unicode",
 ) -> tuple[list[Line], tuple[int, int]]:
-    """Level 1's rows at `cols`, and the first and last row of the highlighted profile's box. Two boxes to a row when
-    each can be `BOX_MIN` wide, else one; `charset` is the delegation view's (`unicode` or `ascii`), for the box
-    edges, the faces, the gauges, the sparkline and the chips."""
-    lines: list[Line] = [_board_head(profiles, cols, theme), ()]
+    """Level 1's rows at `cols`, and the first and last row of the highlighted profile's card: the totals in their
+    box, then one card a row, full width. `charset` is the delegation view's (`unicode` or `ascii`), for the box
+    edges and joints, the faces, the gauges, the sparkline and the chips."""
+    lines: list[Line] = [*_board_head(profiles, cols, theme, charset), ()]
     span = (0, 0)
-    across = 2 if cols >= 2 * BOX_MIN + len(BOX_GAP) else 1
-    width = max((cols - (across - 1) * len(BOX_GAP)) // across, 1)
-    for start in range(0, len(profiles), across):
-        group = profiles[start : start + across]
-        height = max(len(bot_rows(profile, now, width, theme, charset)) for profile in group)
-        boxes = [
-            bot_box(profile, _served_by(profiles, profile), start + offset == selected, now, width, theme, charset, height)
-            for offset, profile in enumerate(group)
-        ]
+    for index, profile in enumerate(profiles):
         first = len(lines)
-        for parts in zip(*boxes):
-            row: list[Span] = []
-            for part in parts:
-                row += [*((Span(BOX_GAP),) if row else ()), *part]
-            lines.append(tuple(row))
-        if start <= selected < start + across:
+        lines += bot_box(profile, _served_by(profiles, profile), index == selected, now, cols, theme, charset)
+        if index == selected:
             span = (first, len(lines) - 1)
         lines.append(())
     if not profiles:
@@ -1464,86 +1561,106 @@ def profile_lines(
     return [truncate_line(line, cols) for line in lines], span
 
 
-def session_lines(
-    snapshot: BoardSnapshot, selected: int, now: float, cols: int, theme: Theme,
-) -> tuple[list[Line], tuple[int, int]]:
-    """Level 2's rows at `cols`, and the highlighted session's row (twice)."""
-    view = snapshot.view
-    unlisted = f"; {_count(snapshot.unlisted, 'subagent session')} not listed" if snapshot.unlisted else ""
-    head = f"{_text(view.profile)} · {_count(len(snapshot.sessions), 'session')}, newest activity first{unlisted}"
-    lines: list[Line] = [(Span(head, theme.heading),)]
-    profile = next((item for item in snapshot.profiles if item.name == view.profile), None)
-    if profile is not None:
-        lines += profile_box(profile, _served_by(snapshot.profiles, profile), now, cols, theme)
-    lines.append(())
-    if snapshot.problem:
-        lines.append((Span(snapshot.problem, theme.warn),))
-    elif not snapshot.sessions:
-        lines.append((Span("No sessions.", theme.muted),))
-    span = (0, 0)
-    table = _session_table(snapshot.sessions, now)
-    keep = _session_columns(table, cols - cell_width(CHOICE_MARK))
-    widths = {name: max(cell_width(cells[name]) for cells in table) for name in keep}
-    room = cols - cell_width(CHOICE_MARK) - sum(widths[name] + len(SESSION_GAP) for name in keep)
-    for index, (row, cells) in enumerate(zip(snapshot.sessions, table)):
-        highlighted = index == selected
-        band = theme.menu_current if highlighted else theme.menu
-        mark = CHOICE_MARK if highlighted else " " * len(CHOICE_MARK)
-        if highlighted:
-            span = (len(lines), len(lines))
-        label = row.title or _text(row.id)
-        if room < SESSION_TITLE_MIN:
-            # No room for a column: the title alone, still banded to the row's end.
-            label = truncate(label, max(cols - cell_width(mark), 0))
-            lines.append((Span(mark, _on(band, theme.prompt)), Span(label + " " * (cols - cell_width(mark) - cell_width(label)), band)))
-            continue
-        label = truncate(label, room)
-        spans = [Span(mark, _on(band, theme.prompt)), Span(label + " " * (room - cell_width(label)), band)]
-        for name in keep:
-            pad = " " * (widths[name] - cell_width(cells[name]))
-            text = pad + cells[name] if name in SESSION_RIGHT else cells[name] + pad
-            spans.append(Span(SESSION_GAP + text, _on(band, theme.muted)))
-        lines.append(tuple(spans))
-    return [truncate_line(line, cols) for line in lines], span
-
-
 def _on(band: Style, style: Style, text: str = "") -> Style:
-    """`style`'s colour on the row's band, so the band runs unbroken from the mark to the row's end; the band's own
-    ink where `style`'s colour would not read on it (a muted word on the highlighted band): 4.5:1 for words, 3:1
-    for a lone mark such as a platform's dot, so its state's colour survives wherever it can."""
+    """`style`'s colour on the row's band, so the band runs unbroken from edge to edge; the band's own ink where
+    `style`'s colour would not read on it (a muted word on the highlighted band): 4.5:1 for words, 3:1 for a lone
+    mark, so a state's colour survives wherever it can."""
     floor = TEXT_CONTRAST if any(character.isalnum() for character in text) or not text else EDGE_CONTRAST
     readable = style.fg is not None and band.bg is not None and contrast_ratio(style.fg, band.bg) >= floor
     return replace(style, fg=style.fg if readable or band.bg is None else band.fg, bg=band.bg, reverse=band.reverse)
 
 
 def _session_table(sessions: Sequence[SessionRow], now: float) -> list[dict[str, str]]:
-    """Each session's level-2 cells by column; "" where the store recorded nothing for it."""
+    """Each session's level-2 cells by column, the unit in the column's header; "" where the store recorded nothing."""
     table = []
     for row in sessions:
         usage = row.usage if row.usage is not None and (row.usage.input or row.usage.output) else None
         cost = _cost_text(usage) if usage is not None and (usage.cost is not None or usage.included) else ""
         table.append({
             "model": _short_model(row.model),
-            "input": f"{compact_count(usage.input)} in" if usage is not None else "",
-            "output": f"{compact_count(usage.output)} out" if usage is not None else "",
+            "input": compact_count(usage.input) if usage is not None else "",
+            "output": compact_count(usage.output) if usage is not None else "",
             "cost": cost,
             "source": row.source,
             "age": age_text(row.last_activity, now),
-            "messages": _count(row.message_count, "message"),
+            "messages": str(row.message_count),
         })
     return table
 
 
+def _column_width(table: Sequence[Mapping[str, str]], name: str) -> int:
+    return max([cell_width(SESSION_HEADERS[name])] + [cell_width(cells[name]) for cells in table])
+
+
 def _session_columns(table: Sequence[Mapping[str, str]], cols: int) -> list[str]:
-    """The level-2 columns that fit beside a title of at least `SESSION_TITLE_MIN` cells in `cols`: a column no
-    row fills is left out, then `SESSION_DROPS` are given up in order until the title has its room."""
+    """The level-2 columns that fit beside a title of at least `SESSION_TITLE_MIN` cells in a table box `cols`
+    wide: a column no row fills is left out, then `SESSION_DROPS` are given up in order until the title has room."""
     keep = [name for name in SESSION_COLUMNS if any(cells[name] for cells in table)]
     for dropped in ((), *SESSION_DROPS):
         keep = [name for name in keep if name not in dropped]
-        used = sum(max(cell_width(cells[name]) for cells in table) + len(SESSION_GAP) for name in keep)
-        if cols - used >= SESSION_TITLE_MIN:
+        block = sum(_column_width(table, name) for name in keep) + len(SESSION_GAP) * max(len(keep) - 1, 0)
+        if cols - 7 - block - len(CHOICE_MARK) >= SESSION_TITLE_MIN:
             break
     return keep
+
+
+def _session_block(cells: Mapping[str, str], keep: Sequence[str], table: Sequence[Mapping[str, str]], style: Style) -> Line:
+    parts = []
+    for name in keep:
+        pad = " " * (_column_width(table, name) - cell_width(cells[name]))
+        parts.append(pad + cells[name] if name in SESSION_RIGHT else cells[name] + pad)
+    return (Span(SESSION_GAP.join(parts), style),)
+
+
+def session_lines(
+    snapshot: BoardSnapshot, selected: int, now: float, cols: int, theme: Theme, charset: str = "unicode",
+) -> tuple[list[Line], tuple[int, int]]:
+    """Level 2's rows at `cols`, and the highlighted session's row (twice): the profile's box, then the sessions in a
+    table box of their own, a muted header row over a rule, a separator between the title and the figures, and the
+    highlighted row's band from edge to edge."""
+    view = snapshot.view
+    lines: list[Line] = []
+    profile = next((item for item in snapshot.profiles if item.name == view.profile), None)
+    if profile is not None:
+        lines += [*profile_box(profile, _served_by(snapshot.profiles, profile), now, cols, theme, charset), ()]
+    # The table's title, whole pieces only: the box above already names the profile.
+    pieces: list[Piece] = [(0, "", _figure(str(len(snapshot.sessions)), "session" if len(snapshot.sessions) == 1 else "sessions", theme)),
+                           (2, ", ", (Span("newest activity first", theme.muted),))]
+    if snapshot.unlisted:
+        pieces.append((1, " · ", (Span(f"{_count(snapshot.unlisted, 'subagent session')} not listed", theme.muted),)))
+
+    def head(room: int) -> Line:
+        return _fit((), pieces, max(room, 1))
+
+    if snapshot.problem or not snapshot.sessions:
+        said = (Span(snapshot.problem, theme.warn),) if snapshot.problem else (Span("No sessions.", theme.muted),)
+        lines += _panel([max(cols - 4, 1)], [[said]], theme.rule, charset, top=(head(cols - 6), ()))
+        return [truncate_line(line, cols) for line in lines], (0, 0)
+    table = _session_table(snapshot.sessions, now)
+    keep = _session_columns(table, cols)
+    block = sum(_column_width(table, name) for name in keep) + len(SESSION_GAP) * max(len(keep) - 1, 0)
+    title_width = cols - 7 - block
+    if not keep or title_width < SESSION_TITLE_MIN:
+        keep, widths = [], [max(cols - 4, 1)]
+    else:
+        widths = [title_width, block]
+    header = {name: SESSION_HEADERS[name] for name in SESSION_COLUMNS}
+    rows: list[list[Line]] = [[(Span(" " * len(CHOICE_MARK) + "title", theme.muted),),
+                               *([_session_block(header, keep, table, theme.muted)] if keep else [])]]
+    bands: dict[int, Style] = {}
+    for index, (row, cells) in enumerate(zip(snapshot.sessions, table)):
+        highlighted = index == selected
+        mark = CHOICE_MARK if highlighted else " " * len(CHOICE_MARK)
+        label = truncate(row.title or _text(row.id), max(widths[0] - len(mark), 1))
+        title = (Span(mark, theme.prompt), Span(label, theme.text))
+        rows.append([title, *([_session_block(cells, keep, table, theme.muted)] if keep else [])])
+        if highlighted:
+            bands[len(rows) - 1] = theme.menu_current
+    drawn = _panel(widths, rows, theme.rule, charset, top=(head(widths[0] - 2 if keep else cols - 6), ()), rules=(1,), bands=bands)
+    first = len(lines) + 3  # the top edge, the header row and its rule
+    lines += drawn
+    span = (first + selected, first + selected) if 0 <= selected < len(snapshot.sessions) else (0, 0)
+    return [truncate_line(line, cols) for line in lines], span
 
 
 def _clock_text(at: float) -> str:
@@ -1553,36 +1670,46 @@ def _clock_text(at: float) -> str:
         return "--"
 
 
-def message_lines(snapshot: BoardSnapshot, session: SessionRow | None, now: float, cols: int, theme: Theme) -> list[Line]:
-    """Level 3's rows at `cols`: who and where, then each message's time, role and its text's first rows."""
+def message_lines(
+    snapshot: BoardSnapshot, session: SessionRow | None, now: float, cols: int, theme: Theme, charset: str = "unicode",
+) -> list[Line]:
+    """Level 3's rows at `cols`: the session in a box (who and where, its model, tokens and cost), then its messages
+    in a second box, each one's time and role in a column of their own and its text's first rows beside them."""
     view = snapshot.view
     title = (session.title or session.id) if session is not None else view.session
-    lines: list[Line] = [(Span(f"{_text(view.profile)} › {_text(title)}", theme.heading),)]
+    width = max(cols - 4, 1)
+    about: list[list[Line]] = []
     if session is not None:
-        about = f"{session.source} · {_count(session.message_count, 'message')} · last active {age_text(session.last_activity, now)}"
-        lines.append((Span(f"{about} · the last {MESSAGE_ROWS_READ} at most, oldest first", theme.muted),))
+        facts = f"{session.source} · {_count(session.message_count, 'message')} · last active {age_text(session.last_activity, now)}"
+        about.append([(Span(facts, theme.muted),)])
         ran = " · ".join(part for part in (session.model, _usage_text(session.usage) if session.usage is not None else "") if part)
         if ran:
-            lines.append((Span(ran, theme.muted),))
+            about.append([(Span(ran, theme.muted),)])
+    head = (Span(_text(view.profile), theme.muted), Span(" › ", theme.muted), Span(_text(title), theme.heading))
+    lines = _panel([width], about or [[()]], theme.rule, charset, top=(head, ()))
     lines.append(())
-    if snapshot.problem:
-        lines.append((Span(snapshot.problem, theme.warn),))
-    elif not snapshot.messages:
-        lines.append((Span("No messages.", theme.muted),))
+    tail = (Span(f"the last {MESSAGE_ROWS_READ} at most, oldest first", theme.muted),)
+    if snapshot.problem or not snapshot.messages:
+        said = (Span(snapshot.problem, theme.warn),) if snapshot.problem else (Span("No messages.", theme.muted),)
+        lines += _panel([width], [[said]], theme.rule, charset, top=(tail, ()))
+        return [truncate_line(line, cols) for line in lines]
+    lead = MESSAGE_LEAD
+    room = max(cols - 7 - lead, 8)
     roles = {"user": theme.user, "assistant": theme.label, "tool": theme.tool}
+    rows: list[list[Line]] = []
     for message in snapshot.messages:
-        stamp, role = f"{_clock_text(message.at)} ", f"{message.role:<9} "
-        lead = cell_width(stamp) + cell_width(role)
         text = message.text[:MESSAGE_SHOWN_CHARS] + ("…" if len(message.text) > MESSAGE_SHOWN_CHARS else "")
-        room = max(cols - lead, 8)
-        rows = wrap_line((Span(text or "(empty)", theme.text if text else theme.muted),), room)
+        style = theme.tool if message.role == "tool" else theme.text
+        wrapped = wrap_line((Span(text or "(empty)", style if text else theme.muted),), room)
         kept = 1 if message.role == "tool" else MESSAGE_SHOWN_ROWS  # a tool result is the call's, not the talk's
-        if len(rows) > kept:
+        if len(wrapped) > kept:
             # The last row kept ends in an ellipsis, so a cut message never reads as whole.
-            rows = [*rows[: kept - 1], truncate_line((*rows[kept - 1], Span(" …")), room)]
-        for number, row in enumerate(rows):
-            prefix = (Span(stamp, theme.muted), Span(role, roles.get(message.role, theme.muted))) if number == 0 else (Span(" " * lead),)
-            lines.append((*prefix, *row))
+            wrapped = [*wrapped[: kept - 1], truncate_line((*wrapped[kept - 1], Span(" …")), room)]
+        for number, row in enumerate(wrapped):
+            who = (Span(f"{_clock_text(message.at)} ", theme.muted),
+                   Span(message.role, roles.get(message.role, theme.muted))) if number == 0 else ()
+            rows.append([who, row])
+    lines += _panel([lead, room], rows, theme.rule, charset, top=((), tail))  # right: clear of the time column's joint
     return [truncate_line(line, cols) for line in lines]
 
 
@@ -1746,7 +1873,7 @@ class BotBoard(Pager):
             return
         if not self.view.profile:
             self.lines, self._span = profile_lines(snapshot.profiles, self.profile_index, now, cols, theme)
-            self._head = 2
+            self._head = BOARD_HEAD_ROWS
             return
         current = self._current()
         if current is None:
@@ -1755,7 +1882,7 @@ class BotBoard(Pager):
         if not self.view.session:
             self.session_index = _find([row.id for row in current.sessions], self.highlighted_session, self.session_index)
             self.lines, self._span = session_lines(current, self.session_index, now, cols, theme)
-            self._head = len(self.lines) - len(current.sessions)  # the table's rows close the page
+            self._head = self._span[0] - self.session_index  # the first session's row: the boxes above it are header
             return
         session = current.sessions[0] if current.sessions else self.opened  # the row as read now, else as opened
         self.lines, self._span = message_lines(current, session, now, cols, theme), (0, 0)

@@ -1206,11 +1206,13 @@ the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 
 The bot board (Ctrl+S or `/bots`) shows this machine's Hermes bots, full
-screen, and changes nothing. Its first page opens with what every profile
-adds up to (gateways up, agents running, and the active sessions' tokens and
-cost), then lists the Hermes home the TUI runs under and every named profile
-beside it (`<root>/profiles/<name>/`), each in its own rounded box, two to a
-row when the terminal is about 146 columns or wider. A box's top edge carries
+screen, and changes nothing. Every region on it is a rounded box, in the
+launch card's style, its columns divided by lines that meet the edges in
+joints. Its first page opens with a box of what every profile adds up to
+(gateways up, agents running, and the active sessions' tokens and cost), then
+lists the Hermes home the TUI runs under and every named profile beside it
+(`<root>/profiles/<name>/`), each in a full-width card, one to a row, every
+card's columns lined up with the next. A card's top edge carries
 its gateway's state as a coloured mark, the bot's name (with the display name
 Hermes keeps in `profile.yaml`, when it set one) and, on the right, the running
 gateway's uptime, agents and resident memory; its bottom edge carries what the
@@ -1218,32 +1220,38 @@ gateway says when it is not plainly running, each platform as a chip coloured
 by its state (`!` when it needs attention or failed, `○` when the gateway that
 recorded it has since stopped or restarted) and a restart Hermes was asked
 for. Inside, at the left, is a small face drawn from the bot's name alone,
-the same on every run, and beside it a label column: `model`, the default
+the same on every run, then the bot's fields, in two columns where the
+terminal is about 117 columns or wider and stacked in one below that:
+`model`, the default
 model its `config.yaml` names (and the model its newest session ran, when that
 differs); `now`, its newest session but delegated children, its title cut to
 fit and its source and age at the right; `24 h`, a sparkline of the active sessions' tokens by the hour each
 was last active, how many were active, and how many are stored; `tokens`,
-their input, output and cache-read tokens and cost; and `memory`, Hermes'
+their input, output and cache-read tokens; `cost`; `memory` and `user`, Hermes'
 `MEMORY.md` and `USER.md` as gauges against the limits its `config.yaml` sets
-(green below 70%, amber to 90%, red past it) and the record count of the OMH
-store its `config.yaml` names. The highlighted bot's box takes the theme's accent colour. Tokens and cost are each
+(green below 70%, amber to 90%, red past it); and `OMH`, the record count of
+the OMH store its `config.yaml` names. The highlighted bot's card takes the
+theme's accent colour. Tokens and cost are each
 session's lifetime totals, since Hermes records no time per call, and a cost
 appears only where Hermes priced it (`~` marks an estimate); sessions it did
 not price are counted as unpriced, never as $0. A store, config or memory
 file it cannot read is named as such, and a store without the token columns
 shows neither tokens nor a sparkline. A narrow terminal gives up the least
-important figures first (the face, then the top edge's figures, then the last
-chips) and never wraps a row. Enter opens a profile's
+important figures first (the top edge's figures, then the last chips and the
+face) and never wraps a row. Enter opens a profile's
 sessions under that profile's box, drawn as on the first page and holding
 the gateway record in full (state, pid, how old it is), each platform's error,
 each memory target's gauge with its exact entries and characters, and the
 sessions by source, a narrow box giving up whole fields rather than cutting
-words; the sessions follow, newest activity first, as a table: title, model, input and output
-tokens, cost, source, last activity and message count, numbers
-right-aligned; a narrow terminal gives up source, then
+words; the sessions follow in a table box of their own, newest activity
+first, under a header row and a rule: title, then, past one divider, model,
+input and output tokens, cost, source, last activity and message count,
+numbers right-aligned, the highlighted row banded from edge to edge; a narrow
+terminal gives up source, then
 cost, then tokens before the title runs short (delegated subagent sessions
 are counted on the first page, not listed), and Enter again a session's last 40 messages
-under its model, tokens and cost; ← or Esc goes back, q closes it from the
+in a box beneath the session's own (its source, messages, age, model, tokens
+and cost), each message's time and role in a column of their own; ← or Esc goes back, q closes it from the
 first page, and r reads again at once. It reads again every 5 s by itself, off the screen's own thread.
 It counts sessions active in the last 24 hours rather than open ones, because a
 messaging gateway leaves every chat it served open, so a Slack bot idle for weeks
