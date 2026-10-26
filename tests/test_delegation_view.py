@@ -4,8 +4,9 @@ The snapshots are the drawings themselves, reviewed as drawings: the export
 run (five nodes over three frontiers, one in each state a box colours
 apart) at 100 columns and in ASCII at 80, and the tree a narrow terminal or
 a tight budget gets. The other tests hold what one drawing cannot: each
-box's four lines, frontiers side by side with their label, one connector per
-frontier gap and its colour, Dependencies that are the graph's edges
+box's four lines, frontiers side by side with their label, the edges drawn
+between two frontiers (and the one connector where they cannot be drawn
+exactly) and their colour, Dependencies that are the graph's edges
 exactly, Node details only for a running or highlighted node, the width
 fallback, the roles a painter colours by state, `/dag`'s fold and highlight,
 no line wider than its width in terminal cells, and no exception for
@@ -55,7 +56,8 @@ Running · Done 1/5 · 1 failed
                                   │ Start node                   │
                                   └──────────────────────────────┘
                                                   │
-                                                  ▼
+                ╭─────────────────────────────────┼─────────────────────────────────╮
+                ▼                                 ▼                                 ▼
 ┌──────────────────────────────┐  ┌──────────────────────────────┐  ┌──────────────────────────────┐
 │ Export button                │  │ Export docs                  │  │ Export CLI flag              │
 │ unspecified-high · glm-5.3:… │  │ writing                      │  │ quick · glm-5.3-flash:low    │
@@ -63,7 +65,8 @@ Running · Done 1/5 · 1 failed
 │ ← Export API                 │  │ ← Export API                 │  │ ← Export API                 │
 └──────────────────────────────┘  └──────────────────────────────┘  └──────────────────────────────┘
 · Same frontier
-                                                  │
+                │                                 │                                 │
+                ╰─────────────────────────────────┼─────────────────────────────────╯
                                                   ▼
                                   ┌──────────────────────────────┐
                                   │ Verify export                │
@@ -289,6 +292,92 @@ def lane_edges(payload: dict) -> set[tuple[str, str, str]]:
             if edge["from"] in titles and edge["to"] in titles}
 
 
+def fan(widths: tuple[int, ...], edges: list[tuple[str, str]], *, running: str = "") -> dict:
+    """A graph of frontiers ``widths`` wide, lanes named by frontier and place (``1a``, ``1b``, ``2a``), every lane of
+    the first frontier dispatched by main, and ``edges`` between lanes; ``running`` names the lane that runs."""
+    lanes, order = [], 0
+    for at, count in enumerate(widths, 1):
+        for place in "abcdefgh"[:count]:
+            order += 1
+            lane_id = f"{at}{place}"
+            lanes.append(lane(lane_id, f"Lane {lane_id}", "quick", "glm-5.3-flash", "low",
+                              "running" if lane_id == running else "done", elapsed=12, order=order))
+    first = [item["id"] for item in lanes if item["id"].startswith("1")]
+    return graph([root(), *lanes], [*(("root", lane_id, "dispatch") for lane_id in first),
+                                    *((upper, lower, "depends_on") for upper, lower in edges)])
+
+
+CONNECTOR_GLYPHS = frozenset("│─╭╮╰╯┬┴┼├┤▼|-+v")
+
+
+def connector_roles(view) -> list[set[str]]:
+    """The roles of each line drawn only of connector glyphs (a stub, bus or arrow row), top to bottom."""
+    return [
+        {segment.role for segment in line if segment.text.strip()} for line in view.lines
+        if any(segment.text.strip() for segment in line)
+        and all(set(segment.text.strip()) <= CONNECTOR_GLYPHS for segment in line if segment.text.strip())
+    ]
+
+
+def gaps(view) -> list[tuple[list[str], list[str], list[str]]]:
+    """Each gap between two rows of boxes: the box row above's node ids, the one below's, and the connector rows
+    between them (the lines every piece of which is a connector)."""
+    lines = view.text_lines()
+    rows: dict[int, list[str]] = {}
+    bottoms: dict[int, int] = {}
+    for node_id, top, bottom in view.boxes:
+        rows.setdefault(top, []).append(node_id)
+        bottoms[top] = bottom
+    tops = sorted(rows)
+    found = []
+    for upper, lower in zip(tops, tops[1:]):
+        between = [lines[at] for at in range(bottoms[upper] + 1, lower)
+                   if lines[at].strip() and all(segment.role.startswith("connector")
+                                                for segment in view.lines[at] if segment.text.strip())]
+        found.append((rows[upper], rows[lower], between))
+    return found
+
+
+def middles(view) -> dict[str, int]:
+    """The cell under each box's middle, read off its top border."""
+    lines = view.text_lines()
+    by_top: dict[int, list[str]] = {}
+    for node_id, top, _bottom in view.boxes:
+        by_top.setdefault(top, []).append(node_id)
+    found = {}
+    for top, node_ids in by_top.items():
+        row = f" {lines[top]} "  # a cell of room each side: a corner is told by the rule on its inner side
+        lefts = [at - 1 for at, char in enumerate(row) if char in "┌+" and row[at + 1] in "─-"]
+        rights = [at - 1 for at, char in enumerate(row) if char in "┐+" and row[at - 1] in "─-"]
+        for node_id, left, right in zip(node_ids, lefts, rights):
+            found[node_id] = left + (right - left + 1) // 2
+    return found
+
+
+def drawn_edges(view, upper: list[str], lower: list[str], between: list[str]) -> set[tuple[str, str]] | None:
+    """The edges the connector rows of one gap draw, read the way a person reads them: each run of the bus joins
+    every stub over it to every arrow under it, and with no bus each stub leads straight down to the arrow under
+    it. None where a stub or an arrow is under no box's middle (the one centred connector)."""
+    middle = middles(view)
+    above = {middle[node_id]: node_id for node_id in upper}
+    below = {middle[node_id]: node_id for node_id in lower}
+    stubs = [at for at, char in enumerate(between[0]) if char.strip()]
+    arrows = [at for at, char in enumerate(between[-1]) if char.strip()]
+    if any(cell not in above for cell in stubs) or any(cell not in below for cell in arrows):
+        return None
+    if len(between) == 2:
+        return {(above[cell], below[cell]) for cell in stubs if cell in arrows}
+    runs: list[list[int]] = []
+    for at, char in enumerate(between[1]):
+        if char.strip():
+            if runs and runs[-1][-1] == at - 1:
+                runs[-1].append(at)
+            else:
+                runs.append([at])
+    return {(above[top], below[bottom]) for run in runs for top in stubs if top in run for bottom in arrows
+            if bottom in run}
+
+
 class SnapshotTests(unittest.TestCase):
     maxDiff = None
 
@@ -508,21 +597,85 @@ class BoxTests(unittest.TestCase):
         self.assertEqual(lines[rows[CLI][0]].index("┌"), lines[rows[BUTTON][0]].index("┌"),
                          "a wrapped row starts where the first one does")
 
-    def test_one_connector_per_frontier_gap(self) -> None:
-        for case, frontiers in ((dag_export_run(), 3), (dag_export_repair_run(), 5), (dag_export_button_repair_run(), 4),
-                                (nested(), 3), (parallel(6), 1)):
-            for width in (40, 80, 120):
+    def test_the_edges_between_two_frontiers_are_drawn(self) -> None:
+        # 1 -> 5 -> 2 -> 1: a fan-out, two fan-ins that share no parent, and a fan-in of two.
+        payload = fan((1, 5, 2, 1), [("1a", f"2{place}") for place in "abcde"] + [(f"2{place}", "3a") for place in "abc"]
+                      + [("2d", "3b"), ("2e", "3b"), ("3a", "4a"), ("3b", "4a")], running="3a")
+        view = render_delegation_view(payload, width=150)
+        self.assertEqual(view.layout, "box")
+        rows = [between for _upper, _lower, between in gaps(view)]
+        self.assertEqual([[line.rstrip() for line in between] for between in rows], [
+            [" " * 74 + "│",
+             " " * 14 + "╭" + "─" * 29 + "┬" + "─" * 29 + "┼" + "─" * 29 + "┬" + "─" * 29 + "╮",
+             " " * 14 + ("▼" + " " * 29) * 4 + "▼"],
+            [(" " * 14 + ("│" + " " * 29) * 4 + "│"),
+             " " * 14 + "╰" + "─" * 29 + "┴" + "─" * 14 + "┬" + "─" * 14 + "╯" + " " * 14 + "╭" + "─" * 14 + "┴"
+             + "─" * 29 + "╯",
+             " " * 59 + "▼" + " " * 29 + "▼"],
+            [" " * 59 + "│" + " " * 29 + "│",
+             " " * 59 + "╰" + "─" * 14 + "┬" + "─" * 14 + "╯",
+             " " * 74 + "▼"],
+        ])
+        for upper, lower, between in gaps(view):
+            self.assertEqual(drawn_edges(view, upper, lower, between),
+                             {(edge["from"], edge["to"]) for edge in payload["edges"]
+                              if edge["from"] in upper and edge["to"] in lower})
+
+    def test_the_drawn_edges_are_the_graph_edges_exactly(self) -> None:
+        """Wherever a gap draws more than one straight connector, reading its stubs, buses and arrows back gives the
+        gap's edges: none missing, and none that two groups sharing a bus would imply."""
+        straight = fan((2, 2), [("1a", "2a"), ("1b", "2b")])
+        disjoint = fan((4, 2), [("1a", "2a"), ("1b", "2a"), ("1c", "2b"), ("1d", "2b")])
+        cases = (dag_export_run(), dag_export_repair_run(), dag_export_button_repair_run(), nested(), owner_mock(),
+                 straight, disjoint, fan((1, 3, 1), [("1a", "2a"), ("1a", "2b"), ("1a", "2c"), ("2a", "3a"),
+                                                     ("2b", "3a"), ("2c", "3a")]))
+        drawn = 0
+        for case in cases:
+            for width in (60, 100, 150):
+                for charset in ("unicode", "ascii"):
+                    view = render_delegation_view(case, width=width, charset=charset)
+                    for upper, lower, between in gaps(view):
+                        if not between or (len(between) == 2 and sum(char.strip() != "" for char in between[0]) == 1):
+                            continue  # rows of one wrapped frontier, or one straight connector
+                        with self.subTest(name=case["name"], width=width, charset=charset, gap=(upper, lower)):
+                            self.assertEqual(drawn_edges(view, upper, lower, between),
+                                             {(edge["from"], edge["to"]) for edge in case["edges"]
+                                              if edge["from"] in upper and edge["to"] in lower})
+                            drawn += 1
+        self.assertGreater(drawn, 10, "the cases draw edges, not only the one connector")
+        for upper, lower, between in gaps(render_delegation_view(straight, width=100)):
+            self.assertEqual(len(between), 2, "edges that all go straight down draw no bus")
+            self.assertEqual(drawn_edges(render_delegation_view(straight, width=100), upper, lower, between),
+                             {("1a", "2a"), ("1b", "2b")})
+        bus = gaps(render_delegation_view(disjoint, width=150))[0][2][1]
+        self.assertEqual(len(bus.split()), 2, f"two groups that share no edge share no bus: {bus!r}")
+
+    def test_a_gap_whose_edges_cannot_be_drawn_exactly_gets_the_one_connector(self) -> None:
+        cases = {
+            # 1a leads to 2a and 2b, 1b only to 2b: one bus would say 1b -> 2a.
+            "a group not every parent to every child": fan((2, 2), [("1a", "2a"), ("1a", "2b"), ("1b", "2b")]),
+            # 1b's group sits inside the span of {1a, 1c} -> 2a: the two buses would share cells.
+            "two groups whose buses overlap": fan((3, 2), [("1a", "2a"), ("1c", "2a"), ("1b", "2b")]),
+            # 1a -> 3a skips frontier 2: no drawing of the gaps it crosses could show it.
+            "an edge that skips a frontier": fan((1, 2, 1), [("1a", "2a"), ("1a", "2b"), ("2a", "3a"), ("2b", "3a"),
+                                                             ("1a", "3a")]),
+        }
+        for name, case in cases.items():
+            for width in (100, 150):
                 view = render_delegation_view(case, width=width)
-                with self.subTest(name=case["name"], nodes=len(case["nodes"]), width=width):
+                with self.subTest(name, width=width):
                     self.assertEqual(view.layout, "box")
-                    lines = view.text_lines()
-                    arrows = [at for at, line in enumerate(lines) if "▼" in line]
-                    self.assertEqual(len(arrows), frontiers - 1)
-                    for at in arrows:
-                        self.assertEqual(lines[at].strip(), "▼")
-                        self.assertEqual(lines[at - 1].strip(), "│")
-                        self.assertEqual(lines[at - 1].index("│"), lines[at].index("▼"), "one straight connector")
-                        self.assertTrue(lines[at + 1].lstrip().startswith("┌"), "it ends at the next frontier")
+                    for _upper, _lower, between in gaps(view):
+                        self.assertEqual([line.strip() for line in between], ["│", "▼"])
+                        self.assertEqual(between[0].index("│"), between[1].index("▼"), "one straight connector")
+                    text_drawn = view.text()
+                    self.assertFalse(set(text_drawn) & set("╭╮╰╯┼"), "no bus is drawn")
+        # A frontier that wraps has no one row to draw edges to: the gaps on either side of it take the connector.
+        wrapped = render_delegation_view(dag_export_run(), width=80)
+        self.assertEqual([[line.strip() for line in between] for _upper, _lower, between in gaps(wrapped)
+                          if between], [["│", "▼"], ["│", "▼"]])
+        one_row = render_delegation_view(dag_export_run(), width=120)
+        self.assertEqual(len(gaps(one_row)[0][2]), 3, "the same run on one row draws its edges")
 
     def test_dependencies_are_the_graph_edges_exactly(self) -> None:
         for case in (dag_export_run(), dag_export_repair_run(), dag_export_button_repair_run(), nested(), owner_mock()):
@@ -844,10 +997,10 @@ class ReviewTests(unittest.TestCase):
     def test_a_connector_into_a_frontier_with_nothing_running_is_dim(self) -> None:
         handed = dag_export_run()
         handed["nodes"][2].update(state="dispatched", status="handed out")  # the frontier: handed out, failed
-        view = render_delegation_view(handed, width=100)
-        roles = [segment.role for line in view.lines for segment in line
-                 if "".join(piece.text for piece in line).strip() in ("│", "▼") and segment.text.strip()]
-        self.assertEqual(roles, ["connector"] * 4, "handed out is not running: the connector stays dim")
+        for width in (80, 100):  # the one connector (a frontier wraps at 80), and the edges drawn
+            view = render_delegation_view(handed, width=width)
+            self.assertEqual(set().union(*connector_roles(view)), {"connector"},
+                             "handed out is not running: the connector stays dim")
 
     def test_a_duplicated_edge_is_listed_once(self) -> None:
         twice = dag_export_run()
@@ -1228,13 +1381,15 @@ class StructureTests(unittest.TestCase):
                                  "the glyph is a mark, the words a word; both keep the state's colour, selected or not")
 
     def test_a_connector_is_dim_and_blue_into_a_running_frontier(self) -> None:
+        self.assertEqual(connector_roles(render_delegation_view(dag_export_run(), width=80)),
+                         [{"connector:running"}] * 2 + [{"connector"}] * 2,
+                         "the one connector: into the frontier where Export button runs, then into one where nothing does")
+        self.assertEqual(connector_roles(render_delegation_view(dag_export_run(), width=100)),
+                         [{"connector:running"}] * 3 + [{"connector"}] * 3, "the edges drawn take the same colours")
+        split = fan((2, 2), [("1a", "2a"), ("1b", "2b")], running="2b")
+        self.assertEqual(connector_roles(render_delegation_view(split, width=100)),
+                         [{"connector", "connector:running"}] * 2, "each group by its own children")
         view = render_delegation_view(dag_export_run(), width=100)
-        connectors = [
-            [segment.role for segment in line if segment.text.strip()] for line in view.lines
-            if "".join(segment.text for segment in line).strip() in ("│", "▼")
-        ]
-        self.assertEqual(connectors, [["connector:running"]] * 2 + [["connector"]] * 2,
-                         "into the frontier where Export button runs, then into one where nothing does")
         self.assertEqual({segment.role for line in view.lines for segment in line if segment.text.strip() == "→"},
                          {"connector"})
         self.assertEqual(view.levels, 1, "boxes are coloured by state, not by depth")

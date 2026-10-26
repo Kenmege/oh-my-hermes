@@ -340,8 +340,9 @@ _Avoid_: a second write path, a subprocess from the plugin into the CLI
 **Delegation view**:
 A conversation's delegated work drawn as a graph (`delegation_graph/v1`:
 nodes, edges, layers): frontiers of boxes (title,
-category and model, status, parents), one connector per frontier gap, the
-recorded edges listed exactly under `Dependencies`, and a `Node details` card
+category and model, status, parents), the edges between two frontiers
+drawn where they exist (one centred connector for a gap whose edges cannot
+be drawn exactly), the recorded edges listed exactly under `Dependencies`, and a `Node details` card
 per running or stuck node and for `/dag`'s highlighted one; or a compact tree
 when no box fits or the edges loop; the tree nests a node a dag-ulw run added
 (a repair or an extend) under where it came from. The

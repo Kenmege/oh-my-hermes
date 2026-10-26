@@ -4492,6 +4492,7 @@ class App(ModesMixin, AgentViewMixin):
             "delegation graph", payload=lambda: self.hud.payload if self.hud is not None else None,
             read_at=lambda: self.hud.received_at if self.hud is not None else None, depth=self.color_depth,
             clock=self.wall_clock,  # the HUD poller stamps its reads with the wall clock
+            aura=self._aura_phase,
         ))
 
     def _bots(self, arg: str) -> None:
@@ -4876,11 +4877,21 @@ class App(ModesMixin, AgentViewMixin):
         """
         composer = self.composer
         return (
-            self.motion and self.color_depth == TRUECOLOR and aura_moves(self.theme)
+            self._aura_moves()
             and not composer.pastes and not composer.masked and not self._composer_hidden()
             and self.list_selected is None and self.tree_selected is None  # browsing draws the composer blank
             and bool(aura_ranges(composer.text))
         )
+
+    def _aura_moves(self) -> bool:
+        """Whether the dag-ulw aura moves on this terminal now: the truecolor depth, motion on, and a background its
+        band shows on (`theme.aura_moves`). Where it does not, nothing draws it but the composer's still look."""
+        return self.motion and self.color_depth == TRUECOLOR and aura_moves(self.theme)
+
+    def _aura_phase(self) -> int | None:
+        """The phase a running dag-ulw node's aura stands at (`dag_tree`, `/dag`), or None where the aura does not
+        move: those surfaces then draw the node as they always have."""
+        return self._spinner_frame() if self._aura_moves() else None
 
     def _render_when_due(self) -> None:
         if self.terminal.resized():  # one that came during this step's work: no frame is drawn at the old size
@@ -5220,7 +5231,8 @@ class App(ModesMixin, AgentViewMixin):
     def _tail(self, cols: int) -> list[Line]:
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
-        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
+        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None,
+                                           glint=self._aura_moves())
         if not lines and self.transcript.taken_any:
             lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
         if self._busy() and self.waiting_since is not None:

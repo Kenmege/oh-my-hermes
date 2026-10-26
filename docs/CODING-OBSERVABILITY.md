@@ -89,8 +89,9 @@ first. Each node is a box of four lines: its title, its category and
 model with effort, its status with its glyph and duration (then the output
 tokens its child has written, `· ↓1.2k`, where the box has room), and its
 parents (`← Export API`) or `Start node`. The nodes of one frontier sit side by side
-over a `· Same frontier` label, and one connector joins a frontier to the
-next. Under the boxes, `Dependencies` lists every edge between two nodes, its
+over a `· Same frontier` label, and the edges between two frontiers are
+drawn: `│` under each parent, a bus joining a group of parents to its
+children, and `▼` over each child. Under the boxes, `Dependencies` lists every edge between two nodes, its
 kind named unless it is a `depends_on`, and `Node details` gives a card to
 each running or stuck node, and in `/dag` to the highlighted one: its whole
 title, category and model, status and output tokens (`↓1.2k tokens`), group
@@ -114,7 +115,8 @@ Running · Done 1/5 · 1 failed
                                   │ Start node                   │
                                   └──────────────────────────────┘
                                                   │
-                                                  ▼
+                ╭─────────────────────────────────┼─────────────────────────────────╮
+                ▼                                 ▼                                 ▼
 ┌──────────────────────────────┐  ┌──────────────────────────────┐  ┌──────────────────────────────┐
 │ Export button                │  │ Export docs                  │  │ Export CLI flag              │
 │ unspecified-high · glm-5.3:… │  │ writing                      │  │ quick · glm-5.3-flash:low    │
@@ -122,7 +124,8 @@ Running · Done 1/5 · 1 failed
 │ ← Export API                 │  │ ← Export API                 │  │ ← Export API                 │
 └──────────────────────────────┘  └──────────────────────────────┘  └──────────────────────────────┘
 · Same frontier
-                                                  │
+                │                                 │                                 │
+                ╰─────────────────────────────────┼─────────────────────────────────╯
                                                   ▼
                                   ┌──────────────────────────────┐
                                   │ Verify export                │
@@ -199,7 +202,7 @@ Where it shows:
   ends with the run's critical path and its bottlenecks, the nodes the most
   others wait on (`dag_core`).
 
-  ![/dag in a dark terminal: Export API folded, Verify export highlighted, Node details for the running node and the highlighted one](../assets/omh-dag-pager.png)
+  ![/dag in a dark terminal: Export API folded, Verify export highlighted, the running Export button in the dag-ulw aura, Node details for the running node and the highlighted one](../assets/omh-dag-pager.png)
 - **Slack, Discord, Telegram, Mattermost and Matrix** never get the box
   drawing. They see a delegated run, the conversation's lanes that no end
   post has closed yet, at three moments. Each is appended to the reply Hermes
@@ -422,9 +425,16 @@ announced again. Hermes'
 default in-place compaction keeps one session id, and the graph reads that
 session alone.
 
-The boxes draw no edge, so no shape can be drawn wrong: one connector joins
-each frontier to the next whatever its edges, and the edges are exact in
-each box's parents line and in `Dependencies`. Every box of a drawing is one
+The boxes draw an edge only where it exists. Between two frontiers each
+group of parents and the children they lead to shares one bus, and a group
+is drawn only when every parent in it leads to every child, so two groups
+with no edge between them never share a bus (`╰──┴──┬──╯   ╭──┴──╯`). Where
+the edges of a gap cannot be drawn that way, one centred connector (`│`
+then `▼`) joins the two frontiers instead and implies no edge: a group in
+which some parent does not lead to every child, two groups whose buses would
+overlap, an edge that skips a frontier (every gap it crosses), and a
+frontier that wraps (the gaps on either side of it). Either way the edges
+are exact in each box's parents line and in `Dependencies`. Every box of a drawing is one
 width, as wide as its widest node needs and narrowed to put each frontier on
 one row, down to 22 cells (every line is cut to that width with `…`, and
 the category and model line, usually the widest, is the one that shows it); a
@@ -446,9 +456,13 @@ status line take its node's state: running in the blue the edge gradient
 ends at, handed out in its middle step, failed and cancelled in the error
 colour, stuck in the warning colour, done in the terminal's own foreground,
 waiting dim, and the box `/dag` highlights in the violet the gradient starts
-at. The connector between two frontiers is dim, and blue where it leads into
-a frontier with a node running. Every state keeps its glyph and its word, so
-nothing is told by colour alone. The tree's edges step from violet through
+at. The edges between two frontiers are dim, each group in blue where a
+child of it runs (the one connector, where it leads into a frontier with a
+node running). Every state keeps its glyph and its word, so
+nothing is told by colour alone. Where the composer's `dag-ulw` aura moves
+(truecolor, motion on), a running node's box border and title in `/dag`, and
+its title in the tree under the composer, run through that aura with its
+band moving; the graph printed into the transcript never does. The tree's edges step from violet through
 indigo to blue down its depth. The gradient's stops are theme tokens: a
 palette that names `dag_edge_start`, `dag_edge_mid` or `dag_edge_end`
 replaces them, and with them the colours of selected, handed out and running.
