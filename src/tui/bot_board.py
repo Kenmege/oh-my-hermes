@@ -14,10 +14,13 @@ Enter going down one and ← or Esc up one:
    when it differs, the model its newest session ran; the active sessions'
    tokens and cost; and what it remembers (Hermes' `memories/MEMORY.md` and
    `USER.md` against their configured limits, and the record count of the OMH
-   store its `config.yaml` names);
-2. one profile's sessions, newest activity first: title, model, tokens,
-   cost, source, last activity and message count. Delegated children
-   (`source = 'subagent'`) are counted on level 1 and not listed;
+   store its `config.yaml` names), the summaries lined up across profiles;
+2. one profile's sessions, newest activity first, as a table under one band
+   per row: title, model, tokens, cost, source, last activity and message
+   count, each column as wide as its widest cell, numbers right-aligned, and
+   `SESSION_DROPS` given up in order when the title would run short.
+   Delegated children (`source = 'subagent'`) are counted on level 1 and not
+   listed;
 3. one session's last `MESSAGE_ROWS_READ` messages the model still sees,
    oldest of them first: time, role and the start of the text (one row for a
    tool result, a few for the talk), under its model, tokens and cost.
@@ -75,7 +78,7 @@ arrows scroll the messages, which open at the newest.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 import json
 import math
@@ -99,7 +102,7 @@ from .prompts import CHOICE_MARK
 from .session_picker import age_text
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import cell_width, truncate, truncate_line, wrap_line
+from .width import cell_width, line_width, truncate, truncate_line, wrap_line
 
 BOARD_TITLE = "Hermes bots"
 BOARD_KEYS = "↑↓ move  Enter open  ← back  r refresh  q close"
@@ -153,6 +156,12 @@ OMH_RECORDS_CAP = 10_000
 # `cost_status` values that carry a price (Hermes' `CostStatus`: actual, estimated, included, unknown).
 PRICED_STATUSES = ("actual", "estimated")
 INCLUDED_STATUS = "included"
+# Level 2's table: its columns in order, the right-aligned ones, and what a narrow terminal gives up first.
+SESSION_COLUMNS = ("model", "input", "output", "cost", "source", "age", "messages")
+SESSION_RIGHT = frozenset({"input", "output", "cost", "age", "messages"})
+SESSION_DROPS = (("source",), ("cost",), ("input", "output"))
+SESSION_GAP = "  "
+SESSION_TITLE_MIN = 16
 
 GATEWAY_RUNNING = "running"
 GATEWAY_STOPPED = "stopped"
@@ -965,13 +974,12 @@ def _cost_text(usage: Usage) -> str:
     return INCLUDED_STATUS if usage.included else ""
 
 
-def _usage_text(usage: Usage, *, cache: bool = True, unknown: bool = True) -> str:
-    """`1.2M in · 34.5k out · 12.4M cache read · ~$4.12`, each part only where the store recorded it; without
-    `unknown`, a cost Hermes did not price is left out rather than said."""
+def _usage_text(usage: Usage) -> str:
+    """`1.2M in · 34.5k out · 12.4M cache read · ~$4.12`, each part only where the store recorded it."""
     parts = [f"{compact_count(usage.input)} in", f"{compact_count(usage.output)} out"]
-    if cache and usage.cache_read is not None:
+    if usage.cache_read is not None:
         parts.append(f"{compact_count(usage.cache_read)} cache read")
-    cost = _cost_text(usage) if unknown or usage.cost is not None or usage.included else ""
+    cost = _cost_text(usage)
     return " · ".join([*parts, cost] if cost else parts)
 
 
@@ -1042,45 +1050,77 @@ def _sessions_line(profile: Profile, now: float, theme: Theme) -> Line:
     return (Span(f"{INDENT}{' · '.join(words)}", theme.text), *tail)
 
 
-def _model_line(profile: Profile, theme: Theme) -> Line:
-    """The configured default model, the one the newest session ran when that differs, and the active sessions'
-    tokens and cost."""
+Cell = tuple[tuple[Span, ...], bool]  # a table cell's spans, and whether it is right-aligned
+
+
+def _cell(text: str, style: Style, right: bool = False) -> Cell:
+    return ((Span(text, style),) if text else (), right)
+
+
+def _aligned(rows: Sequence[Sequence[Cell]], theme: Theme) -> list[Line]:
+    """Rows of cells as one table: each column as wide as its widest cell, numbers right-aligned, ` · ` between
+    filled cells (blank where a cell is empty), a column empty in every row left out, and nothing after a row's last
+    filled cell."""
+    columns = max((len(row) for row in rows), default=0)
+    widths = [max((line_width(row[index][0]) for row in rows if index < len(row)), default=0) for index in range(columns)]
+    lines = []
+    for row in rows:
+        spans: list[Span] = [Span(INDENT)]
+        last = max((index for index, (cell, _right) in enumerate(row) if cell), default=-1)
+        for index, width in enumerate(widths[: last + 1]):
+            cell, right = row[index]
+            if not width:
+                continue
+            if len(spans) > 1:
+                spans.append(Span(" · " if cell else "   ", theme.muted))
+            pad = (Span(" " * (width - line_width(cell))),) if right or index < last else ()
+            spans += [*pad, *cell] if right else [*cell, *pad]
+        lines.append(tuple(spans))
+    return lines
+
+
+def _model_cells(profile: Profile, theme: Theme) -> list[Cell]:
+    """The configured default model, the active sessions' count, tokens and cost, and last, as the cell most
+    rows leave empty, the model the newest session ran when that differs."""
     if profile.config:
-        spans = [Span(profile.config, theme.muted if profile.config.startswith("no ") else theme.warn)]
+        model = _cell(profile.config, theme.muted if profile.config.startswith("no ") else theme.warn)
     elif profile.model:
-        spans = [Span(profile.model, theme.text), *((Span(f" via {profile.provider}", theme.muted),) if profile.provider else ())]
+        model = ((Span(profile.model, theme.text), *((Span(f" via {profile.provider}", theme.muted),) if profile.provider else ())), False)
     else:
-        spans = [Span("no default model configured", theme.muted)]
-    if profile.ran and profile.ran != profile.model:
-        spans.append(Span(f" · newest session ran {profile.ran}", theme.muted))
-    if profile.usage is not None and profile.active:
-        spans += [Span(f" · {profile.active} active: ", theme.muted), Span(_usage_text(profile.usage), theme.text)]
-    return (Span(INDENT), *spans)
+        model = _cell("no default model configured", theme.muted)
+    ran = _cell(f"newest ran {profile.ran}" if profile.ran and profile.ran != profile.model else "", theme.muted)
+    usage = profile.usage if profile.usage is not None and profile.active else None
+    if usage is None:
+        return [model, *([_cell("", theme.text)] * 5), ran]
+    cache = f"{compact_count(usage.cache_read)} cache read" if usage.cache_read is not None else ""
+    return [
+        model, _cell(f"{profile.active} active", theme.muted, True),
+        _cell(f"{compact_count(usage.input)} in", theme.text, True), _cell(f"{compact_count(usage.output)} out", theme.text, True),
+        _cell(cache, theme.text, True), _cell(_cost_text(usage), theme.text), ran,
+    ]
 
 
-def _memory_line(profile: Profile, theme: Theme) -> Line:
+def _memory_cells(profile: Profile, theme: Theme) -> list[Cell]:
     """What the bot remembers: each of Hermes' memory targets against its limit, then the OMH store's records."""
-    spans: list[Span] = []
+    cells: list[Cell] = []
     for memory in profile.memory:
         label = "memory" if memory.target == "memory" else "user profile"
-        if spans:
-            spans.append(Span(" · ", theme.muted))
         if not memory.enabled:
-            spans.append(Span(f"{label} off", theme.muted))
+            cells.append(_cell(f"{label} off", theme.muted))
         elif memory.problem:
-            spans.append(Span(f"{label} {memory.problem}", theme.warn))
+            cells.append(_cell(f"{label} {memory.problem}", theme.warn))
         elif not memory.entries:
-            spans.append(Span(f"{label} empty", theme.muted))
+            cells.append(_cell(f"{label} empty", theme.muted))
         else:
             size = f"{memory.chars:,}/{memory.limit:,} chars" if memory.limit is not None else f"{memory.chars:,} chars"
             over = memory.limit is not None and memory.chars > memory.limit
-            spans += [Span(f"{label} {_entries(memory.entries)}", theme.text), Span(f", {size}", theme.warn if over else theme.muted)]
+            cells.append(((Span(f"{label} {_entries(memory.entries)}", theme.text), Span(f", {size}", theme.warn if over else theme.muted)), False))
     if profile.omh_records is not None:
         shown = f"{OMH_RECORDS_CAP:,}+" if profile.omh_records > OMH_RECORDS_CAP else f"{profile.omh_records:,}"
-        spans += [Span(" · ", theme.muted), Span(f"OMH memory {shown} record{'' if profile.omh_records == 1 else 's'}", theme.text)]
-    elif profile.omh:
-        spans += [Span(" · ", theme.muted), Span(profile.omh, theme.muted)]
-    return (Span(INDENT), *spans)
+        cells.append(_cell(f"OMH memory {shown} record{'' if profile.omh_records == 1 else 's'}", theme.text))
+    else:
+        cells.append(_cell(profile.omh, theme.muted))
+    return cells
 
 
 def profile_lines(profiles: Sequence[Profile], selected: int, now: float, cols: int, theme: Theme) -> tuple[list[Line], tuple[int, int]]:
@@ -1089,6 +1129,9 @@ def profile_lines(profiles: Sequence[Profile], selected: int, now: float, cols: 
     serving = default.name if default is not None and default.gateway.live else ""
     lines: list[Line] = [(Span(f"{BOARD_TITLE} · {_count(len(profiles), 'profile')}", theme.heading),), ()]
     span = (0, 0)
+    # The summaries line up across profiles, so a column reads down the page.
+    models = _aligned([_model_cells(profile, theme) for profile in profiles], theme)
+    memories = _aligned([_memory_cells(profile, theme) for profile in profiles], theme)
     for index, profile in enumerate(profiles):
         served_by = serving if serving and profile is not default and profile.name in default.gateway.served else ""
         glyph, words, style = _gateway_words(profile, served_by, theme)
@@ -1104,8 +1147,7 @@ def profile_lines(profiles: Sequence[Profile], selected: int, now: float, cols: 
         ))
         lines.extend(_platform_line(platform, theme) for platform in profile.gateway.platforms)
         lines.append(_sessions_line(profile, now, theme))
-        lines.append(_model_line(profile, theme))
-        lines.append(_memory_line(profile, theme))
+        lines += [models[index], memories[index]]
         if highlighted:
             span = (first, len(lines) - 1)
         lines.append(())
@@ -1127,25 +1169,65 @@ def session_lines(
     elif not snapshot.sessions:
         lines.append((Span("No sessions.", theme.muted),))
     span = (0, 0)
-    for index, row in enumerate(snapshot.sessions):
+    table = _session_table(snapshot.sessions, now)
+    keep = _session_columns(table, cols - cell_width(CHOICE_MARK))
+    widths = {name: max(cell_width(cells[name]) for cells in table) for name in keep}
+    room = cols - cell_width(CHOICE_MARK) - sum(widths[name] + len(SESSION_GAP) for name in keep)
+    for index, (row, cells) in enumerate(zip(snapshot.sessions, table)):
         highlighted = index == selected
-        style = theme.menu_current if highlighted else theme.menu
+        band = theme.menu_current if highlighted else theme.menu
         mark = CHOICE_MARK if highlighted else " " * len(CHOICE_MARK)
-        spent = _usage_text(row.usage, cache=False, unknown=False) if row.usage is not None and (row.usage.input or row.usage.output) else ""
-        parts = (_short_model(row.model), spent, row.source, age_text(row.last_activity, now), _count(row.message_count, "message"))
-        meta = " · ".join(part for part in parts if part)
-        meta = f"  {meta}"
-        label = row.title or _text(row.id)
-        room = cols - cell_width(mark) - cell_width(meta)
         if highlighted:
             span = (len(lines), len(lines))
-        if room < 8:
-            lines.append((Span(mark, theme.prompt), Span(label, style)))
+        label = row.title or _text(row.id)
+        if room < SESSION_TITLE_MIN:
+            # No room for a column: the title alone, still banded to the row's end.
+            label = truncate(label, max(cols - cell_width(mark), 0))
+            lines.append((Span(mark, _on(band, theme.prompt)), Span(label + " " * (cols - cell_width(mark) - cell_width(label)), band)))
             continue
         label = truncate(label, room)
-        gap = " " * (room - cell_width(label))
-        lines.append((Span(mark, theme.prompt), Span(label + gap, style), Span(meta, theme.muted)))
+        spans = [Span(mark, _on(band, theme.prompt)), Span(label + " " * (room - cell_width(label)), band)]
+        for name in keep:
+            pad = " " * (widths[name] - cell_width(cells[name]))
+            text = pad + cells[name] if name in SESSION_RIGHT else cells[name] + pad
+            spans.append(Span(SESSION_GAP + text, _on(band, theme.muted)))
+        lines.append(tuple(spans))
     return [truncate_line(line, cols) for line in lines], span
+
+
+def _on(band: Style, style: Style) -> Style:
+    """`style`'s colour on the row's band, so the band runs unbroken from the mark to the row's end."""
+    return replace(style, bg=band.bg, reverse=band.reverse)
+
+
+def _session_table(sessions: Sequence[SessionRow], now: float) -> list[dict[str, str]]:
+    """Each session's level-2 cells by column; "" where the store recorded nothing for it."""
+    table = []
+    for row in sessions:
+        usage = row.usage if row.usage is not None and (row.usage.input or row.usage.output) else None
+        cost = _cost_text(usage) if usage is not None and (usage.cost is not None or usage.included) else ""
+        table.append({
+            "model": _short_model(row.model),
+            "input": f"{compact_count(usage.input)} in" if usage is not None else "",
+            "output": f"{compact_count(usage.output)} out" if usage is not None else "",
+            "cost": cost,
+            "source": row.source,
+            "age": age_text(row.last_activity, now),
+            "messages": _count(row.message_count, "message"),
+        })
+    return table
+
+
+def _session_columns(table: Sequence[Mapping[str, str]], cols: int) -> list[str]:
+    """The level-2 columns that fit beside a title of at least `SESSION_TITLE_MIN` cells in `cols`: a column no
+    row fills is left out, then `SESSION_DROPS` are given up in order until the title has its room."""
+    keep = [name for name in SESSION_COLUMNS if any(cells[name] for cells in table)]
+    for dropped in ((), *SESSION_DROPS):
+        keep = [name for name in keep if name not in dropped]
+        used = sum(max(cell_width(cells[name]) for cells in table) + len(SESSION_GAP) for name in keep)
+        if cols - used >= SESSION_TITLE_MIN:
+            break
+    return keep
 
 
 def _clock_text(at: float) -> str:

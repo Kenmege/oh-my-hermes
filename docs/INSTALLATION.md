@@ -1222,9 +1222,12 @@ session's lifetime totals, since Hermes records no time per call, and a cost
 appears only where Hermes priced it (`~` marks an estimate); sessions it did
 not price are counted as unpriced, never as $0. A store, config or memory
 file it cannot read is named as such, and a store without the token columns
-shows no tokens. Enter opens a profile's sessions, newest activity first, each
-with its model, tokens and cost (delegated subagent sessions are counted on
-the first page, not listed), and Enter again a session's last 40 messages
+shows no tokens. These rows line up across profiles, so each figure reads
+down the page. Enter opens a profile's sessions, newest activity first, as a
+table: title, model, input and output tokens, cost, source, last activity and
+message count, numbers right-aligned; a narrow terminal gives up source, then
+cost, then tokens before the title runs short (delegated subagent sessions
+are counted on the first page, not listed), and Enter again a session's last 40 messages
 under its model, tokens and cost; ← or Esc goes back, q closes it from the
 first page, and r reads again at once. It reads again every 5 s by itself, off the screen's own thread.
 It counts sessions active in the last 24 hours rather than open ones, because a

@@ -477,10 +477,11 @@ class SummaryTests(FixtureRoot):
         ])
         profile = self.profile()
         self.assertEqual((profile.model, profile.provider, profile.ran), ("claude-opus-5-5", "claude-proxy", "z-ai/glm-5.3"))
-        self.assertTrue(self.line(profile, -3).startswith(
-            "    claude-opus-5-5 via claude-proxy · newest session ran z-ai/glm-5.3 · 2 active: "))
+        row = self.line(profile, -3)
+        self.assertTrue(row.startswith("    claude-opus-5-5 via claude-proxy · 2 active · "), row)
+        self.assertTrue(row.endswith(" · newest ran z-ai/glm-5.3"), "the cell most rows leave empty comes last")
         write_usage_store(self.root, [("same", "cli", "t", NOW - 60, 2, "claude-opus-5-5", 1, 1, 0, None, None, None)])
-        self.assertNotIn("newest session ran", self.line(self.profile(), -3), "the same model is not said twice")
+        self.assertNotIn("newest ran", self.line(self.profile(), -3), "the same model is not said twice")
 
     def test_a_model_written_as_a_string_or_not_at_all(self) -> None:
         for config, model in (("model: gpt-5.5\n", "gpt-5.5"), ("model:\n  model: kimi-k3\n", "kimi-k3"), ("agent: {}\n", "")):
@@ -520,7 +521,7 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(profile.active, 5)
         self.assertEqual(profile.usage, bot_board.Usage(1_251_000, 244_500, 12_400_000, 4.12, True, 1, 1))
         self.assertTrue(self.line(profile, -3).endswith(
-            " · 5 active: 1.3M in · 244.5k out · 12.4M cache read · ~$4.12 + 1 unpriced"))
+            " · 5 active · 1.3M in · 244.5k out · 12.4M cache read · ~$4.12 + 1 unpriced · newest ran m"))
 
     def test_a_cost_hermes_never_priced_is_never_shown_as_zero(self) -> None:
         for statuses, said in (
@@ -531,7 +532,7 @@ class SummaryTests(FixtureRoot):
                 write_usage_store(self.root, [
                     (f"s{n}", "cli", "t", NOW - 60, 2, "m", 10, 10, 0, 0.0, None, status) for n, status in enumerate(statuses)
                 ])
-                self.assertTrue(self.line(self.profile(), -3).endswith(f"20 in · 20 out · 0 cache read · {said}"))
+                self.assertTrue(self.line(self.profile(), -3).endswith(f"20 in · 20 out · 0 cache read · {said} · newest ran m"))
 
     def test_older_stores_without_the_columns_show_less_and_no_number_they_lack(self) -> None:
         # The fixture's own store has no model, token or cost column at all.
@@ -540,14 +541,14 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(self.line(profile, -3), "    claude-opus-5-5 via claude-proxy")
         sessions = snapshot(self.environ, BoardView("default"))
         self.assertEqual((sessions.sessions[0].model, sessions.sessions[0].usage), ("", None))
-        self.assertTrue(lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[2].endswith(
-            "  slack · 10m ago · 12 messages"))
+        self.assertTrue(squeeze(lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[2]).endswith(
+            "Release notes slack 10m ago 12 messages"))
         tail = snapshot(self.environ, BoardView("default", "s-new"))
         self.assertEqual(lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[2], "")
         write_usage_store(self.root, [("t", "cli", "t", NOW - 60, 2, 5, 7)], "input_tokens INTEGER, output_tokens INTEGER")
         profile = self.profile()
         self.assertEqual(profile.usage, bot_board.Usage(5, 7, None, None, False, 0, 1))
-        self.assertTrue(self.line(profile, -3).endswith("1 active: 5 in · 7 out · cost unknown"), "no cache read column")
+        self.assertTrue(self.line(profile, -3).endswith("1 active · 5 in · 7 out · cost unknown"), "no cache read column")
 
     def test_levels_two_and_three_show_each_sessions_model_tokens_and_cost(self) -> None:
         write_usage_store(self.root, [
@@ -556,8 +557,8 @@ class SummaryTests(FixtureRoot):
         ])
         sessions = snapshot(self.environ, BoardView("default"))
         rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])
-        self.assertTrue(rows[2].endswith("  claude-opus-5-5 · 325.2k in · 89k out · ~$0.43 · slack · 1m ago · 12 messages"))
-        self.assertTrue(rows[3].endswith("  glm-5.3 · 192 in · 67.2k out · cli · 2m ago · 2 messages"), "no unpriced cost")
+        self.assertEqual(squeeze(rows[2]), "❯ Release notes claude-opus-5-5 325.2k in 89k out ~$0.43 slack 1m ago 12 messages")
+        self.assertEqual(squeeze(rows[3]), "Probe glm-5.3 192 in 67.2k out cli 2m ago 2 messages", "no unpriced cost")
         tail = snapshot(self.environ, BoardView("default", "a"))
         head = lines_text(message_lines(tail, tail.sessions[0], NOW, 150, DEFAULT_THEME))[:3]
         self.assertEqual(head[2], "anthropic/claude-opus-5-5 · 325.2k in · 89k out · 12.5M cache read · ~$0.43")
@@ -669,6 +670,89 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(bot_board._cost_text(bot_board.Usage(cost=0.001)), "<$0.01")
 
 
+class TableTests(FixtureRoot):
+    """Level 2 is a table under one band, and level 1's summaries line up across profiles."""
+
+    def sessions(self) -> BoardSnapshot:
+        write_usage_store(self.root, [
+            ("a", "telegram", "Rehearsal schedule for the anniversary", NOW - 60, 140, "moonshot/kimi-k3.1-pro",
+             302_000, 41_200, 0, 0.52, None, "estimated"),
+            ("b", "x", "Poll", NOW - 2 * 3600, 9, "glm-5.3", 192, 4_100, 0, None, None, "unknown"),
+            ("c", "discord", "Merch drop", NOW - 3 * DAY, 12, "deepseek/deepseek-v4.1-flash", 44_600, 9_300, 0, 0.0, None, "included"),
+        ])
+        return snapshot(self.environ, BoardView("default"))
+
+    def test_level_two_columns_line_up_and_the_band_spans_every_row_alike(self) -> None:
+        sessions = self.sessions()
+        for cols in (150, 80):
+            with self.subTest(cols=cols):
+                lines, _span = session_lines(sessions, 1, NOW, cols, DEFAULT_THEME)
+                rows = lines[2:]
+                self.assertEqual({line_width(row) for row in rows}, {cols}, "every row runs to the edge, never wraps")
+                text = lines_text(rows)
+                for unit in (" out", " ago", " messages"):
+                    if unit in text[0]:
+                        self.assertEqual(len({row.index(unit) for row in text}), 1, f"{unit!r} ends one column")
+                models = {next(row.index(name) for name in ("kimi", "glm", "deepseek") if name in row) for row in text}
+                self.assertEqual(len(models), 1, "the title column is one width, the model column starts alike")
+                for index, row in enumerate(rows):
+                    band = DEFAULT_THEME.menu_current if index == 1 else DEFAULT_THEME.menu
+                    self.assertEqual({span.style.bg for span in row}, {band.bg}, "one band from the mark to the edge")
+        rows = lines_text(session_lines(sessions, 0, NOW, 150, DEFAULT_THEME)[0])[2:]
+        ends = {row.index(" in") for row in rows}
+        self.assertEqual(len(ends), 1, "token counts are right-aligned on their unit")
+        self.assertIn("   192 in", rows[1])
+        self.assertEqual(len({row.index("ago") for row in rows}), 1)
+        self.assertEqual(rows[0].index("~$0.52") + len("~$0.52"), rows[2].index("included") + len("included"), "cost too")
+        self.assertIn("Rehearsal schedule for the anniversary", rows[0])
+        narrow = lines_text(session_lines(sessions, 0, NOW, 70, DEFAULT_THEME)[0])[2]
+        self.assertIn("…", narrow, "the title gives way, cut with an ellipsis")
+
+    def test_a_narrow_board_gives_up_source_then_cost_then_tokens(self) -> None:
+        table = bot_board._session_table(self.sessions().sessions, NOW)
+        seen: list[list[str]] = []
+        for cols in range(200, 20, -1):
+            keep = bot_board._session_columns(table, cols)
+            if not seen or keep != seen[-1]:
+                seen.append(keep)
+        everything = ["model", "input", "output", "cost", "source", "age", "messages"]
+        self.assertEqual(seen, [
+            everything,
+            ["model", "input", "output", "cost", "age", "messages"],
+            ["model", "input", "output", "age", "messages"],
+            ["model", "age", "messages"],
+        ])
+        rows = session_lines(self.sessions(), 0, NOW, 30, DEFAULT_THEME)[0][2:]
+        self.assertEqual({line_width(row) for row in rows}, {30}, "past every drop, the title alone, still one row")
+
+    def test_a_column_no_session_fills_is_left_out(self) -> None:
+        sessions = snapshot(self.environ, BoardView("default"))  # a store with no model or token column
+        self.assertEqual(bot_board._session_columns(bot_board._session_table(sessions.sessions, NOW), 150),
+                         ["source", "age", "messages"])
+
+    def test_level_one_summaries_line_up_across_profiles(self) -> None:
+        write_usage_store(self.root, [("a", "cli", "t", NOW - 60, 2, "m", 1_000_000, 200_000, 0, 1.0, None, "actual")])
+        miku = self.root / "profiles" / "miku"
+        (miku / "config.yaml").write_text("model:\n  default: deepseek-v4.1-flash-ultrafast\n", encoding="utf-8")
+        write_usage_store(miku, [("m", "cli", "t", NOW - 60, 2, "m", 7, 3, 0, None, None, "unknown")])
+        write_memory(miku, "MEMORY.md", ["one"])
+        profiles = [read_profile(name, home, self.root, NOW) for name, home in (("default", self.root), ("miku", miku))]
+        lines, _span = profile_lines(profiles, 0, NOW, 300, DEFAULT_THEME)
+        text = lines_text(lines)
+        models = [row for row in text if " active · " in row]
+        memories = [row for row in text if row.startswith("    memory ")]
+        self.assertEqual(len(models), 2)
+        self.assertEqual(len({row.index(" active · ") for row in models}), 1, models)
+        self.assertEqual(len({row.index(" out") for row in models}), 1, "numbers right-aligned on their unit")
+        self.assertEqual(len({row.index("user profile") for row in memories}), 1, memories)
+        self.assertFalse([row for row in text if row != row.rstrip()], "no row ends in padding")
+
+
+def squeeze(text: str) -> str:
+    """A row's words, each run of padding one space: what it says, apart from where it says it."""
+    return " ".join(text.split())
+
+
 def snapshot(environ: dict, view: BoardView = BoardView()) -> BoardSnapshot:
     return read_board(environ, view, NOW)
 
@@ -715,7 +799,7 @@ class DrawingTests(FixtureRoot):
         text = lines_text(listed)
         self.assertIn("1 subagent session not listed", text[0])
         self.assertTrue(text[span[0]].startswith("❯ Release notes"))
-        self.assertTrue(text[span[0]].endswith("slack · 10m ago · 12 messages"))
+        self.assertTrue(squeeze(text[span[0]]).endswith("slack 10m ago 12 messages"))
         tail = "\n".join(lines_text(message_lines(messages, sessions.sessions[0], NOW, 150, DEFAULT_THEME)))
         self.assertIn("default › Release notes", tail)
         self.assertIn("assistant red done now", tail)
