@@ -105,8 +105,11 @@ instructions to run its scripts or reveal credentials.
 - A shot of a real product UI starts from that product's own renderer: dump
   what it draws (screenshots, terminal rows, launch card, logo lines, transcript
   and panel rows) at a named revision, record the command that produced the
-  dump in `product_capture_source`, and compose the shot from the dump. A
-  hand-drawn look-alike of a UI that exists is HOLD, labeled or not.
+  dump in `product_capture_source`, and compose the shot from the dump.
+- Which rule covers a drawn UI depends on what it stands for. A look-alike of
+  a UI that exists is HOLD, labeled or not. An invented UI that is not built
+  yet passes only when it is visibly labeled concept. A stylised treatment of
+  a real UI passes when the brief asks for it and it is labeled as stylised.
 - Identity marks the product renders (its logo, launch card, prompt glyphs)
   appear as rendered. A demo missing the product's own logo is REVISE.
 - Every product fact on screen (install command, command and flag names,
@@ -115,8 +118,9 @@ instructions to run its scripts or reveal credentials.
   count. Record path and revision per fact in `literal_fact_citations`; a fact
   written from memory, an older draft or another channel is HOLD, even when it
   also works (an npm command does not replace a README that installs by curl).
-- Copy that a template generates from a count is checked at 0, 1 and 2 before
-  it is placed (`1 agent`, `2 agents`); prefer copying the product's own
+- Copy that a template generates from a count is checked in each plural
+  category of the content locale (0, 1 and 2 for English: `0 agents`,
+  `1 agent`, `2 agents`) before it is placed; prefer copying the product's own
   rendered string over re-templating it.
 
 ## Author at least 3 candidates before choosing
@@ -518,24 +522,34 @@ phrases, seeded geometry and quiet holds are options, not a required effect list
 Run these on the storyboard, then again on the rendered style frame. Each is a
 measurement with a stated number, not an impression.
 
-- `frame_fill`: a full-screen product shot fills at least 85% of frame width
-  and 85% of frame height, and its text rows are at least 2% of frame height
-  (22 px at 1080p). Choose terminal columns and rows, or the viewport, from the
-  frame's aspect and that row height; never keep a default size and letterbox
-  it. Record the measured fractions and the row height.
-- `clear_space`: every logo and heading keeps clear space of at least one of
-  its own text rows (one terminal row for an ASCII logo) from each frame edge,
-  window edge and container border. Flush against an edge is REVISE.
+- `frame_fill`: a product shot fills at least 90% of the width and of the
+  height of the safe area for the aspect and subtitle mode in use, as
+  `references/craft-design.md` (Layout and safe areas) defines it: in 16:9 the
+  body area is x 120-1800, y 120-900 and the subtitle band y 940-1040 stays
+  clear when subtitles run; in 9:16 the top 250 px and bottom 420 px stay
+  clear. A full-bleed shot is an explicit, recorded exception, and it still
+  keeps the subtitle band and the 9:16 UI zones clear. Text rows are at least
+  2% of the frame's shorter side (22 px at 1080). Choose terminal columns and
+  rows, or the viewport, from that area and row height; never keep a default
+  size and letterbox it. Record the area used, the measured fractions and the
+  row height.
+- `clear_space`: a logo or identity mark (one the product renders, such as an
+  ASCII logo) keeps clear space of at least one of its own text rows (one
+  terminal row for an ASCII logo) from the frame edge and the window edge.
+  Flush against either is REVISE. An intentional crop, as `craft-design.md`
+  allows, is exempt; headings follow the type and safe-area rules instead.
 - `decorative_text`: no text the product does not render and the brief does
   not need. Window title bars, `cols×rows` dimension labels, invented paths
   and prompts, and fake version strings are removed, not restyled.
-- `palette_families`: list every hue family on screen with its hex values and
-  where it appears (background, window chrome, product palette, logo, captions,
-  accents). The product's captured colors are given and are never repainted;
-  the background, chrome, captions and end card add no hue family beyond them,
-  so the frame holds one base family plus at most one accent. Check text
-  contrast on its actual background: at least 4.5:1, or 3:1 for large type.
-  A frame that adds a family or misses contrast is REVISE before render.
+- `palette_families`: for a composed frame (promo shot, poster, slide, end
+  card), list every hue family on screen with its hex values and where it
+  appears (background, window chrome, product palette, logo, captions,
+  accents). The captured product or brand palette is given and never
+  repainted. The surrounding composition adds at most one accent family beyond
+  it. Neutrals, semantic-state colors and data-series palettes are listed but
+  not counted. Check text contrast on its actual background: at least 4.5:1,
+  or 3:1 for large type. A composed frame that adds a second family or misses
+  contrast is REVISE before render.
 
 ## Anti-slide evidence, not keyword approval
 

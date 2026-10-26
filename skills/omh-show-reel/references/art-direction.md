@@ -21,24 +21,34 @@ phrases, seeded geometry and quiet holds are options, not a required effect list
 Run these on the storyboard, then again on the rendered style frame. Each is a
 measurement with a stated number, not an impression.
 
-- `frame_fill`: a full-screen product shot fills at least 85% of frame width
-  and 85% of frame height, and its text rows are at least 2% of frame height
-  (22 px at 1080p). Choose terminal columns and rows, or the viewport, from the
-  frame's aspect and that row height; never keep a default size and letterbox
-  it. Record the measured fractions and the row height.
-- `clear_space`: every logo and heading keeps clear space of at least one of
-  its own text rows (one terminal row for an ASCII logo) from each frame edge,
-  window edge and container border. Flush against an edge is REVISE.
+- `frame_fill`: a product shot fills at least 90% of the width and of the
+  height of the safe area for the aspect and subtitle mode in use, as
+  `references/craft-design.md` (Layout and safe areas) defines it: in 16:9 the
+  body area is x 120-1800, y 120-900 and the subtitle band y 940-1040 stays
+  clear when subtitles run; in 9:16 the top 250 px and bottom 420 px stay
+  clear. A full-bleed shot is an explicit, recorded exception, and it still
+  keeps the subtitle band and the 9:16 UI zones clear. Text rows are at least
+  2% of the frame's shorter side (22 px at 1080). Choose terminal columns and
+  rows, or the viewport, from that area and row height; never keep a default
+  size and letterbox it. Record the area used, the measured fractions and the
+  row height.
+- `clear_space`: a logo or identity mark (one the product renders, such as an
+  ASCII logo) keeps clear space of at least one of its own text rows (one
+  terminal row for an ASCII logo) from the frame edge and the window edge.
+  Flush against either is REVISE. An intentional crop, as `craft-design.md`
+  allows, is exempt; headings follow the type and safe-area rules instead.
 - `decorative_text`: no text the product does not render and the brief does
   not need. Window title bars, `cols×rows` dimension labels, invented paths
   and prompts, and fake version strings are removed, not restyled.
-- `palette_families`: list every hue family on screen with its hex values and
-  where it appears (background, window chrome, product palette, logo, captions,
-  accents). The product's captured colors are given and are never repainted;
-  the background, chrome, captions and end card add no hue family beyond them,
-  so the frame holds one base family plus at most one accent. Check text
-  contrast on its actual background: at least 4.5:1, or 3:1 for large type.
-  A frame that adds a family or misses contrast is REVISE before render.
+- `palette_families`: for a composed frame (promo shot, poster, slide, end
+  card), list every hue family on screen with its hex values and where it
+  appears (background, window chrome, product palette, logo, captions,
+  accents). The captured product or brand palette is given and never
+  repainted. The surrounding composition adds at most one accent family beyond
+  it. Neutrals, semantic-state colors and data-series palettes are listed but
+  not counted. Check text contrast on its actual background: at least 4.5:1,
+  or 3:1 for large type. A composed frame that adds a second family or misses
+  contrast is REVISE before render.
 
 ## Anti-slide evidence, not keyword approval
 

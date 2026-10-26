@@ -61,9 +61,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # executor-runtime-readiness row's trigger count went +35 -> +34
             # when its runtime names became scoring-only (same length).
             # Then the promo postmortem's visual-qa quality-bar rule grows that
-            # sibling row by 420: 522331 -> 522751.
-            (skill_capabilities, 522751, FULL_ROW_DELTA_CAP,
-             'c2217e97622b366a97f475791ff01d5d27bffd84b774a0b1f9958947eabcc583',
+            # sibling row by 784: 522331 -> 523115.
+            (skill_capabilities, 523115, FULL_ROW_DELTA_CAP,
+             '659d1c91646097327c5030123f838887daa0e6e7a1b97b343adb0b3346c39f5f',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -126,7 +126,7 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup, maestro, ultrawork, and executor-runtime-readiness, then
         # the promo postmortem in content-operator, design-quality-gate,
         # show-reel, and visual-qa.
-        self.assertEqual(_digest(legacy_hashes), '85ed78d77c2ea0a2b6d0016e7dc7ac8cbad5cea76c25ba4a2c3aebd891bad94f')
+        self.assertEqual(_digest(legacy_hashes), 'e49025c3d00f3abe718f5fea58249d6944a05925550ac602615e5de3c9e5fce0')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

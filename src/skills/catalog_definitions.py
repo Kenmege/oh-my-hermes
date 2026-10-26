@@ -4215,7 +4215,7 @@ _DEFINITIONS = [
             "Review content accuracy and hierarchy before visual polish.",
             "Use design-system/reference rules for web, deck, PDF, and poster surfaces.",
             "Reject generic AI slop: weak hierarchy, cramped copy, flat templates, one-note palettes, and unverified exports.",
-            "Run the color-harmony pass before render: list every hue family on screen with its hex values and where it appears, keep one base family plus at most one accent family (a captured product palette is given, and the surrounding composition adds no family beyond it), and check text contrast at 4.5:1, or 3:1 for large type, on its actual background. A frame that fails is REVISE before any render; details in `references/design-critique-rubric.md`.",
+            "For a composed frame (promo, poster, slide, end card), run the color-harmony pass before render: list every hue family on screen with its hex values and where it appears; the surrounding composition adds at most one accent family beyond the captured product or brand palette; neutrals, semantic-state colors and data-series palettes are listed but not counted; text contrast is at least 4.5:1, or 3:1 for large type, on its actual background. A composed frame that fails is REVISE before render; details in `references/design-critique-rubric.md`.",
             "Require fresh visual QA for pages, slides, states, viewports, and CJK-heavy regions before PASS.",
         ),
         why_this_exists=(
@@ -5292,7 +5292,7 @@ _DEFINITIONS = [
         quality_bar=(
             "List the exact pages, states, viewports, files, images, or TUI frames being checked.",
             "For TUI surfaces, bind every capture to an explicit terminal size (80x24 and 120x40 at minimum); pasted rendered output at a named size is the screenshot-equivalent, and a capture without its size is not evidence.",
-            "When a product surface is composed into a larger frame (promo, poster, slide), measure it against the frame: a redrawn mock where the real renderer's output should be is BLOCK; a full-screen shot fills at least 85% of frame width and height with text rows at least 2% of frame height; logos and headings keep at least one of their own text rows of clear space; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun. Each miss is one `differences` entry.",
+            "When a product surface is composed into a larger frame (promo, poster, slide, end card), measure it against the frame: a look-alike of a UI that exists, in place of its real renderer's output, is BLOCK, while an unbuilt UI labeled concept or a brief-requested stylised treatment labeled as such is not; the shot fills at least 90% of the width and height of the safe area for the frame's aspect and subtitle mode, or is declared full-bleed and still keeps the subtitle and platform-UI zones clear, with text rows at least 2% of the frame's shorter side; a logo or identity mark keeps at least one of its own text rows from the frame and window edges, intentional crops excepted; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun in each plural category of the content locale. Each miss is one `differences` entry.",
             "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
             "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
             "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
@@ -5354,7 +5354,7 @@ _DEFINITIONS = [
             "quality_bar": (
                 "List the exact pages, states, viewports, files, images, or TUI frames being checked.",
                 "For TUI surfaces, bind every capture to an explicit terminal size (80x24 and 120x40 at minimum); pasted rendered output at a named size is the screenshot-equivalent, and a capture without its size is not evidence.",
-                "When a product surface is composed into a larger frame (promo, poster, slide), measure it against the frame: a redrawn mock where the real renderer's output should be is BLOCK; a full-screen shot fills at least 85% of frame width and height with text rows at least 2% of frame height; logos and headings keep at least one of their own text rows of clear space; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun. Each miss is one `differences` entry.",
+                "When a product surface is composed into a larger frame (promo, poster, slide, end card), measure it against the frame: a look-alike of a UI that exists, in place of its real renderer's output, is BLOCK, while an unbuilt UI labeled concept or a brief-requested stylised treatment labeled as such is not; the shot fills at least 90% of the width and height of the safe area for the frame's aspect and subtitle mode, or is declared full-bleed and still keeps the subtitle and platform-UI zones clear, with text rows at least 2% of the frame's shorter side; a logo or identity mark keeps at least one of its own text rows from the frame and window edges, intentional crops excepted; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun in each plural category of the content locale. Each miss is one `differences` entry.",
                 "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
                 "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
                 "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
@@ -5368,7 +5368,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "868d749b627de4f851a63e80c4dbeb0077e6e10f678fa59884f682e079434a99",
+            "quality_bar": "efe32ff3e8f4f80edaa91ebfd3e8575ad83a0af87b9d68a3ea9e26f853439314",
         },
     ),
     SkillDefinition(

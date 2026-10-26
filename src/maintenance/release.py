@@ -834,12 +834,13 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # capability rows name it in a runtime list ("pi-family" for the old
 # three-letter name, +6 each, +24). No other row moved. Re-derived from the
 # producer.
-# 525403 -> 525823: only the `visual-qa` row moves (+420). Its quality bar
-# gains the composed-frame rule from the 2026-10-26 promo postmortem: a mock
-# in place of the real renderer's output is BLOCK, and frame fill, clear
-# space, decorative meta text and count agreement are measured. No other row
-# changed. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525823
+# 525403 -> 526187: only the `visual-qa` row moves (+784). Its quality bar
+# gains the composed-frame rule from the 2026-10-26 promo postmortem: a
+# look-alike of an existing UI in place of its renderer's output is BLOCK
+# (labeled concept and brief-requested stylised treatments are not), and
+# safe-area fill, logo clear space, decorative meta text and per-locale count
+# agreement are measured. No other row changed. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 526187
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
