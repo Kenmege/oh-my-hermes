@@ -14,7 +14,7 @@ The live path measures the product under test:
 5. read tool, token, and cost metrics from authenticated
    `routing_observation/v1` evidence.
 
-There is no OMO execution path. OMH remains Hermes-native: core OMH makes no
+There is no pi-family runtime execution path. OMH remains Hermes-native: core OMH makes no
 provider call, and the explicit benchmark command launches the local Hermes CLI
 under the existing isolated child-process contract.
 
