@@ -108,6 +108,7 @@ from typing import Any, ClassVar
 
 from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.hud_text import compact_count
+from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 from ..plugin_bundle.omh.sqlite_readonly import connect_readonly
 from .history import history_path
 from .launch_card import _pad
@@ -499,7 +500,7 @@ def _record_time(value: Any) -> float | None:
     if isinstance(value, str):
         raw = value.strip()
         try:
-            parsed = datetime.fromisoformat(raw[:-1] + "+00:00" if raw.endswith(("Z", "z")) else raw)
+            parsed = strict_fromisoformat(raw[:-1] + "+00:00" if raw.endswith(("Z", "z")) else raw)
             return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()
         except (ValueError, OverflowError, OSError):
             return None
