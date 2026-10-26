@@ -157,8 +157,12 @@ and evidence obvious to a reviewer reading the PR without the chat history.
   it makes on its own is the session's model, at a turn boundary, when Hermes'
   configured default model moved (owner, 2026-10-25). Its gateway
   child, `src/tui/attach/gateway_attach.py`, runs on Hermes' interpreter under
-  INVARIANT 2's `HERMES_INTERPRETER_SCRIPTS` allow list. Read
-  [`docs/OMH-TUI-BOUNDARY.md`](docs/OMH-TUI-BOUNDARY.md) before touching
+  INVARIANT 2's `HERMES_INTERPRETER_SCRIPTS` allow list. Inside a herdr pane
+  only (`HERDR_ENV=1` and `HERDR_PANE_ID`), it runs the person's own `herdr`
+  CLI to report its idle/working/blocked state on each change and release the
+  pane on exit, as herdr's own Hermes plugin does (`src/tui/herdr.py`, in
+  INVARIANT 1's `PROCESS_SPAWN_ALLOWLIST`): a local socket, no network call.
+  Read [`docs/OMH-TUI-BOUNDARY.md`](docs/OMH-TUI-BOUNDARY.md) before touching
   `src/tui/`.
 - No Hermes core patching.
 - Runtime artifacts are local, deterministic, schema-versioned, and

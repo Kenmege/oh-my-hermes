@@ -300,6 +300,13 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "and import path Hermes' launcher handed the frontend, inside a foreground terminal the "
         "person launched; never reached from a prepared-handoff path."
     ),
+    "src/tui/herdr.py": (
+        "the OMH TUI's state report to herdr: `herdr pane report-agent` / `release-agent` with fixed "
+        "argv, only inside a herdr pane the person launched (`HERDR_ENV=1` and `HERDR_PANE_ID`), on "
+        "the person's own `herdr` binary (`HERDR_BIN_PATH` or PATH), a local state report over "
+        "herdr's own unix socket, no network call; the same contract as herdr's own Hermes plugin. "
+        "Reached only from the TUI's title state and exit; never from a prepared-handoff path."
+    ),
     "src/commands/setup.py": (
         "`omh setup` / `omh update` -- pip self-update, CLI re-entry after update, and the "
         "opt-in GitHub star (see GH_INVOCATION_EXCEPTIONS in INVARIANT 3)."

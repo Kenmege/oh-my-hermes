@@ -264,6 +264,23 @@ calling another Hermes, network or subprocess helper; it is not a sandbox, and
 does not catch an allowed Hermes function called with other arguments, or check
 where the grant's url points.
 
+## herdr
+
+Inside a herdr pane, and only there (`HERDR_ENV=1` and a `HERDR_PANE_ID`, the
+environment herdr gives every pane and its own Hermes plugin reads), the TUI
+tells herdr the state its title shows, so herdr's agent list can name it: it
+runs `herdr pane report-agent <pane> --source omh:tui --agent hermes --state
+<state>`, with `waiting on you` as `blocked`, `running` as `working` and
+`idle` as `idle`, each time that state changes and never per frame, and
+`herdr pane release-agent` on the way out, since herdr keeps the pane's agent
+after the TUI exits until told. The binary is `HERDR_BIN_PATH` or `herdr` on
+PATH, the person's own; the calls carry fixed arguments and no text from the
+session, run one at a time on a worker thread so the loop never waits on them,
+each give up after 1 s, and fail without a word (no herdr, a dead socket, a
+timeout); an exit waits at most 2 s for them. herdr's CLI reaches herdr over
+its own local socket: no network call. Outside herdr nothing is spawned. No
+session id is sent: herdr keeps one only from its own `herdr:*` sources.
+
 ## Job control, and what OMH does not do
 
 Ctrl+Z stops the process group, the gateway child with it, as Hermes' own CLI's
