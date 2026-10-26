@@ -181,7 +181,8 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # plus its newline (+86), measured against clean 85673e100. This exposes the
 # complete career workflow; no eager toolkit text or standing padding is added.
 # test_ai_job_search_context_budget pins the legacy index and marginal cost.
-SKILL_INDEX_CHAR_LIMIT = 13243
+# 13243 -> 13327: one repro-audit index line, measured from the producer.
+SKILL_INDEX_CHAR_LIMIT = 13327
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -837,7 +838,9 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # 525403 -> 525400: the model-setup row drops the retired Apitopia, Qwen and
 # realtime-search/design wording and names Kimi K3 as superseded and DeepSeek
 # as a candidate (-3). Re-derived from the producer; the slack is retired.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525400
+# 525400 -> 528482: one repro-audit capability row; no other row moved.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 528482
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -941,7 +944,8 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # separator (+935), measured against clean 85673e100; the complete method and
 # offline companion stay on demand. No sibling row or per-item limit moves;
 # test_ai_job_search_context_budget pins existing rows and the feature delta.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 142635
+# 142635 -> 143564: one standalone repro-audit summary row, producer measured.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 143564
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

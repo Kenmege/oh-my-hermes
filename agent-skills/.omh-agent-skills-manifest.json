@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "5cb3bace5f0cef2c5751169ba92330c6c88517005ddf2cc9ee3450b250f4bc74",
+  "catalog_revision": "4f1bd0c8819c63b49ea98dea33a195ee8c90fbccea673462207d71442116a808",
   "files": {
     "omh-accessibility-audit/SKILL.md": "1e44158d386dd45bd29e4343be946ea58961479d89421338f277a8cbc6c37615",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -196,6 +196,7 @@
     "omh-release-cut/references/release-and-rollback-method.md": "e97a49d65d6b943fa5bbacc4f8083fcd94e52d864cea97301c9b945180e57cc9",
     "omh-reliability-review/SKILL.md": "0f0b4f7300b2504639bca93fadb5b25088db5c0edd1723f59ae07b37806f39fd",
     "omh-report-package/SKILL.md": "d6be71ea1495313c9c0f824dc7c4958b77dd6cad007ae2c06d57d687095a70ae",
+    "omh-repro-audit/SKILL.md": "0deb218c4eb735d929e0c1841252576917689dc6338614956ca52f83b70545ac",
     "omh-research-brief/SKILL.md": "a5924913dc8a5a4f05880a3b8803a000bb4dec362452f94d5c40962e6f4ab8d3",
     "omh-rules-distill/SKILL.md": "0b355d69517efc183704d6847ee681ad6155e645c46a9b22e7d49959965942c7",
     "omh-run-efficiency/SKILL.md": "cd9b28c343aa07310ddc0bc93360658089df1d7b1f0e9716ece8621f5630d98f",

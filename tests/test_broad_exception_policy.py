@@ -68,6 +68,10 @@ class ClassifiedSite(NamedTuple):
 
 CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ClassifiedSite(
+        "src/workflows/repro_audit/operations.py", "_publish", INTENTIONAL,
+        "Exclusive publication rolls back only invocation-owned staged files and re-raises the original failure; it never relabels a failed audit as success.",
+    ),
+    ClassifiedSite(
         "src/plugin_bundle/omh/dashboard/plugin_api.py",
         "hud_payload",
         INTENTIONAL,
@@ -699,8 +703,10 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # silently drops the child budget; #preflight review).
 # 70 -> 71 / 62 -> 63: `bot_board.BoardReader.poll_once`, the bot board's reading
 # thread, which draws an unexpected reader failure as a named warning row.
-EXPECTED_HANDLER_COUNT = 71
-EXPECTED_ANCHOR_COUNT = 63
+# 71 -> 72 / 63 -> 64: `repro_audit.operations._publish`, which rolls back
+# only the staged files it owns and re-raises the original failure.
+EXPECTED_HANDLER_COUNT = 72
+EXPECTED_ANCHOR_COUNT = 64
 
 
 class DerivedSite(NamedTuple):
