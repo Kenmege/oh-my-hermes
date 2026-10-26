@@ -7,16 +7,19 @@ as a profile's identity and has no deletion tombstone). It has three levels,
 Enter going down one and ← or Esc up one:
 
 1. the profiles, under a header of what they add up to (gateways up, agents
-   running, the active sessions' tokens and cost), four rows each: the bot
-   (its gateway's state, its platforms as chips, a requested restart, and,
-   pushed right while it runs, its uptime, agents and resident memory); its
-   configured default model (`config.yaml`) and, when it differs, the model
-   its newest session ran; the last 24 hours (the sessions active in them,
-   their tokens by the hour each was last active as a sparkline, and their
-   tokens and cost); and what it remembers (Hermes' `memories/MEMORY.md` and
-   `USER.md` as gauges against their configured limits, the record count of
-   the OMH store its `config.yaml` names, and every session stored). The
-   gauges, the sparkline and the chips take the delegation view's charset
+   running, the active sessions' tokens and cost), each in a rounded box
+   (`bot_box`, two to a row from `BOX_MIN` up): its gateway's mark, its name
+   (and Hermes' `display_name` from `profile.yaml`) and, while it runs, its
+   uptime, agents and resident memory in the top edge; its platforms as chips
+   and a requested restart in the bottom edge; inside, a face drawn from the
+   name (`avatar`) beside four labelled rows: its configured default model
+   (`config.yaml`) and the model its newest session ran when it differs; the
+   last 24 hours (tokens by the hour each active session was last active as a
+   sparkline, how many were active, how many are stored); those sessions'
+   tokens and cost; and what it remembers (Hermes' `memories/MEMORY.md` and
+   `USER.md` as gauges against their configured limits, and the record count of
+   the OMH store its `config.yaml` names). Box edges, faces, gauges, the
+   sparkline and the chips take the delegation view's charset names
    (`unicode`, or `ascii`); a narrow row gives up its least important pieces
    (`Piece` drop ranks) and never wraps;
 2. one profile's sessions, under its gateway record in full (pid, record
@@ -63,7 +66,7 @@ frame. Each `state.db` is opened read-only (`connect_readonly`, a quarter-second
 busy wait), only when it exists, and immutable when no connection has it open
 (`_no_connection_open`). Only the sessions table is read whole, a row per session;
 messages are read by the session's index with a `LIMIT`, their text cut in the
-query. `config.yaml` and the memory files are read only when regular files,
+query. `config.yaml`, `profile.yaml` and the memory files are read only when regular files,
 at most `CONFIG_BYTES` and `MEMORY_FILE_BYTES` of them (a bigger one is sized,
 not read), `config.yaml` through OMH's block-YAML scan
 (`runtime_paths.config_scalar_text`); the OMH store's records are counted
@@ -86,6 +89,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -101,6 +105,7 @@ from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.hud_text import compact_count
 from ..plugin_bundle.omh.sqlite_readonly import connect_readonly
 from .history import history_path
+from .launch_card import _pad
 from .keys import CHAR, DOWN, END, ENTER, ESCAPE, HOME, LEFT, PAGE_DOWN, PAGE_UP, RIGHT, UP, Key, Paste
 from .markdown import clean_text
 from .pager import Pager
@@ -134,7 +139,6 @@ PROFILE_MARKERS = ("config.yaml", ".env", "SOUL.md", "profile.yaml", "auth.json"
 DELETED_PROFILES = ".deleted"  # where Hermes keeps a deleted profile's tombstone, beside the profile dirs
 # Hermes' `START_TIME_DRIFT_TOLERANCE`: 2 s on either fingerprint scale (Linux ticks, macOS centiseconds).
 START_TIME_TOLERANCE = 200
-INDENT = "    "
 PID_LIMIT = 1 << 31
 # Signal 0 is a probe only on POSIX: on Windows `os.kill(pid, 0)` sends CTRL_C_EVENT to the console group.
 ON_POSIX = os.name == "posix"
@@ -148,6 +152,7 @@ PROC_PIDTASKINFO = 4
 TASK_INFO_BYTES = 96
 EPOCH_PLAUSIBLE = 946_684_800  # 2000-01-01: Hermes' floor for an epoch `updated_at` (`normalize_updated_at`)
 CONFIG_FILE = "config.yaml"
+PROFILE_META_FILE = "profile.yaml"  # Hermes' presentation metadata (`hermes_cli.profiles.read_profile_meta`)
 CONFIG_BYTES = 1 << 20
 # Hermes' built-in memory (`tools/memory_tool_store.py`): `<home>/memories/`, one file per target, entries joined by
 # its `ENTRY_DELIMITER`, each target capped in characters by `memory.<limit key>` in config.yaml.
@@ -171,16 +176,29 @@ SESSION_GAP = "  "
 SESSION_TITLE_MIN = 16
 # Level 1's rows: the label column, the gaps a row's pieces keep, and its glyphs in each of the delegation view's
 # charsets (`delegation_view.CHARSETS`).
-LABEL_WIDTH = 9
+LABEL_WIDTH = 8
 FIT_GAP = 3  # the least gap before a row's right-pushed part
-RIGHT_RANK = 50  # a bot row's right-pushed facts go before its platform chips: uptime last, resident memory first
 SPARK_GAP = "   "
-MEMORY_GAP = "   "
+MEMORY_GAP = "  "
 GAUGE_CELLS = 10
 GAUGE_WARN, GAUGE_ERROR = 70, 90  # ok below 70 %, warn through 90 %, error past it
 SPARK_GLYPHS = {"unicode": "▁▂▃▄▅▆▇█", "ascii": "_.,:-=+*#"}
+# A bot's box: the least width that takes two side by side, the gap between them, and its edges in each charset
+# (the launch card's rounded corners, or `+` `-` `|`); every box holds the same rows, so a row of boxes is even.
+BOX_MIN = 72
+BOX_GAP = "  "
+BOX_PAD = 1
+BOX_BODY_ROWS = 4
+BOX_GLYPHS = {"unicode": ("╭", "╮", "╰", "╯", "─", "│"), "ascii": ("+", "+", "+", "+", "-", "|")}
+# A bot's face: rows and cells, the gap after it, the narrowest box inside that still takes one, and its pixels in
+# each charset (none, top, bottom, both).
+AVATAR_ROWS, AVATAR_COLS = BOX_BODY_ROWS, 8
+AVATAR_GAP = "  "
+AVATAR_MIN_INNER = 44
+AVATAR_GLYPHS = {"unicode": (" ", "▀", "▄", "█"), "ascii": (" ", "'", ",", "#")}
 GAUGE_GLYPHS = {"unicode": ("▰", "▱"), "ascii": ("#", ".")}
-CHIP_GLYPHS = {"unicode": ("●", "○"), "ascii": ("*", "o")}  # a platform as its gateway runs it now, or as last recorded
+CHIP_GLYPHS = {"unicode": ("●", "○"), "ascii": ("*", "o")}
+GATEWAY_MARKS = {"unicode": {}, "ascii": {"●": "*", "○": "o", "◌": "?"}}  # a gateway's mark in a box's top edge  # a platform as its gateway runs it now, or as last recorded
 
 GATEWAY_RUNNING = "running"
 GATEWAY_STOPPED = "stopped"
@@ -247,6 +265,7 @@ class Profile:
     last_activity: float | None = None
     store: str = ""  # why the sessions could not be read; "" when they were
     this_tui: bool = False
+    display: str = ""  # Hermes' presentation-only `display_name` (`profile.yaml`); "" when it sets none
     model: str = ""  # the configured default model (`model.default` in config.yaml)
     provider: str = ""
     config: str = ""  # why config.yaml could not be read; "" when it was
@@ -715,7 +734,9 @@ def read_profile(name: str, home: Path, current: Path | None, now: float) -> Pro
     except runtime_paths.RuntimeBindingError:
         problem = "unreadable"
     records, omh = read_omh_records(home, config)
+    meta, _meta_problem = _bounded_text(home / PROFILE_META_FILE, CONFIG_BYTES)
     about = {
+        "display": _text(_config_text(meta, ("display_name",))) if meta is not None else "",
         "model": model, "provider": provider, "memory": read_memory(home, config), "omh_records": records, "omh": omh,
         "config": {"": "", "missing": f"no {CONFIG_FILE}"}.get(problem, f"{CONFIG_FILE} {problem}"),
     }
@@ -1118,7 +1139,7 @@ def _fit(
 
 
 def _label(name: str, theme: Theme) -> tuple[Span, ...]:
-    return (Span(INDENT), Span(name.ljust(LABEL_WIDTH), theme.muted))
+    return (Span(name.ljust(LABEL_WIDTH), theme.muted),)
 
 
 def _spark(hourly: Sequence[int], charset: str) -> str:
@@ -1149,48 +1170,106 @@ def _gauge(memory: MemoryFile, theme: Theme, charset: str) -> tuple[Span, ...]:
     return (Span(full * filled, style), Span(empty * (GAUGE_CELLS - filled), theme.dim), Span(f" {percent}%", style))
 
 
-def _bot_row(profile: Profile, served_by: str, name_width: int, highlighted: bool, now: float, cols: int,
-             theme: Theme, charset: str) -> Line:
-    """The bot: its gateway's glyph and its name, what its gateway says when it is not plainly running, its
-    platforms as chips, and, pushed right, the running process's uptime, agents and resident memory."""
-    gateway = profile.gateway
-    glyph, words, style = _gateway_words(profile, served_by, theme)
-    name = _text(profile.name)
-    tag = " (this TUI)" if profile.this_tui else ""
-    lead = [
-        Span(CHOICE_MARK if highlighted else " " * len(CHOICE_MARK), theme.prompt), Span(f"{glyph} ", style),
-        Span(name, theme.user), Span(tag, theme.muted), Span(" " * max(name_width - cell_width(name + tag), 0)),
+def avatar(name: str, charset: str = "unicode") -> list[str]:
+    """`AVATAR_ROWS` rows of `AVATAR_COLS` cells drawn from `name` alone, as an identicon: a sha256 of the name lays
+    out a mirrored grid of pixels, two to a cell (`▀`, `▄`, `█`). The same name draws the same face on every run."""
+    digest = hashlib.sha256(name.encode("utf-8")).digest()
+    half = AVATAR_COLS // 2
+    bits = int.from_bytes(digest[:8], "big")
+    pixels = [[bits >> (row * half + column) & 1 for column in range(half)] for row in range(2 * AVATAR_ROWS)]
+    glyphs = AVATAR_GLYPHS[charset]
+    rows = []
+    for row in range(AVATAR_ROWS):
+        left = "".join(glyphs[pixels[2 * row][column] + 2 * pixels[2 * row + 1][column]] for column in range(half))
+        rows.append(left + left[::-1])
+    return rows
+
+
+def _avatar_style(name: str, theme: Theme) -> Style:
+    """The face's colour: one of the theme's accent steps (its tool hues and the delegation view's word steps, each
+    lifted to 4.5:1 on the background), picked by the name's hash, so it reads on a light page and a dark one."""
+    ramp = [style for style in (*theme.kinds, *theme.dag_words) if style.fg]
+    if not ramp:
+        return theme.text
+    return replace(ramp[hashlib.sha256(name.encode("utf-8")).digest()[8] % len(ramp)], bold=False)
+
+
+def _border(corners: tuple[str, str], left: Line, right: Line, width: int, edge: Style, line: str) -> Line:
+    """One edge of a box `width` wide: `left` set into it after the corner, `right` before the other corner, the
+    rest of the edge between; `right` goes when both do not fit, and `left` is cut to what is left."""
+    first, last = corners
+    head = (Span(f"{first}{line} ", edge),) if left else (Span(f"{first}{line}", edge),)
+    tail = (Span(" ", edge), *right, Span(f" {line}{last}", edge)) if right else (Span(last, edge),)
+    if right and line_width(head) + line_width(left) + line_width(tail) + 2 > width:
+        tail = (Span(last, edge),)
+    left = truncate_line(left, max(width - line_width(head) - line_width(tail) - 1, 0)) if left else ()
+    fill = width - line_width(head) - line_width(left) - line_width(tail)
+    return (*head, *left, Span((" " if left else "") + line * max(fill - (1 if left else 0), 0), edge), *tail)
+
+
+def _box(top: tuple[Line, Line], bottom: Line, body: Sequence[Line], width: int, edge: Style, charset: str) -> list[Line]:
+    """`body` in a rounded box `width` wide, in the launch card's style (`launch_card.boxed`): the top edge carries
+    `top`'s two lines, left and right, the bottom edge `bottom`. The delegation view's charset picks the corners."""
+    glyphs = BOX_GLYPHS[charset]
+    inner = width - 2 - 2 * BOX_PAD
+    rows = [(Span(glyphs[5] + " " * BOX_PAD, edge), *_pad(line, inner), Span(" " * BOX_PAD + glyphs[5], edge))
+            for line in body]
+    return [
+        _border((glyphs[0], glyphs[1]), *top, width, edge, glyphs[4]), *rows,
+        _border((glyphs[2], glyphs[3]), bottom, (), width, edge, glyphs[4]),
     ]
+
+
+def _bot_title(profile: Profile, served_by: str, highlighted: bool, theme: Theme, charset: str) -> Line:
+    glyph, _words, style = _gateway_words(profile, served_by, theme)
+    glyph = GATEWAY_MARKS[charset].get(glyph, glyph)
+    name = _text(profile.name)
+    shown = f"{profile.display} ({name})" if profile.display and profile.display != name else name
+    tag = (Span(" (this TUI)", theme.muted),) if profile.this_tui else ()
+    return (Span(f"{glyph} ", style), Span(shown, replace(theme.user, underline=highlighted)), *tag)
+
+
+def _bot_facts(profile: Profile, now: float, theme: Theme) -> Line:
+    """The running gateway's uptime, agents and resident memory, for the box's top edge."""
+    gateway = profile.gateway
+    if not gateway.live:
+        return ()
+    facts: list[Line] = []
+    if gateway.started is not None:
+        facts.append((Span("up ", theme.muted), Span(_duration_text(now - gateway.started), theme.user)))
+    if gateway.active_agents:
+        facts.append(_figure(str(gateway.active_agents), "agent" if gateway.active_agents == 1 else "agents", theme))
+    if gateway.rss is not None:
+        amount, _space, unit = _bytes_text(gateway.rss).partition(" ")
+        facts.append(_figure(amount, unit, theme))
+    spans: list[Span] = []
+    for fact in facts:
+        spans += [*((Span(" · ", theme.muted),) if spans else ()), *fact]
+    return tuple(spans)
+
+
+def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, charset: str) -> Line:
+    """For the box's bottom edge: what the gateway says when it is not plainly running, each platform as a chip
+    coloured by its state, and a restart Hermes was asked for; the last chips go first when they do not fit."""
+    gateway = profile.gateway
+    _glyph, words, style = _gateway_words(profile, served_by, theme)
     pieces: list[Piece] = []
     if not gateway.live or gateway.state != GATEWAY_RUNNING:
-        pieces.append((0, "  ", (Span(words, style),)))
+        pieces.append((0, "", (Span(words, style),)))
     live, stale = CHIP_GLYPHS[charset]
     for number, platform in enumerate(gateway.platforms):
         if not platform.current:
-            chip = (Span(f"{platform.name} {stale}", theme.muted),)
+            chip: tuple[Span, ...] = (Span(f"{platform.name} {stale}", theme.muted),)
         elif platform.error:
             chip = (Span(f"{platform.name} ", theme.text), Span(f"{live}!", theme.error))
         elif platform.needs_attention:
             chip = (Span(f"{platform.name} ", theme.text), Span(f"{live}!", theme.warn))
         else:
             chip = (Span(f"{platform.name} ", theme.text), Span(live, theme.ok if platform.state == "connected" else theme.warn))
-        pieces.append((2 + number, "  ", chip))  # the last chip goes first, after everything pushed right
+        pieces.append((2 + number, "  ", chip))  # the last chip goes first
     if gateway.restart_requested:
-        pieces.append((0, "  ", (Span("restart requested", theme.warn),)))
-    right: list[Piece] = []
-    if gateway.live and gateway.started is not None:
-        right.append((RIGHT_RANK, "", (Span("up ", theme.muted), Span(_duration_text(now - gateway.started), theme.user))))
-    if gateway.live and gateway.active_agents:
-        right.append((RIGHT_RANK + 1, " · ", _figure(str(gateway.active_agents), "agent" if gateway.active_agents == 1 else "agents", theme)))
-    if gateway.live and gateway.rss is not None:
-        amount, _space, unit = _bytes_text(gateway.rss).partition(" ")
-        right.append((RIGHT_RANK + 2, " · ", _figure(amount, unit, theme)))
-    row = _fit(lead, pieces, cols, right, first_gap="  ")
-    if not highlighted:
-        return row
-    band = theme.menu_current
-    filled = (*row, Span(" " * max(cols - line_width(row), 0)))
-    return tuple(Span(span.text, _on(band, span.style, span.text)) for span in filled)
+        pieces.append((1, "  ", (Span("restart requested", theme.warn),)))
+    return _fit((), pieces, width) if pieces else ()
 
 
 def _model_row(profile: Profile, cols: int, theme: Theme) -> Line:
@@ -1208,37 +1287,55 @@ def _model_row(profile: Profile, cols: int, theme: Theme) -> Line:
     return _fit(_label("model", theme), pieces, cols)
 
 
-def _day_row(profile: Profile, now: float, cols: int, theme: Theme, charset: str) -> Line:
-    """The last 24 hours: tokens by hour, the sessions active in them, and those sessions' tokens and cost."""
+def _day_rows(profile: Profile, now: float, cols: int, theme: Theme, charset: str) -> list[Line]:
+    """The last 24 hours over two rows: tokens by hour beside the sessions active in them (of every one stored),
+    then those sessions' tokens and cost."""
     lead = _label("24 h", theme)
     if profile.store:
-        return _fit(lead, [(0, "", (Span(f"sessions: {profile.store}", theme.muted if "no state.db" in profile.store else theme.warn),))], cols)
+        style = theme.muted if "no state.db" in profile.store else theme.warn
+        return [_fit(lead, [(0, "", (Span(f"sessions: {profile.store}", style),))], cols), ()]
+    total = sum(count for _source, count in profile.sources)
+    stored = (1, " · ", _figure(f"{total:,}", "stored", theme))
     if not profile.active:
         last = f" · last active {age_text(profile.last_activity, now)}" if profile.last_activity else ""
-        return _fit(lead, [(0, "", (Span(f"no activity{last}", theme.muted),))], cols)
+        return [_fit(lead, [(0, "", (Span(f"no activity{last}", theme.muted),)), stored], cols), ()]
     pieces: list[Piece] = []
     if profile.hourly and any(profile.hourly):
-        pieces.append((5, "", (Span(_spark(profile.hourly, charset), theme.running),)))
-    pieces.append((0, SPARK_GAP if pieces else "", _figure(str(profile.active), _count(profile.active, "session").split(" ", 1)[1], theme)))
-    if profile.usage is not None:
-        pieces += _usage_pieces(profile.usage, theme)
-    return _fit(lead, pieces, cols)
+        pieces.append((2, "", (Span(_spark(profile.hourly, charset), theme.running),)))
+    pieces += [(0, SPARK_GAP if pieces else "", _figure(str(profile.active), "active", theme)), stored]
+    spent = _fit(_label("tokens", theme), _usage_pieces(profile.usage, theme), cols) if profile.usage is not None else ()
+    return [_fit(lead, pieces, cols), spent]
 
 
 def _memory_row(profile: Profile, cols: int, theme: Theme, charset: str) -> Line:
-    """Hermes' memory and user profile as gauges, the OMH store's records, and, pushed right, every session stored."""
+    """Hermes' memory and user profile as gauges, then the OMH store's records."""
     pieces: list[Piece] = []
     for memory in profile.memory:
         named = () if memory.target == "memory" else (Span("user ", theme.muted),)
-        pieces.append((0 if memory.target == "memory" else 3, MEMORY_GAP if pieces else "", (*named, *_gauge(memory, theme, charset))))
+        pieces.append((0 if memory.target == "memory" else 2, MEMORY_GAP if pieces else "", (*named, *_gauge(memory, theme, charset))))
     if profile.omh_records is not None:
         shown = f"{OMH_RECORDS_CAP:,}+" if profile.omh_records > OMH_RECORDS_CAP else f"{profile.omh_records:,}"
-        pieces.append((2, MEMORY_GAP, (Span("OMH ", theme.muted), *_figure(shown, "record" if profile.omh_records == 1 else "records", theme))))
+        pieces.append((3, MEMORY_GAP, (Span("OMH ", theme.muted), *_figure(shown, "record" if profile.omh_records == 1 else "records", theme))))
     elif profile.omh:
-        pieces.append((2, MEMORY_GAP, (Span(profile.omh, theme.muted),)))
-    total = sum(count for _source, count in profile.sources)
-    right: list[Piece] = [(4, "", _figure(f"{total:,}", "sessions total" if total != 1 else "session total", theme))] if not profile.store else []
-    return _fit(_label("memory", theme), pieces, cols, right)
+        pieces.append((3, MEMORY_GAP, (Span(profile.omh, theme.muted),)))
+    return _fit(_label("memory", theme), pieces, cols)
+
+
+def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, width: int, theme: Theme,
+            charset: str = "unicode") -> list[Line]:
+    """One bot's box: its name and gateway mark in the top edge, the running gateway's facts on its right; its face
+    and the model, last-24-hours, tokens and memory rows inside; its platforms in the bottom edge. The highlighted
+    bot's edge takes the prompt's colour. Every box has `BOX_BODY_ROWS` rows, so boxes side by side are as tall."""
+    inner = width - 2 - 2 * BOX_PAD
+    face = avatar(_text(profile.name), charset) if inner >= AVATAR_MIN_INNER else []
+    room = inner - (AVATAR_COLS + len(AVATAR_GAP) if face else 0)
+    rows = [_model_row(profile, room, theme), *_day_rows(profile, now, room, theme, charset),
+            _memory_row(profile, room, theme, charset)]
+    style = _avatar_style(_text(profile.name), theme)
+    body = [((Span(face[number], style), Span(AVATAR_GAP)) if face else ()) + row for number, row in enumerate(rows)]
+    edge = theme.prompt if highlighted else theme.rule
+    top = (_bot_title(profile, served_by, highlighted, theme, charset), _bot_facts(profile, now, theme))
+    return _box(top, _bot_platforms(profile, served_by, max(width - 6, 1), theme, charset), body, width, edge, charset)
 
 
 def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme) -> Line:
@@ -1268,21 +1365,25 @@ def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme) -> Line:
 def profile_lines(
     profiles: Sequence[Profile], selected: int, now: float, cols: int, theme: Theme, charset: str = "unicode",
 ) -> tuple[list[Line], tuple[int, int]]:
-    """Level 1's rows at `cols`, and the first and last row of the highlighted profile. `charset` is the
-    delegation view's (`unicode` or `ascii`): the gauges, the sparkline and the platform chips follow it."""
+    """Level 1's rows at `cols`, and the first and last row of the highlighted profile's box. Two boxes to a row when
+    each can be `BOX_MIN` wide, else one; `charset` is the delegation view's (`unicode` or `ascii`), for the box
+    edges, the faces, the gauges, the sparkline and the chips."""
     lines: list[Line] = [_board_head(profiles, cols, theme), ()]
     span = (0, 0)
-    name_width = max((cell_width(_text(profile.name) + (" (this TUI)" if profile.this_tui else "")) for profile in profiles), default=0)
-    for index, profile in enumerate(profiles):
-        highlighted = index == selected
-        first = len(lines)
-        lines += [
-            _bot_row(profile, _served_by(profiles, profile), name_width, highlighted, now, cols, theme, charset),
-            _model_row(profile, cols, theme),
-            _day_row(profile, now, cols, theme, charset),
-            _memory_row(profile, cols, theme, charset),
+    across = 2 if cols >= 2 * BOX_MIN + len(BOX_GAP) else 1
+    width = max((cols - (across - 1) * len(BOX_GAP)) // across, 1)
+    for start in range(0, len(profiles), across):
+        boxes = [
+            bot_box(profile, _served_by(profiles, profile), start + offset == selected, now, width, theme, charset)
+            for offset, profile in enumerate(profiles[start : start + across])
         ]
-        if highlighted:
+        first = len(lines)
+        for parts in zip(*boxes):
+            row: list[Span] = []
+            for part in parts:
+                row += [*((Span(BOX_GAP),) if row else ()), *part]
+            lines.append(tuple(row))
+        if start <= selected < start + across:
             span = (first, len(lines) - 1)
         lines.append(())
     if not profiles:

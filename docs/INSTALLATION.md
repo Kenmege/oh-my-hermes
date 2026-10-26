@@ -1209,25 +1209,30 @@ The bot board (Ctrl+S or `/bots`) shows this machine's Hermes bots, full
 screen, and changes nothing. Its first page opens with what every profile
 adds up to (gateways up, agents running, and the active sessions' tokens and
 cost), then lists the Hermes home the TUI runs under and every named profile
-beside it (`<root>/profiles/<name>/`), four rows each. The first is the bot:
-its gateway's state as a coloured mark (and in words when it is not plainly
-running), each platform as a chip coloured by its state (`!` when it needs
-attention or failed, `○` when the gateway that recorded it has since stopped
-or restarted), a restart Hermes was asked for, and, at the row's end, the
-running gateway's uptime, agents and resident memory. Then, under a label
-column: `model`, the default model its `config.yaml` names (and the model its
-newest session ran, when that differs); `24 h`, the sessions active in the
-last 24 hours, their tokens by the hour each was last active as a sparkline,
-and their input, output and cache-read tokens and cost; and `memory`, Hermes'
+beside it (`<root>/profiles/<name>/`), each in its own rounded box, two to a
+row when the terminal is about 146 columns or wider. A box's top edge carries
+its gateway's state as a coloured mark, the bot's name (with the display name
+Hermes keeps in `profile.yaml`, when it set one) and, on the right, the running
+gateway's uptime, agents and resident memory; its bottom edge carries what the
+gateway says when it is not plainly running, each platform as a chip coloured
+by its state (`!` when it needs attention or failed, `○` when the gateway that
+recorded it has since stopped or restarted) and a restart Hermes was asked
+for. Inside, at the left, is a small face drawn from the bot's name alone,
+the same on every run, and beside it a label column: `model`, the default
+model its `config.yaml` names (and the model its newest session ran, when that
+differs); `24 h`, a sparkline of the active sessions' tokens by the hour each
+was last active, how many were active, and how many are stored; `tokens`,
+their input, output and cache-read tokens and cost; and `memory`, Hermes'
 `MEMORY.md` and `USER.md` as gauges against the limits its `config.yaml` sets
-(green below 70%, amber to 90%, red past it), the record count of the OMH store
-its `config.yaml` names, and every session stored. Tokens and cost are each
+(green below 70%, amber to 90%, red past it) and the record count of the OMH
+store its `config.yaml` names. The highlighted bot's box takes the prompt's colour. Tokens and cost are each
 session's lifetime totals, since Hermes records no time per call, and a cost
 appears only where Hermes priced it (`~` marks an estimate); sessions it did
 not price are counted as unpriced, never as $0. A store, config or memory
 file it cannot read is named as such, and a store without the token columns
 shows neither tokens nor a sparkline. A narrow terminal gives up the least
-important figures first and never wraps a row. Enter opens a profile's
+important figures first (the face, then the top edge's figures, then the last
+chips) and never wraps a row. Enter opens a profile's
 sessions, under the gateway record in full (pid, how old it is, each
 platform's state and error) and the exact memory and per-source session
 counts, newest activity first, as a table: title, model, input and output
