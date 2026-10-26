@@ -2641,6 +2641,10 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
     def test_setup_interactive_asks_exactly_one_scope_question(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
+            # The wizard answers "project", so the fixture is its own project:
+            # without this barrier an ancestor checkout (a home directory kept
+            # in git) became the project and setup wrote into its live `.omh`.
+            (root / ".git").write_bytes(b"gitdir: .nonexistent-project-fixture-barrier\n")
 
             titles: list[str] = []
 
