@@ -21,14 +21,16 @@ phrases, seeded geometry and quiet holds are options, not a required effect list
 Run these on the storyboard, then again on the rendered style frame. Each is a
 measurement with a stated number, not an impression.
 
-- `frame_fill`: a product shot fills at least 90% of the width and of the
-  height of the safe area for the aspect and subtitle mode in use, as
-  `references/craft-design.md` (Layout and safe areas) defines it: in 16:9 the
-  body area is x 120-1800, y 120-900 and the subtitle band y 940-1040 stays
-  clear when subtitles run; in 9:16 the top 250 px and bottom 420 px stay
-  clear. A full-bleed shot is an explicit, recorded exception, and it still
-  keeps the subtitle band and the 9:16 UI zones clear. Text rows are at least
-  2% of the frame's shorter side (22 px at 1080). Choose terminal columns and
+- `frame_fill`: the area a product shot fills depends on the subtitle mode,
+  using the zones `references/craft-design.md` (Layout and safe areas)
+  defines. With no subtitles, a product-led shot is full-bleed: it uses the
+  full frame minus the 46 px edge inset, so a 1080p product shot is at least
+  about 988 px tall (1920x1080: at least 1828x988), and in 9:16 it still keeps
+  the top 250 px and bottom 420 px clear. With subtitles, it fills at least 90%
+  of the width and height of the body safe area (16:9: x 120-1800, y 120-900)
+  and the subtitle band y 940-1040 stays clear. A shot that is not
+  product-led, such as a title or a quote, follows the safe areas instead.
+  Text rows are at least 2% of the frame's shorter side (22 px at 1080). Choose terminal columns and
   rows, or the viewport, from that area and row height; never keep a default
   size and letterbox it. Record the area used, the measured fractions and the
   row height.
@@ -47,8 +49,9 @@ measurement with a stated number, not an impression.
   repainted. The surrounding composition adds at most one accent family beyond
   it. Neutrals, semantic-state colors and data-series palettes are listed but
   not counted. Check text contrast on its actual background: at least 4.5:1,
-  or 3:1 for large type. A composed frame that adds a second family or misses
-  contrast is REVISE before render.
+  or 3:1 for large type. A composed frame that adds more than one accent
+  family beyond the product or brand palette, or misses contrast, is REVISE
+  before render.
 
 ## Anti-slide evidence, not keyword approval
 
