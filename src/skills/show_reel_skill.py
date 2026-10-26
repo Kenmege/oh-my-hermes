@@ -29,7 +29,11 @@ _INPUTS = ("objective audience and channel", "duration format and budget", "sour
 DEFINITION = SkillDefinition(
     "show-reel",
     "Motion showcase to make: produce a source-grounded product film with audience-specific concepts, segment direction, authored motion, measured locale/export QA and reproducible source delivery.",
-    ("show-reel", "show reel", "showreel", "product showcase video", "animated product film", "motion showcase", "animated portfolio", "launch film", "product teaser video"),
+    ("show-reel", "show reel", "showreel", "product showcase video", "animated product film", "motion showcase", "animated portfolio", "launch film", "product teaser video",
+     "promo video", "promotional video", "promo clip", "demo video",
+     "launch video", "product launch video", "product video", "teaser video", "explainer video",
+     "launch trailer", "teaser trailer", "promo trailer", "promotional trailer", "product trailer",
+     "sizzle reel", "hyperframes video"),
     "Use when a user needs an authored time-based product or work showcase, from evidence and audience framing to rendered motion, localized variants, export inspection, and source delivery.",
     category="design", phase="motion-production", hermes_role="operator",
     delegation_boundary="retained-catalog-intent",

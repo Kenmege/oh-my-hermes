@@ -2841,7 +2841,10 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # must not turn unrelated market, customer or profile mentions into work.
     "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
     # Product/video/reel words alone must not acquire a motion-production owner.
-    "show-reel": frozenset({"show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser"}),
+    "show-reel": frozenset({
+        "show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser",
+        "promo", "promotional", "clip", "demo", "explainer", "trailer", "sizzle", "hyperframes",
+    }),
     "geospatial-analysis": frozenset({"analysis", "overlay", "spatial", "intersection", "intersect", "layers", "compute", "overlap", "area"}),
     "biomedical-evidence": frozenset({"evidence", "reconciliation", "cross", "check", "variant", "matrix", "capture"}),
     "molecular-docking": frozenset({"molecular", "docking", "rigid", "receptor", "ligand", "poses"}),

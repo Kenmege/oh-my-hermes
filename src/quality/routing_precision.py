@@ -304,6 +304,17 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-asked-doubted", "Make a film asked and then doubted is not a request", "Make a new launch film? Should we even?", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-asked-alternative", "A film weighed against hiring an agency is a question", "Make a launch film, or should I hire an agency?", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-causative-on-site", "A reel on the website made faster is a page fix", "Make a showreel on the website load faster.", "answer_clarification", "", "show-reel"),
+    # The promo, demo, launch and trailer names are whole phrases; the same
+    # words in another sense, or the phrase inside another request, are not a
+    # film to author.
+    RoutingPrecisionCase("show-reel-demo-video-playback", "A demo video that will not play is a playback fault", "The demo video won't play in Safari.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-promo-video-causative", "A definite promo video made shorter is an edit", "Make the promo video shorter.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-promo-video-upload", "Uploading a promo video is a file move", "Upload the promo video to the drive.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-launch-video-convert", "Converting a launch video is a format operation", "Convert the launch video to webm.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-demo-video-chained-post", "A demo video chained to a Slack post is not this skill's", "Make a demo video and post it to Slack.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-towed-trailer", "A bare trailer is also the one you tow", "Build a trailer for my boat.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-video-call", "A video call is not a film", "Make a video call to the client.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-install", "Installing the renderer is not a brief", "Install hyperframes on my laptop.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -8869,6 +8880,17 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("show-reel-make-motion-showcase", "Make with an indefinite object is production", "Make a motion showcase for the new dashboard.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-cut-production", "Cutting a new reel from source work is production", "Cut a show reel from last year's client work.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-produce-using-source", "Courtesy and a source adjunct keep the production lead", "Please produce a product showcase video using our brand guide.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    # Promo, demo, launch and trailer films by their everyday names. Before
+    # these phrases joined the admission each one dispatched another lane or
+    # asked.
+    RoutingInterventionCase("show-reel-promo-video", "A promo video of a product is production, not delivery", "make a promo video of the omh TUI", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-spaced-duration-demo-video", "A two-word duration qualifies a demo video", "make a 30 second demo video of our terminal UI", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-renderer-lead", "A brief that opens on the renderer name asks for a film", "hyperframes promo video for the launch", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-product-video", "A product video for a page is production, not delivery", "Make a product video for the landing page.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-product-demo-video", "A product demo video to produce is not a connector check", "Produce a 90 second product demo video for investors.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-sizzle-reel", "Cutting a sizzle reel from footage is production", "Cut a sizzle reel from the conference footage.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-launch-trailer", "A launch trailer is a film", "Make a launch trailer for the game.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-promo-video-of-board", "A promo video about a named surface is still the film", "Make a HyperFrames promo video of the agent board.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
     RoutingInterventionCase("show-reel-transcript-owner", "An existing launch film transcript stays with media input", "Summarize this launch film transcript for the weekly report.", "dispatch", "media-input-operator", "prepare_media_input_card", "media_input"),
     # A film named inside another skill's request keeps that skill. Each of

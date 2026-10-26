@@ -62,8 +62,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # when its runtime names became scoring-only (same length).
             # 522331 -> 522328 and the digest re-derived again for the
             # model-setup row refresh (-3); no other row moved.
-            (skill_capabilities, 522328, FULL_ROW_DELTA_CAP,
-             '643e140b877a6e5b369a7c107cc9a827852a26c280bceed586ff1fdeeb6593d4',
+            # 522328 -> 522329 and the digest re-derived: the show-reel row's
+            # trigger count went +5 -> +21 (+1); no other row moved.
+            (skill_capabilities, 522329, FULL_ROW_DELTA_CAP,
+             '9dc9a60808e1e7edeca220f7050605b440b896a21e762e1958b72fe2d7c34d92',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',

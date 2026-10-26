@@ -68,7 +68,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Three science vocabulary controls remain direct answers.
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
-        self.assertEqual(payload["summary"]["case_count"], 1115)
+        self.assertEqual(payload["summary"]["case_count"], 1123)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -192,7 +192,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # two negatives that hold broad wording out (a red-team hiring
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1131)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1139)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

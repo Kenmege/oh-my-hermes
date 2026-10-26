@@ -837,7 +837,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # 525403 -> 525400: the model-setup row drops the retired Apitopia, Qwen and
 # realtime-search/design wording and names Kimi K3 as superseded and DeepSeek
 # as a candidate (-3). Re-derived from the producer; the slack is retired.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525400
+# 525400 -> 525401: show-reel adds 16 promo/demo/launch/trailer triggers; its
+# row only counts the ones past those it shows ("+5 more triggers" becomes
+# "+21 more triggers", +1). Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525401
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

@@ -3,7 +3,7 @@
 A format noun is not a request to author that format. `show-reel` is admitted
 only by a request that opens on producing one: the first sentence, after the
 courtesy openers (`request_lead.COURTESY_OPENERS`), is a verb from a closed
-list, at most one indefinite determiner, at most two modifiers from a closed
+list (or the name of a video renderer), at most one indefinite determiner, at most two modifiers from a closed
 list, one of the skill's own noun phrases as whole words, and then nothing, a
 comma or colon, or a word from `_FOLLOWERS`. A film named as the object of
 another request ("make sure the launch film is uploaded", "write a tweet
@@ -25,18 +25,32 @@ SHOW_REEL_PHRASES = (
     "show-reel", "show reel", "showreel", "product showcase video",
     "animated product film", "motion showcase", "animated portfolio",
     "launch film", "product teaser video",
+    # Promo, demo and launch films by their everyday names. Each is a whole
+    # phrase: "promo", "demo", "launch", "video" and "trailer" alone are not
+    # (a bare "trailer" is also the one you tow). "product demo video" is
+    # admitted here but is not a catalog trigger: external-connector-readiness
+    # owns that phrase for a generated video, and "demo video" scores it.
+    "promo video", "promotional video", "promo clip", "demo video", "product demo video",
+    "launch video", "product launch video", "product video", "teaser video", "explainer video",
+    "launch trailer", "teaser trailer", "promo trailer", "promotional trailer", "product trailer",
+    "sizzle reel", "hyperframes video",
 )
 _LEAD_VERBS = frozenset({"animate", "build", "create", "cut", "design", "edit", "make", "produce", "write"})
 # Definite and possessive determiners are refused: "make the launch film
 # shorter" is a causative over an existing film, not a request to author one.
 _DETERMINERS = frozenset({"a", "an"})
 _MODIFIERS = frozenset({
-    "animated", "bilingual", "brief", "cinematic", "multilingual", "new", "quick", "short", "vertical",
+    "animated", "bilingual", "brief", "cinematic", "hyperframes", "multilingual", "new", "quick", "short", "vertical",
     "arabic", "chinese", "english", "french", "german", "hindi", "italian", "japanese", "korean",
     "portuguese", "spanish", "vietnamese",
 })
-# `-second`/`-minute` durations such as "60-second" or "2-minute".
+# `-second`/`-minute` durations such as "60-second" or "2-minute", or the
+# same as two words ("30 second").
 _DURATION = re.compile(r"\d+-(?:second|sec|minute|min)")
+_DURATION_UNITS = frozenset({"second", "seconds", "sec", "minute", "minutes", "min"})
+# HyperFrames is an HTML-to-video renderer: a brief that opens on its name
+# ("hyperframes promo video for the launch") asks for a film without a verb.
+_RENDERER_LEADS = frozenset({"hyperframes"})
 # "and", "in" and "with" are left out: "make the show reel in the README link
 # work" and "make the launch film with subtitles the default" continue a
 # causative, not a brief.
@@ -49,6 +63,9 @@ _CHAINED_VERBS = frozenset({
     "add", "build", "create", "deploy", "do", "email", "file", "fix", "make", "open", "post", "publish",
     "review", "schedule", "send", "share", "submit", "translate", "update", "upload", "write",
 })
+# A film of a defect ("make a demo video of the bug for the issue tracker")
+# is a recording for a report, not a showcase.
+_DEFECT_WORDS = frozenset({"bug", "bugs", "crash", "crashes", "error", "errors", "regression", "repro", "reproduction"})
 _WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
 _NOUN_PHRASES = tuple(sorted({tuple(_WORD.findall(phrase)) for phrase in SHOW_REEL_PHRASES}, key=len, reverse=True))
 
@@ -79,9 +96,10 @@ _NATIVE_PRODUCTION = re.compile(_fold(
 
 def _english_production_lead(sentence: str) -> bool:
     words = _WORD.findall(sentence)
-    if not words or words[0] not in _LEAD_VERBS:
+    if not words or (words[0] not in _LEAD_VERBS and words[0] not in _RENDERER_LEADS):
         return False
-    index = 1
+    # A renderer lead is read again as the first modifier.
+    index = 1 if words[0] in _LEAD_VERBS else 0
     if index < len(words) and words[index] in _DETERMINERS:
         index += 1
     # The noun is tried before each modifier is taken, so "animated" can open
@@ -93,9 +111,12 @@ def _english_production_lead(sentence: str) -> bool:
                 if rest and rest[0] not in {",", ":"} and rest[0] not in _FOLLOWERS:
                     return False
                 return not any(
-                    word in _CHAIN_WORDS or (word == "and" and following in _CHAINED_VERBS)
+                    word in _CHAIN_WORDS or word in _DEFECT_WORDS or (word == "and" and following in _CHAINED_VERBS)
                     for word, following in zip(rest, [*rest[1:], ""])
                 )
+        if index + 1 < len(words) and words[index].isdigit() and words[index + 1] in _DURATION_UNITS:
+            index += 2
+            continue
         if index >= len(words) or not (words[index] in _MODIFIERS or _DURATION.fullmatch(words[index])):
             return False
         index += 1

@@ -59,6 +59,15 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a 2-minute launch film covering the three new features.",
             "Hey, create a cinematic launch film for the conference keynote.",
             "Create a showreel that introduces OMH.",
+            "make a promo video of the omh TUI",
+            "make a 30 second demo video of our terminal UI",
+            "hyperframes promo video for the launch",
+            "HyperFrames launch video for the new TUI",
+            "Create a hyperframes video for the release.",
+            "Cut a sizzle reel from the conference footage.",
+            "Make a 15-second teaser trailer for the release.",
+            "Design an animated explainer video for the API.",
+            "Could you create a product launch video for our Korean audience?",
             "제품 쇼케이스 영상 만들어줘",
             "제품 쇼케이스 영상을 영어로 만들어줘",
             "製品ショーケース動画を作ってください",
@@ -99,6 +108,20 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Produce a launch film, then deploy the landing page.",
             "Create a launch film: also review the PR that adds the video player.",
             "Make a showreel from these clips and translate the subtitles to Japanese.",
+            # The everyday names are whole phrases: a bare trailer, a video
+            # call, a player component, the renderer alone, a defect recording.
+            "Build a trailer for my boat.",
+            "Make a trailer hitch diagram for the manual.",
+            "Make a video call to the client.",
+            "Make a demo video player component in React.",
+            "Make the promo video shorter.",
+            "Make a demo video and post it to Slack.",
+            "Make a demo video of the bug for the issue tracker.",
+            "Install hyperframes on my laptop.",
+            "Is hyperframes open source?",
+            "HyperFrames rendering is slow on my laptop.",
+            "hyperframes",
+            "Make a promo code for 20% off.",
         ):
             with self.subTest(message=message):
                 self.assertFalse(show_reel_request_admitted(message))

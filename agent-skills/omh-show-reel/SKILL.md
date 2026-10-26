@@ -66,7 +66,7 @@ Bad example:
 
 Use when a user needs an authored time-based product or work showcase, from evidence and audience framing to rendered motion, localized variants, export inspection, and source delivery.
 
-    Strong routing signals: `show-reel`, `show reel`, `showreel`, `product showcase video`, `animated product film`, `motion showcase`, `animated portfolio`, `launch film`, `product teaser video`, `製品ショーケース動画`, `제품 쇼케이스 영상`, `产品展示短片`
+    Strong routing signals: `show-reel`, `show reel`, `showreel`, `product showcase video`, `animated product film`, `motion showcase`, `animated portfolio`, `launch film`, `product teaser video`, `promo video`, `promotional video`, `promo clip`, `demo video`, `launch video`, `product launch video`, `product video`, `teaser video`, `explainer video`, `launch trailer`, `teaser trailer`, `promo trailer`, `promotional trailer`, `product trailer`, `sizzle reel`, `hyperframes video`, `製品ショーケース動画`, `제품 쇼케이스 영상`, `产品展示短片`
 
 ## Catalog Metadata
 

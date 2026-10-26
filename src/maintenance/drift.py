@@ -873,7 +873,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Normalized actor/objective follow-up adds seven employer contrasts.
             # The pi-family runtime rename: `family` alone never names the
             # executor readiness owner (+1).
-            expected=1115,
+            # show-reel promo/demo/launch/trailer names: the same words as a
+            # playback fault, an edit, an upload, a conversion, a chained post,
+            # a towed trailer, a video call and a renderer install (+8).
+            expected=1123,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1378,7 +1381,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Actor/objective follow-up adds two third-person candidate controls.
             # The pi-family runtime rename: asking whether pi-family is ready
             # checks executor readiness (+1).
-            expected=1131,
+            # show-reel promo/demo/launch/trailer names, a two-word duration
+            # and a renderer-led brief, each of which dispatched another lane
+            # or asked on main (+8).
+            expected=1139,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
