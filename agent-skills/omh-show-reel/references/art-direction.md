@@ -16,6 +16,30 @@ style frames at delivery size AND a short moving proof before full production.
 Authentic product captures, material/photographic composition, depth, kinetic
 phrases, seeded geometry and quiet holds are options, not a required effect list.
 
+## Frame checks before the first style frame
+
+Run these on the storyboard, then again on the rendered style frame. Each is a
+measurement with a stated number, not an impression.
+
+- `frame_fill`: a full-screen product shot fills at least 85% of frame width
+  and 85% of frame height, and its text rows are at least 2% of frame height
+  (22 px at 1080p). Choose terminal columns and rows, or the viewport, from the
+  frame's aspect and that row height; never keep a default size and letterbox
+  it. Record the measured fractions and the row height.
+- `clear_space`: every logo and heading keeps clear space of at least one of
+  its own text rows (one terminal row for an ASCII logo) from each frame edge,
+  window edge and container border. Flush against an edge is REVISE.
+- `decorative_text`: no text the product does not render and the brief does
+  not need. Window title bars, `cols×rows` dimension labels, invented paths
+  and prompts, and fake version strings are removed, not restyled.
+- `palette_families`: list every hue family on screen with its hex values and
+  where it appears (background, window chrome, product palette, logo, captions,
+  accents). The product's captured colors are given and are never repainted;
+  the background, chrome, captions and end card add no hue family beyond them,
+  so the frame holds one base family plus at most one accent. Check text
+  contrast on its actual background: at least 4.5:1, or 3:1 for large type.
+  A frame that adds a family or misses contrast is REVISE before render.
+
 ## Anti-slide evidence, not keyword approval
 
 Record `anti_slide_review` from actual segment and transition evidence. Compare
@@ -29,6 +53,10 @@ not a checklist keyword or numeric quality score.
 
 Name strongest and weakest scenes, why each succeeds/fails, and keep/fix/rebuild
 for every segment. Reserve actual iteration/time budget to rebuild the weakest.
+When the weakness is the subject itself (the feature shown is thin, not its
+staging), record `product_gap` with the capability the film needs and report
+it to the user as a product change; do not spend the budget on particles,
+glow, palette or camera moves to hide it.
 `before_after_and_boundaries` requires same-time before/after samples, consecutive
 moving strips and both entry/exit cut boundaries from real renders. Re-render and
 review the final encoded revision; approval of the earlier draft is not approval

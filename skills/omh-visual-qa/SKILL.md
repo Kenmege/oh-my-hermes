@@ -78,6 +78,7 @@ Quality bar:
 
 - List the exact pages, states, viewports, files, images, or TUI frames being checked.
 - For TUI surfaces, bind every capture to an explicit terminal size (80x24 and 120x40 at minimum); pasted rendered output at a named size is the screenshot-equivalent, and a capture without its size is not evidence.
+- When a product surface is composed into a larger frame (promo, poster, slide), measure it against the frame: a redrawn mock where the real renderer's output should be is BLOCK; a full-screen shot fills at least 85% of frame width and height with text rows at least 2% of frame height; logos and headings keep at least one of their own text rows of clear space; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun. Each miss is one `differences` entry.
 - Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.
 - Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.
 - Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.

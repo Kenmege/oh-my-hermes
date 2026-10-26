@@ -60,8 +60,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # runtime rename moved four sibling rows by +6 each, and the
             # executor-runtime-readiness row's trigger count went +35 -> +34
             # when its runtime names became scoring-only (same length).
-            (skill_capabilities, 522331, FULL_ROW_DELTA_CAP,
-             'cd1f5042d76a69544c44314a19352e019f92fe87fdd8c9a76ad7d217312e2018',
+            # Then the promo postmortem's visual-qa quality-bar rule grows that
+            # sibling row by 420: 522331 -> 522751.
+            (skill_capabilities, 522751, FULL_ROW_DELTA_CAP,
+             'c2217e97622b366a97f475791ff01d5d27bffd84b774a0b1f9958947eabcc583',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -121,8 +123,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance, then the pi-family runtime rename in
-        # model-setup, maestro, ultrawork, and executor-runtime-readiness.
-        self.assertEqual(_digest(legacy_hashes), 'c1743fe0cbbc15f3179472da5202799fe649760154ebf984c1b6713525df39da')
+        # model-setup, maestro, ultrawork, and executor-runtime-readiness, then
+        # the promo postmortem in content-operator, design-quality-gate,
+        # show-reel, and visual-qa.
+        self.assertEqual(_digest(legacy_hashes), '85ed78d77c2ea0a2b6d0016e7dc7ac8cbad5cea76c25ba4a2c3aebd891bad94f')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
