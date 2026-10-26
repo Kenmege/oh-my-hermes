@@ -321,8 +321,8 @@ class RepairCardTests(unittest.TestCase):
     def test_unknown_owner_gets_a_neutral_instruction(self) -> None:
         # Executor-neutral: no CLI is the implied default for an owner this
         # repo has not verified a login command for.
-        command = auth_repair_command("omo-runtime")
-        self.assertIn("omo-runtime", command)
+        command = auth_repair_command("pi-family-runtime")
+        self.assertIn("pi-family-runtime", command)
         self.assertNotIn("codex login", command)
         self.assertNotIn("claude", command)
 
@@ -432,10 +432,10 @@ class RecoveryInterviewPromptTests(unittest.TestCase):
 
     def test_choice_one_with_several_candidates_asks_which_owner(self) -> None:
         chosen, _ = self._ask(
-            ["1", "omo-runtime"],
-            retargets=[{"profile": "claude-code"}, {"profile": "omo-runtime"}],
+            ["1", "pi-family-runtime"],
+            retargets=[{"profile": "claude-code"}, {"profile": "pi-family-runtime"}],
         )
-        self.assertEqual(chosen, {"choice": CHOICE_RETARGET, "target_owner": "omo-runtime"})
+        self.assertEqual(chosen, {"choice": CHOICE_RETARGET, "target_owner": "pi-family-runtime"})
 
     def test_choice_two_selects_the_hermes_lane(self) -> None:
         chosen, _ = self._ask(["2"], retargets=[{"profile": "claude-code"}])

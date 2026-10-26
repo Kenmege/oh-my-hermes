@@ -15,7 +15,7 @@ ExternalProfile: TypeAlias = Literal[
     "codex",
     "claude-code",
     "omx-runtime",
-    "omo-runtime",
+    "pi-family-runtime",
     "omc-runtime",
     "generic",
 ]

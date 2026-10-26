@@ -428,7 +428,7 @@ def _model_routing_next_action(
     if owner_learning.get("status") == "corrupt":
         return f"Repair or archive the corrupt owner preference at {owner_learning['path']}, then run `omh coding model-routing status`."
     if not confirmed:
-        return "Confirm locally active models in OMO configuration, then run `omh coding model-routing status`."
+        return "Confirm locally active models in the pi-family runtime configuration, then run `omh coding model-routing status`."
     if hermes.get("status") in {"missing", "aliases_unset"}:
         return "Preview and apply Hermes model aliases for confirmed models, then run `omh coding model-routing status`."
     if missing_heads:

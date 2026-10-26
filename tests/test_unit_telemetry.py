@@ -13,6 +13,7 @@ from omh.coding.unit_telemetry import (  # noqa: E402
     UNIT_TELEMETRY_VALUE_KEYS,
     parse_unit_telemetry,
 )
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 CODEX_TOKEN_COUNT_EVENT = {
     "id": "7",
@@ -61,7 +62,7 @@ class UnitTelemetryPayloadShapeTests(unittest.TestCase):
         payloads = [
             parse_unit_telemetry("codex", jsonl(CODEX_SESSION_CONFIGURED_EVENT, CODEX_TOKEN_COUNT_EVENT)),
             parse_unit_telemetry("claude-code", jsonl(CLAUDE_RESULT_EVENT)),
-            parse_unit_telemetry("omo-runtime", "anything at all"),
+            parse_unit_telemetry("pi-family-runtime", "anything at all"),
             parse_unit_telemetry("codex", ""),
         ]
         for payload in payloads:
@@ -78,7 +79,7 @@ class UnitTelemetryPayloadShapeTests(unittest.TestCase):
             ("codex", "no json here at all\n"),
             ("claude-code", jsonl(CLAUDE_RESULT_EVENT)),
             ("claude-code", "{"),
-            ("omo-runtime", jsonl(CLAUDE_RESULT_EVENT)),
+            ("pi-family-runtime", jsonl(CLAUDE_RESULT_EVENT)),
         )
         for owner, stdout_text in cases:
             with self.subTest(owner=owner, stdout_text=stdout_text[:24]):
@@ -86,7 +87,7 @@ class UnitTelemetryPayloadShapeTests(unittest.TestCase):
                 self.assertEqual(payload["parsed"], payload["source"] != "none")
 
     def test_payload_never_carries_a_value_key_it_did_not_observe(self) -> None:
-        payload = parse_unit_telemetry("omo-runtime", jsonl(CODEX_TOKEN_COUNT_EVENT))
+        payload = parse_unit_telemetry("pi-family-runtime", jsonl(CODEX_TOKEN_COUNT_EVENT))
         for key in UNIT_TELEMETRY_VALUE_KEYS:
             self.assertNotIn(key, payload)
 
@@ -201,7 +202,7 @@ class CodexCostTests(unittest.TestCase):
 class UnstructuredOwnerTests(unittest.TestCase):
     def test_owners_without_a_structured_surface_report_honest_absence(self) -> None:
         stdout_text = jsonl(CLAUDE_RESULT_EVENT, CODEX_TOKEN_COUNT_EVENT)
-        for owner in ("omo-runtime", "pi", "senpi", "opencode", "hermes", "omx-runtime", "omc-runtime", "generic", ""):
+        for owner in ("pi-family-runtime", "pi", PI_DISTRIBUTION_HOST, "opencode", "hermes", "omx-runtime", "omc-runtime", "generic", ""):
             with self.subTest(owner=owner):
                 payload = parse_unit_telemetry(owner, stdout_text)
                 self.assertFalse(payload["parsed"])
@@ -300,7 +301,7 @@ class MalformedStreamTests(unittest.TestCase):
             "x" * 300000,
             json.dumps({"usage": {"input_tokens": 1}}) + "\n" + "y" * 300000,
         )
-        for owner in ("codex", "claude-code", "omo-runtime"):
+        for owner in ("codex", "claude-code", "pi-family-runtime"):
             for stdout_text in cases:
                 with self.subTest(owner=owner, stdout_text=stdout_text[:20]):
                     payload = parse_unit_telemetry(owner, stdout_text)

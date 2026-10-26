@@ -352,7 +352,7 @@ Rules, all applied at freeze time:
 - **Spawnability is data.** `DISPATCH_COMMAND_TEMPLATES` in
   `src/coding/fanout_dispatch.py` maps profiles with a local headless CLI to
   fixed argv templates — currently codex (`codex exec`), claude-code
-  (`claude -p`), and omo-runtime. The omo runtime's host CLI is DETECTED at
+  (`claude -p`), and pi-family-runtime. The pi-family runtime's host CLI is DETECTED at
   dispatch/readiness time in a fixed order (`pi`, then its `senpi`
   distribution, then `opencode`) — first on PATH wins, no personal stack is
   hardcoded, and the selected host is visible in the planned argv and the
@@ -1459,7 +1459,7 @@ probed source reports a status: `present`, `absent`, `unreadable`, or
 - **codex** probes custom prompts at `~/.codex/prompts` (addressed by file
   stem, invoked `/<name>`) and OMX-style skill directories at
   `~/.codex/skills` (invoked `$<name>`).
-- **omo-runtime** reports one explicit `unsupported` source with a reason
+- **pi-family-runtime** reports one explicit `unsupported` source with a reason
   instead of silence: its host CLIs (pi/senpi/opencode) declare no skill
   layout this repo can verify, so nothing is scanned — a dry run then shows
   WHY no skills are sequenced rather than an empty payload with no trace.

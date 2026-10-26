@@ -10,13 +10,14 @@ from ..coding.model_recommendations import (
     load_recommendation_overrides,
 )
 from ..coding.model_routing import MODEL_CATEGORIES, model_family
+from ..coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 _JSONC_LINE_COMMENT: Final = re.compile(r"^\s*//.*$", re.MULTILINE)
 
 
-def load_omo_category_overrides(home: Path) -> tuple[dict[str, object] | None, str]:
-    for path in (home / ".omo" / "omo.json", home / ".omo" / "omo.jsonc"):
+def load_category_overrides(home: Path) -> tuple[dict[str, object] | None, str]:
+    for path in (home / RUNTIME_HOME / name for name in RUNTIME_CONFIG_FILES):
         if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
@@ -31,7 +32,7 @@ def load_omo_category_overrides(home: Path) -> tuple[dict[str, object] | None, s
             raw = categories.get(category)
             if not isinstance(raw, dict):
                 continue
-            candidates = _omo_category_candidates(raw)
+            candidates = _category_override_candidates(raw)
             if candidates:
                 overrides[category] = candidates
         if not overrides:
@@ -45,7 +46,7 @@ def load_omo_category_overrides(home: Path) -> tuple[dict[str, object] | None, s
     return None, ""
 
 
-def _omo_category_candidates(raw: dict[str, object]) -> list[dict[str, object]]:
+def _category_override_candidates(raw: dict[str, object]) -> list[dict[str, object]]:
     candidates: list[dict[str, object]] = []
     primary = raw.get("model")
     if isinstance(primary, str) and primary.strip():
@@ -66,7 +67,7 @@ def _candidate(model: str, variant: object) -> dict[str, object]:
         "model_alias": model_alias if separator else provider,
         "model_family": model_family(model_alias if separator else provider),
         "preferred_provider_families": [provider] if separator else [],
-        "reasoning": "Imported from the canonical user OMO category configuration.",
+        "reasoning": "Imported from the canonical user pi-family runtime category configuration.",
     }
     if isinstance(variant, str) and variant.strip():
         candidate["reasoning_effort"] = variant.strip()

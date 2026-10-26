@@ -65,7 +65,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from ..system.hashutil import sha256_text
-from .executors import EXECUTOR_PROFILES, executor_label
+from .executors import EXECUTOR_PROFILES, canonical_executor_profile, executor_label
 from .owner_fit import (
     OWNER_FIT_CLASSIFICATIONS,
     OWNER_FIT_VERDICTS,
@@ -364,7 +364,7 @@ def _accepted_owner(payload: Mapping[str, Any], side: str) -> str:
     delegation = payload.get("delegation")
     if not isinstance(delegation, Mapping) or str(delegation.get("action", "")) != "delegate":
         raise OwnerRetargetError(f"the {side} payload carries no accepted coding delegation to retarget")
-    owner = str(payload.get("selected_executor_profile") or "")
+    owner = canonical_executor_profile(str(payload.get("selected_executor_profile") or ""))
     if owner not in EXECUTOR_PROFILES:
         raise OwnerRetargetError(
             f"unsupported coding owner on the {side} side of a retarget: {owner or '<none selected>'}"

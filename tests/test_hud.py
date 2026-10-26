@@ -2461,7 +2461,7 @@ class TodoSessionIsolationTests(_TodoSessionFixture, unittest.TestCase):
 class ActivityRowOrderTests(unittest.TestCase):
     """Merged activity rows: running first, settled newest-first, capped at 8.
 
-    Display-priority ordering adopted from OMO's DAG status widget — a late
+    Display-priority ordering adopted from the pi-family runtime's DAG status widget — a late
     failure must never be pushed off screen by older completed rows, and
     running lanes keep dispatch order.
     """

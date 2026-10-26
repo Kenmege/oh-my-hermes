@@ -22,10 +22,11 @@ from .dag_ulw_cues import (
 from .invocation_cues import invoked_instruction
 from .name_report_cues import about_the_skill
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
+from .pi_family_names import RUNTIME_HOME
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
-    OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
+    PI_FAMILY_CODING_AGENT_PHRASES as _PI_FAMILY_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
 from .hermes_session_commands import (
@@ -1252,7 +1253,7 @@ WORKFLOW_CONTEXT_CARDS = (
             "ultraqa",
         ),
         "user_examples": ("Turn this issue into a PR-ready plan", "Is the Codex run done yet?"),
-        "first_response_shape": "State the selected coding owner or choice point, prepare the handoff/status, and keep dispatch, result, review, CI, and merge evidence separate; when the user explicitly authorized merge or deploy, carry that forward as a prepared post-verification step rather than downgrading it to 'no merge', still gated on observed receipt evidence. Record cross-delegation continuity and the outstanding merge/deploy obligation in the goal ledger under .omh/goals; a delegated subtask completing is not the parent goal completing, and never write continuity into the product repo's .omo/.omx runtime-evidence dirs.",
+        "first_response_shape": f"State the selected coding owner or choice point, prepare the handoff/status, and keep dispatch, result, review, CI, and merge evidence separate; when the user explicitly authorized merge or deploy, carry that forward as a prepared post-verification step rather than downgrading it to 'no merge', still gated on observed receipt evidence. Record cross-delegation continuity and the outstanding merge/deploy obligation in the goal ledger under .omh/goals; a delegated subtask completing is not the parent goal completing, and never write continuity into the product repo's {RUNTIME_HOME}/.omx runtime-evidence dirs.",
         "not_evidence_until_observed": ("dispatch", "implementation", "review", "CI", "merge"),
     },
 )
@@ -6543,7 +6544,7 @@ def _named_coding_agent_delivery_signal(routing_normalized: str, tokens: set[str
     """
     named = any(
         phrase in routing_normalized for phrase in _SUBSTRING_NAMED_CODING_AGENT_PHRASES
-    ) or _contains_boundary_phrase(routing_normalized, _OMO_RUNTIME_CODING_AGENT_PHRASES)
+    ) or _contains_boundary_phrase(routing_normalized, _PI_FAMILY_CODING_AGENT_PHRASES)
     if not named:
         return False
     if any(phrase in routing_normalized for phrase in _CODING_DELIVERY_REQUEST_PHRASES):
@@ -7380,7 +7381,7 @@ def awareness_primer_payload() -> dict[str, object]:
             },
             {
                 "cue": "delegated coding continuity, an outstanding merge/deploy obligation, or where to record it",
-                "route": "record the obligation in the goal ledger under .omh/goals, never in the product repo's .omo/.omx runtime-evidence dirs; a delegated subtask completing is not the parent goal completing",
+                "route": f"record the obligation in the goal ledger under .omh/goals, never in the product repo's {RUNTIME_HOME}/.omx runtime-evidence dirs; a delegated subtask completing is not the parent goal completing",
             },
             {
                 "cue": "workflow trace, skill improvement, regression corpus, or why-routing questions",

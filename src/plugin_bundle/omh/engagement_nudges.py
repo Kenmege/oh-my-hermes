@@ -12,9 +12,9 @@ calls: how many files it has changed, and how much searching it has done
 directly. Nothing in the user's message is consulted at any point. A keyword
 trigger is what already exists and it is what is failing.
 
-The shape is taken from oh-my-openagent's `agent-usage-reminder` hook, which
-solves the same problem for opencode, and it keeps four of that hook's five
-properties:
+The shape is taken from the upstream `agent-usage-reminder` hook recorded in
+the note on code-level borrowings in `docs/SKILL-SOURCES.md`, which solves the
+same problem for opencode, and it keeps four of that hook's five properties:
 
 * the trigger is an observed tool outcome, not a phrase;
 * the text rides the tool result (`transform_tool_result`), so it costs no

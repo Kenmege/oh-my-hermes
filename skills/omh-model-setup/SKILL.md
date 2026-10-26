@@ -95,7 +95,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep Hermes-native model setup in Hermes: inspect its config, provider plugins, auth presence, and aliases, then use Hermes-native config/auth flows for an approved change. Maestro coordinates prepared external coding handoffs for Codex, Claude Code, OMO/OMC/OMX, and generic owners; it is not an executor and never owns Hermes aliases, providers, skill execution, or Kanban model selection. Diagnosis uses local Hermes config/auth commands and reads only config plus auth/plugin presence; it never reads `.env` values, credential material, or session prose. Show the exact Hermes-native command/config preview, bind it to the inspected config digest, and apply only after explicit approval; verify by re-inspecting Hermes state. A prepared Hermes binding or Maestro handoff is not model invocation, dispatch, or execution evidence.
+Keep Hermes-native model setup in Hermes: inspect its config, provider plugins, auth presence, and aliases, then use Hermes-native config/auth flows for an approved change. Maestro coordinates prepared external coding handoffs for Codex, Claude Code, pi-family/OMC/OMX, and generic owners; it is not an executor and never owns Hermes aliases, providers, skill execution, or Kanban model selection. Diagnosis uses local Hermes config/auth commands and reads only config plus auth/plugin presence; it never reads `.env` values, credential material, or session prose. Show the exact Hermes-native command/config preview, bind it to the inspected config digest, and apply only after explicit approval; verify by re-inspecting Hermes state. A prepared Hermes binding or Maestro handoff is not model invocation, dispatch, or execution evidence.
 
 Required inputs:
 

@@ -203,7 +203,7 @@ class OwnerPreferencePersistenceTests(unittest.TestCase):
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
             state = empty_owner_preference_state()
             for index in range(3):
-                state = _record(state, "omo-runtime", index)
+                state = _record(state, "pi-family-runtime", index)
 
             written = write_owner_preference(paths, state)
             loaded = read_owner_preference(paths)

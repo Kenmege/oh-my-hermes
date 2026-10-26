@@ -42,6 +42,7 @@ from omh.wrapper.localized_copy import detect_copy_locale
 from omh.wrapper.native_commands import build_native_command_surface, render_native_command_response
 from omh.wrapper.route_hints import build_chat_route_hint_payload
 from omh.wrapper.orchestration_guidance import build_omh_orchestration_guidance
+from omh.coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -1378,9 +1379,9 @@ class WrapperContractTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = resolve_paths(root / ".omh", root / ".hermes")
-            omo_config = root / ".omo" / "omo.json"
-            omo_config.parent.mkdir(parents=True)
-            omo_config.write_text(
+            runtime_config = root / RUNTIME_HOME / RUNTIME_CONFIG_FILES[0]
+            runtime_config.parent.mkdir(parents=True)
+            runtime_config.write_text(
                 json.dumps(
                     {
                         "models": [
@@ -1530,9 +1531,9 @@ class WrapperContractTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = resolve_paths(root / ".omh", root / ".hermes")
-            omo_config = root / ".omo" / "omo.json"
-            omo_config.parent.mkdir(parents=True)
-            omo_config.write_text(
+            runtime_config = root / RUNTIME_HOME / RUNTIME_CONFIG_FILES[0]
+            runtime_config.parent.mkdir(parents=True)
+            runtime_config.write_text(
                 json.dumps(
                     {
                         "models": [

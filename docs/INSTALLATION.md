@@ -2024,7 +2024,7 @@ named), `omh coding category-maestro set <profile> <category>
 presence is the opt-in: machines without it keep byte-identical routes, and
 routes resolved against it record `catalog_kind: "operator_category_config"`
 plus the config fingerprint in the frozen contract. Catalogless profiles
-(for example `omo-runtime`, host CLI `pi`/`senpi`) are deliberately not
+(for example `pi-family-runtime`, host CLI `pi` or its distribution host) are deliberately not
 configured here — their categories resolve from the locally-derived model
 catalog (omo config). See `docs/FANOUT.md` (Category-maestro) for the full
 rules.
@@ -4260,7 +4260,7 @@ Before calling the bot integration ready, verify these points:
   profiles return a `coding_prompt_handoff/v1` prompt-only payload without
   creating a lifecycle run.
 - `omh coding delegate --executor hermes --record "<message>"` and
-  `omx-runtime` / `omo-runtime` / `omc-runtime` return a
+  `omx-runtime` / `pi-family-runtime` / `omc-runtime` return a
   `coding_runtime_handoff/v1` payload with runtime, team/swarm,
   worker-protocol, and worktree guidance without creating a lifecycle run.
 - Coding handoffs include `worktree_session_isolation/v1` so wrappers can show
@@ -4835,7 +4835,7 @@ omh setup --default-executor claude-code
 ```
 
 Supported values are `choose`, `hermes`, `codex`, `claude-code`, `generic`,
-`omx-runtime`, `omo-runtime`, and `omc-runtime`. This flag exists for
+`omx-runtime`, `pi-family-runtime`, and `omc-runtime`. This flag exists for
 wrappers, scripts, and users who want a standing default instead of the
 per-request question. Legacy `OMH_SETUP_PROFILES=1,3` still maps to setup
 profile categories for automation that already uses it, but new scripts should

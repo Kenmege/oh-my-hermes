@@ -21,12 +21,14 @@ except ImportError:  # pragma: no cover - Windows compatibility guard.
     termios = None
     tty = None
 
+from ..coding.executors import canonical_executor_profile
 from ..version import __version__
 from ..command_path import COMMAND_PATH_MISSING_NEXT_ACTION, inspect_omh_command_path
 from ..capabilities.registry import capability_summary
 from ..capabilities.skills import skill_capabilities
 from ..coding.executor_auth_signals import auth_signal_for_profile
 from ..coding.executors import EXTERNAL_CLI_PROFILES
+from ..coding.pi_family_interop import RUNTIME_SHORT_NAME
 from ..coding.fanout_dispatch import (
     DISPATCH_MODEL_PREFERENCE_SCHEMA_VERSION,
     dispatch_model_preferences_path,
@@ -5996,7 +5998,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "Other coding agent",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my runtime",
-            "omo-runtime": "Oh-my runtime",
+            "pi-family-runtime": "Oh-my runtime",
             "omc-runtime": "Oh-my runtime",
         },
         "ko": {
@@ -6006,7 +6008,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "기타 코딩 에이전트",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my 런타임",
-            "omo-runtime": "Oh-my 런타임",
+            "pi-family-runtime": "Oh-my 런타임",
             "omc-runtime": "Oh-my 런타임",
         },
         "ja": {
@@ -6016,7 +6018,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "その他のコーディングエージェント",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my ランタイム",
-            "omo-runtime": "Oh-my ランタイム",
+            "pi-family-runtime": "Oh-my ランタイム",
             "omc-runtime": "Oh-my ランタイム",
         },
         "zh": {
@@ -6026,7 +6028,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "其他编码代理",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my 运行时",
-            "omo-runtime": "Oh-my 运行时",
+            "pi-family-runtime": "Oh-my 运行时",
             "omc-runtime": "Oh-my 运行时",
         },
     }
@@ -6508,9 +6510,16 @@ def _add_top_level_commands(sub) -> None:
         help="Inspect local model metadata and guide explicit Hermes model-alias activation.",
     )
     setup.add_argument(
-        "--import-omo-category-overrides",
+        "--import-category-overrides",
         action="store_true",
-        help="Import category model preferences from canonical ~/.omo/omo.json[c].",
+        help="Import category model preferences from the pi-family runtime's home config.",
+    )
+    # The flag's old spelling, for scripts written against an older release.
+    setup.add_argument(
+        f"--import-{RUNTIME_SHORT_NAME}-category-overrides",
+        dest="import_category_overrides",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     setup.add_argument(
         "--confirm-model",
@@ -6550,6 +6559,7 @@ def _add_top_level_commands(sub) -> None:
     )
     setup.add_argument(
         "--default-executor",
+        type=canonical_executor_profile,
         choices=CODING_EXECUTOR_TARGETS,
         default=None,
         help="Durable coding-owner preference for automation and scripted installs. Interactive setup never asks; by default Hermes asks at the first coding request.",

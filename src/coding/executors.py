@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
+from .pi_family_interop import LEGACY_RUNTIME_PROFILE_ID
+
 
 EXECUTOR_HANDOFF_SCHEMA_VERSION = "coding_executor_handoff/v1"
 PROMPT_HANDOFF_SCHEMA_VERSION = "coding_prompt_handoff/v1"
@@ -33,10 +35,14 @@ HERMES_CODING_TEAM_WRAPPER_ACTIONS = (
 WORK_OWNER_MODES = ("retained_hermes", "prompt_only_handoff", "runtime_handoff", "external_executor")
 DISPATCH_POLICIES = ("prepare_only", "ask_before_dispatch", "configured_auto_dispatch_reserved")
 
-EXECUTOR_PROFILES = ("codex", "claude-code", "omx-runtime", "omo-runtime", "omc-runtime", "generic", "hermes")
+EXECUTOR_PROFILES = ("codex", "claude-code", "omx-runtime", "pi-family-runtime", "omc-runtime", "generic", "hermes")
 CODING_EXECUTOR_HANDOFF_TARGETS = ("codex",)
-CODING_RUNTIME_HANDOFF_TARGETS = ("hermes", "omx-runtime", "omo-runtime", "omc-runtime")
+CODING_RUNTIME_HANDOFF_TARGETS = ("hermes", "omx-runtime", "pi-family-runtime", "omc-runtime")
 CODING_EXECUTOR_TARGETS = ("choose", *EXECUTOR_PROFILES)
+# Read-only aliases for profile ids older releases wrote. A stored record, a
+# setting, or a typed argument that still carries one is read through
+# `canonical_executor_profile`; nothing writes an alias again.
+_LEGACY_PROFILE_ALIASES = {LEGACY_RUNTIME_PROFILE_ID: "pi-family-runtime"}
 PROMPT_ONLY_EXECUTOR_PROFILES = ("claude-code", "generic")
 # The external coding CLIs a user can be offered as a coding owner. This set
 # is deliberately narrower than the maestro facade's serviceable profiles:
@@ -126,14 +132,14 @@ RUNTIME_PROFILE_DETAILS = {
             },
         ),
     },
-    "omo-runtime": {
-        "label": "OMO runtime",
-        "runtime_family": "omo",
-        "underlying_agent": "OpenAgent",
-        "tool_label": "OMO",
+    "pi-family-runtime": {
+        "label": "Pi-family runtime",
+        "runtime_family": "pi-family",
+        "underlying_agent": "pi-family host agent",
+        "tool_label": "pi-family runtime",
         "invocation_mode": "descriptor_only",
         "dispatch_text_template": "{message}",
-        "recommended_for": "OpenAgent-style runtime workflows when the operator has OMO installed",
+        "recommended_for": "pi-family runtime workflows when the operator has the runtime installed on a pi or opencode host",
         "templates": (),
     },
     "omc-runtime": {
@@ -301,11 +307,11 @@ def public_executor_options() -> list[dict[str, object]]:
             "recommended_for": RUNTIME_PROFILE_DETAILS["omx-runtime"]["recommended_for"],
         },
         {
-            "profile": "omo-runtime",
-            "label": "OMO runtime",
+            "profile": "pi-family-runtime",
+            "label": "Pi-family runtime",
             "work_owner_mode": "runtime_handoff",
             "dispatchable": False,
-            "recommended_for": RUNTIME_PROFILE_DETAILS["omo-runtime"]["recommended_for"],
+            "recommended_for": RUNTIME_PROFILE_DETAILS["pi-family-runtime"]["recommended_for"],
         },
         {
             "profile": "omc-runtime",
@@ -331,8 +337,18 @@ def public_executor_options() -> list[dict[str, object]]:
     ]
 
 
+def canonical_executor_profile(value: str) -> str:
+    """Return the current id for an executor profile read from disk or argv."""
+    return _LEGACY_PROFILE_ALIASES.get(value, value)
+
+
+def legacy_executor_profile_ids(profile: str) -> tuple[str, ...]:
+    """The ids older releases wrote for *profile*, for reading their records."""
+    return tuple(legacy for legacy, current in _LEGACY_PROFILE_ALIASES.items() if current == profile)
+
+
 def executor_label(profile: str | None) -> str:
-    return _executor_label_map().get(profile or "", "Unselected executor")
+    return _executor_label_map().get(canonical_executor_profile(profile or ""), "Unselected executor")
 
 
 @lru_cache(maxsize=1)
@@ -344,14 +360,14 @@ def prompt_invocation_for_profile(profile: str) -> dict[str, str]:
     labels = {
         "claude-code": "Claude Code",
         "omx-runtime": "OMX runtime",
-        "omo-runtime": "OMO runtime",
+        "pi-family-runtime": "Pi-family runtime",
         "omc-runtime": "OMC runtime",
         "generic": "generic coding agent",
     }
     templates = {
         "claude-code": "Paste into Claude Code:\n{message}",
         "omx-runtime": "Run the chosen OMX coding workflow with this task:\n{message}",
-        "omo-runtime": "Run the chosen OMO workflow with this task:\n{message}",
+        "pi-family-runtime": "Run the chosen pi-family workflow with this task:\n{message}",
         "omc-runtime": "Run the chosen OMC workflow with this task:\n{message}",
         "generic": "Give this task to your coding agent:\n{message}",
     }

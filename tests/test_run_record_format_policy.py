@@ -3,7 +3,7 @@
 The plugin bundle READS the run, dispatch, and receipt files the control plane
 WRITES. The bundle cannot import `omh.*`, so for a long time each side spelled
 the format itself and five parity tests compared the copies after the fact --
-which is how `omo_runtime` bindings were rejected at the read boundary long
+which is how `pi_family_runtime` bindings were rejected at the read boundary long
 after the lane accepted them. `src/plugin_bundle/omh/run_records.py` now owns
 the format and the writers import it.
 

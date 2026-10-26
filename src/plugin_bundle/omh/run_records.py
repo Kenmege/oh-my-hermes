@@ -95,11 +95,11 @@ EXECUTOR_PROGRESS_EVENT_TYPES: Final[tuple[str, ...]] = (
     "progress_observed",
     UNMAPPED_SOURCE_EVENT,
 )
-# `omo_runtime` is one profile covering every omo host CLI (`pi`, `senpi`,
-# `opencode`) because the binding answers "which lane is working", not "which
+# `pi_family_runtime` is one profile covering every pi-family host CLI (`pi`,
+# pi's distribution host, `opencode`) because the binding answers "which lane is working", not "which
 # binary was on PATH". A profile missing here rejects every binding, event, and
 # report that lane writes.
-EXECUTOR_PROGRESS_PROFILES: Final[tuple[str, ...]] = ("codex", "claude_code", "hermes_local", "omo_runtime")
+EXECUTOR_PROGRESS_PROFILES: Final[tuple[str, ...]] = ("codex", "claude_code", "hermes_local", "pi_family_runtime")
 EXECUTOR_PROGRESS_BINDING_STATES: Final[tuple[str, ...]] = ("active", "stale", "expired", "closed")
 
 # `cancelled` is an OBSERVED result, not an unobserved one. Recording it still
