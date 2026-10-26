@@ -809,7 +809,7 @@ class LayoutTests(unittest.TestCase):
 
     def test_the_selected_box_takes_the_highlight_and_the_rest_the_rule(self) -> None:
         lines = self.lines(150)
-        self.assertEqual({span.style for span in lines[9] if span.text.strip("╭─ ╮")  == ""}, {DEFAULT_THEME.prompt})
+        self.assertEqual({span.style for span in lines[9] if span.text.strip("╭─ ╮")  == ""}, {DEFAULT_THEME.brand})
         self.assertEqual({span.style for span in lines[2] if span.text.strip("╭─ ╮") == "" and span.text.strip()},
                          {DEFAULT_THEME.rule})
 
@@ -895,8 +895,9 @@ class ThemeBandTests(unittest.TestCase):
     def test_the_highlighted_box_edge_and_the_others_read_on_light_and_dark(self) -> None:
         for background in ("#FCF9FD", "#0F1B2D"):
             theme = build_theme(default_theme(), background)
-            self.assertGreaterEqual(contrast_ratio(theme.prompt.fg, background), EDGE_CONTRAST)
+            self.assertGreaterEqual(contrast_ratio(theme.brand.fg, background), TEXT_CONTRAST)
             self.assertGreaterEqual(contrast_ratio(theme.rule.fg, background), EDGE_CONTRAST)
+            self.assertGreaterEqual(contrast_ratio(theme.brand.fg, theme.rule.fg), 1.5, "the highlight stands apart")
 
 
 class TableTests(FixtureRoot):
@@ -992,8 +993,8 @@ class DrawingTests(FixtureRoot):
                     self.assertIn("24 h sessions: no state.db", text)
                     self.assertIn("╰─ gateway stopped (signal) ─", text)
                     edges = [item for item in lines[span[0]] if item.text.startswith("╭")]
-                    self.assertEqual([item.style for item in edges], [DEFAULT_THEME.rule, DEFAULT_THEME.prompt],
-                                     "the highlighted profile (broken, beside default) is the box in the prompt colour")
+                    self.assertEqual([item.style for item in edges], [DEFAULT_THEME.rule, DEFAULT_THEME.brand],
+                                     "the highlighted profile (broken, beside default) is the box in the accent")
 
     @POSIX_ONLY
     def test_a_profile_the_default_gateway_serves_reads_as_served(self) -> None:

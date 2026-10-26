@@ -1325,7 +1325,7 @@ def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, wid
             charset: str = "unicode") -> list[Line]:
     """One bot's box: its name and gateway mark in the top edge, the running gateway's facts on its right; its face
     and the model, last-24-hours, tokens and memory rows inside; its platforms in the bottom edge. The highlighted
-    bot's edge takes the prompt's colour. Every box has `BOX_BODY_ROWS` rows, so boxes side by side are as tall."""
+    bot's edge takes the theme's accent (`brand`), the others the rule's colour. Every box has `BOX_BODY_ROWS` rows, so boxes side by side are as tall."""
     inner = width - 2 - 2 * BOX_PAD
     face = avatar(_text(profile.name), charset) if inner >= AVATAR_MIN_INNER else []
     room = inner - (AVATAR_COLS + len(AVATAR_GAP) if face else 0)
@@ -1333,7 +1333,7 @@ def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, wid
             _memory_row(profile, room, theme, charset)]
     style = _avatar_style(_text(profile.name), theme)
     body = [((Span(face[number], style), Span(AVATAR_GAP)) if face else ()) + row for number, row in enumerate(rows)]
-    edge = theme.prompt if highlighted else theme.rule
+    edge = theme.brand if highlighted else theme.rule
     top = (_bot_title(profile, served_by, highlighted, theme, charset), _bot_facts(profile, now, theme))
     return _box(top, _bot_platforms(profile, served_by, max(width - 6, 1), theme, charset), body, width, edge, charset)
 

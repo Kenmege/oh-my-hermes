@@ -1225,7 +1225,7 @@ was last active, how many were active, and how many are stored; `tokens`,
 their input, output and cache-read tokens and cost; and `memory`, Hermes'
 `MEMORY.md` and `USER.md` as gauges against the limits its `config.yaml` sets
 (green below 70%, amber to 90%, red past it) and the record count of the OMH
-store its `config.yaml` names. The highlighted bot's box takes the prompt's colour. Tokens and cost are each
+store its `config.yaml` names. The highlighted bot's box takes the theme's accent colour. Tokens and cost are each
 session's lifetime totals, since Hermes records no time per call, and a cost
 appears only where Hermes priced it (`~` marks an estimate); sessions it did
 not price are counted as unpriced, never as $0. A store, config or memory
