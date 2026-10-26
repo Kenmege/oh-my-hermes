@@ -188,7 +188,7 @@ class PluginManager:
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(textwrap.dedent(text), encoding="utf-8")
+    path.write_bytes(textwrap.dedent(text).encode("utf-8"))
 
 
 def build_fake_host(root: Path) -> Path:
@@ -202,6 +202,8 @@ def build_fake_host(root: Path) -> Path:
     _write(root / "tools" / "tool_search.py", FAKE_TOOL_SEARCH)
     _write(root / "agent" / "__init__.py", "")
     subprocess.run(["git", "init", "-q", str(root)], check=True)
+    # The gate drops system Git config; commit the same bytes it will inspect.
+    subprocess.run(["git", "-C", str(root), "config", "core.autocrlf", "false"], check=True)
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(
         ["git", "-C", str(root), "-c", "user.name=a", "-c", "user.email=a@b", "commit", "-qm", "fake host"],
@@ -277,6 +279,17 @@ class HermesCompatibilityGateTests(unittest.TestCase):
             *extra,
         ]
         return subprocess.run(command, capture_output=True, text=True, timeout=120)
+
+    def test_fixture_stays_clean_when_ambient_git_converts_crlf(self) -> None:
+        system_config = self.root / "system.gitconfig"
+        system_config.write_bytes(b"[core]\n\tautocrlf = true\n")
+        with patch.dict(os.environ, {"GIT_CONFIG_NOSYSTEM": "0", "GIT_CONFIG_SYSTEM": str(system_config)}):
+            host = build_fake_host(self.root / "crlf-host")
+        isolated = {"PATH": os.defpath, "HOME": str(host), "GIT_CONFIG_NOSYSTEM": "1"}
+        done = subprocess.run(["git", "-C", str(host), "status", "--porcelain"],
+                              env=isolated, capture_output=True, text=True, check=True)
+        self.assertEqual(done.stdout, "", "the gate must inspect exactly the committed fixture bytes")
+        self.assertNotIn(b"\r\n", (host / "hermes_cli" / "plugins.py").read_bytes())
 
     def test_real_registration_request_produces_an_observed_receipt(self) -> None:
         done = self.run_gate("--require-host-version", "0.22.2")
@@ -550,6 +563,17 @@ class CompatibilityWorkflowContractTests(unittest.TestCase):
         self.assertIn('path: bundle-source', self.text)
         self.assertIn('ref: ${{ github.sha }}', self.text)
         self.assertIn('$GITHUB_WORKSPACE/tools/check_hermes_compatibility.py', self.text)
+
+    def test_host_acquisition_preserves_version_tags_and_main_history(self) -> None:
+        acquisitions = self.text.split('          git init -q "$HOST_DIR"')[1:]
+        self.assertEqual(len(acquisitions), 2, "one host acquisition per lane")
+        for acquisition in acquisitions:
+            script = acquisition.split('          HOST_SHA=', 1)[0]
+            with self.subTest(script=script):
+                self.assertNotIn("--depth", script, "tagless shallow hosts report an unknown version")
+                self.assertIn('"+refs/tags/$HOST_REF:refs/tags/$HOST_REF"', script)
+                self.assertIn('fetch --filter=blob:none --tags origin "$HOST_REF"', script)
+                self.assertIn('checkout -q --detach FETCH_HEAD', script)
 
     def test_the_host_is_bootstrapped_from_its_supported_pm_entry_point(self) -> None:
         self.assertIn("setup-hermes.sh", self.text)

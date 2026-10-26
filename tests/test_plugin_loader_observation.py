@@ -146,8 +146,9 @@ class ObserveRealLoaderRegistrationTest(unittest.TestCase):
         legacy = Path(self.tmp.name) / ".hermes/hermes-agent/venv/bin/python"
         legacy.parent.mkdir(parents=True)
         legacy.write_bytes(b"stub")
-        with mock.patch.dict(os.environ, {"HERMES_PYTHON": "", "HOME": self.tmp.name}), \
-                mock.patch("omh.install.plugin_loader_observation.shutil.which", return_value=None):
+        with mock.patch.dict(os.environ, {"HERMES_PYTHON": ""}), \
+                mock.patch("omh.install.plugin_loader_observation.shutil.which", return_value=None), \
+                mock.patch("omh.install.plugin_loader_observation.Path.home", return_value=Path(self.tmp.name)):
             result = observe_real_loader_registration(self.plugin_dir, runner=self._runner())
         self.assertTrue(result["ok"], result)
 

@@ -15,12 +15,12 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.install.config_adapter import ensure_external_dir, external_dirs, remove_external_dir, update_config  # noqa: E402
+from omh.install.config_adapter import _normalize, ensure_external_dir, external_dirs, remove_external_dir, update_config  # noqa: E402
 
 
 from omh.install import self_update as su, self_update_state as st  # noqa: E402
 from omh.install.skill_registration import hermes_profile_dirs  # noqa: E402
-from omh.install.self_update_platform import SelfUpdatePlatform  # noqa: E402
+from omh.install.self_update_platform import remove_directory_link  # noqa: E402
 
 
 class ConfigCompatibilityTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class ConfigCompatibilityTests(unittest.TestCase):
         for original, reason in cases:
             with self.subTest(original=original), TemporaryDirectory() as temporary:
                 config = Path(temporary) / "config.yaml"
-                config.write_text(original, encoding="utf-8")
+                config.write_bytes(original.encode("utf-8"))
                 for mutation in (ensure_external_dir, remove_external_dir):
                     with self.assertRaisesRegex(ValueError, reason):
                         update_config(config, lambda text: mutation(text, "/managed"))
@@ -96,7 +96,7 @@ class ConfigCompatibilityTests(unittest.TestCase):
                 with self.subTest(header=header, child=child), TemporaryDirectory() as temporary:
                     config = Path(temporary) / "config.yaml"
                     original = f"{header}\n# keep note\n  {child}\nmodel: x\n"
-                    config.write_text(original, encoding="utf-8")
+                    config.write_bytes(original.encode("utf-8"))
                     with self.assertRaisesRegex(ValueError, "flow.*skills|skills.*flow"):
                         update_config(config, lambda text: ensure_external_dir(text, "/managed"))
                     self.assertEqual(config.read_bytes(), original.encode("utf-8"))
@@ -119,7 +119,7 @@ class ConfigCompatibilityTests(unittest.TestCase):
             self.assertEqual(sum(line.startswith("skills:") for line in after.splitlines()), 1, after)
             self.assertIn("skills: # my skill preferences", after)
             self.assertIn("  create_dir: /my-skills\n  ledger: false", after)
-            self.assertEqual(external_dirs(after), ["/existing-skills", str(root / "omh" / "skills")])
+            self.assertEqual(external_dirs(after), ["/existing-skills", _normalize((root / "omh" / "skills").resolve())])
     def test_standalone_comment_does_not_hide_an_existing_external_dirs_key(self):
         original = "skills: # preferences\n# directories follow\n  external_dirs:\n    - /existing\n"
         change = ensure_external_dir(original, "/managed")
@@ -216,7 +216,8 @@ class RecoveryCompatibilityTests(unittest.TestCase):
             (generation / "skills").mkdir()
         self.shared = self.root / "shared-resource"
         self.shared.write_text("known-good", encoding="utf-8")
-        self.platform = SelfUpdatePlatform(is_windows=False)
+        from test_staged_self_update import StagedSelfUpdateTests
+        self.platform = StagedSelfUpdateTests._platform()
         st.switch_current(self.root, self.old, platform=self.platform)
         self.state = {"schema_version": st.STATE_SCHEMA_VERSION, "active": st.generation_entry(self.old),
                       "previous_known_good": None, "migration": {"status": "completed"},
@@ -244,10 +245,10 @@ class RecoveryCompatibilityTests(unittest.TestCase):
     def test_restore_marker_does_not_bypass_current_pointer_validation(self):
         st.mark_activation(self.state, self.candidate, self.old)
         self.state["activation_in_progress"]["restore_required"] = True
-        (self.root / "current").unlink()
+        remove_directory_link(self.root / "current")
         outside = self.root / "outside"
         outside.mkdir()
-        (self.root / "current").symlink_to(outside, target_is_directory=True)
+        self.platform.create_directory_link(self.root, self.root / "current", outside)
         from omh.core.errors import OmhError
         with self.assertRaises(OmhError):
             st.interrupted_activation(self.root, self.state, platform=self.platform)

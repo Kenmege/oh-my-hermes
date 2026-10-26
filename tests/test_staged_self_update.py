@@ -512,7 +512,7 @@ class StagedSelfUpdateTests(unittest.TestCase):
                     pending = _object(marker, "pending rollback")
                     self.assertIs(pending["restore_required"], True)
                     self.assertEqual(pending["candidate"], result["candidate"]["path"])
-                    self.assertEqual(pending["previous"], str(previous))
+                    self.assertEqual(Path(_text(pending["previous"], "previous generation")).resolve(), previous.resolve())
                     self.assertEqual(result["rollback"]["restored"], "")
                     self.assertEqual(result["rollback"]["status"], "failed")
                     self.assertEqual(result["rollback"]["reason"], expected_reason)
