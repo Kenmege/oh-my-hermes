@@ -12,9 +12,9 @@ Enter going down one and ← or Esc up one:
    (and Hermes' `display_name` from `profile.yaml`) and, while it runs, its
    uptime, agents and resident memory in the top edge; its platforms as chips
    and a requested restart in the bottom edge; inside, a face drawn from the
-   name (`avatar`) beside four labelled rows: its configured default model
-   (`config.yaml`) and the model its newest session ran when it differs; the
-   last 24 hours (tokens by the hour each active session was last active as a
+   name (`avatar`) beside labelled rows (`bot_rows`): its configured default
+   model (`config.yaml`) and the model its newest session ran when it differs;
+   that newest session (`now`: its title, source and age); the last 24 hours (tokens by the hour each active session was last active as a
    sparkline, how many were active, how many are stored); those sessions'
    tokens and cost; and what it remembers (Hermes' `memories/MEMORY.md` and
    `USER.md` as gauges against their configured limits, and the record count of
@@ -22,9 +22,10 @@ Enter going down one and ← or Esc up one:
    sparkline and the chips take the delegation view's charset names
    (`unicode`, or `ascii`); a narrow row gives up its least important pieces
    (`Piece` drop ranks) and never wraps;
-2. one profile's sessions, under its gateway record in full (pid, record
-   age, each platform's state and error) and its exact memory and per-source
-   session counts, newest activity first, as a table under one band
+2. one profile's sessions, under that profile's box (`profile_box`: the
+   gateway record in full, each platform's error, each memory target's gauge
+   with its exact figures, and sessions by source), newest activity first, as
+   a table under one band
    per row: title, model, tokens, cost, source, last activity and message
    count, each column as wide as its widest cell, numbers right-aligned, and
    `SESSION_DROPS` given up in order when the title would run short.
@@ -174,6 +175,7 @@ SESSION_RIGHT = frozenset({"input", "output", "cost", "age", "messages"})
 SESSION_DROPS = (("source",), ("cost",), ("input", "output"))
 SESSION_GAP = "  "
 SESSION_TITLE_MIN = 16
+NOW_TITLE_MIN = 12  # a level-1 "now" row keeps its source and age only while its title has this much room
 # Level 1's rows: the label column, the gaps a row's pieces keep, and its glyphs in each of the delegation view's
 # charsets (`delegation_view.CHARSETS`).
 LABEL_WIDTH = 8
@@ -269,7 +271,7 @@ class Profile:
     model: str = ""  # the configured default model (`model.default` in config.yaml)
     provider: str = ""
     config: str = ""  # why config.yaml could not be read; "" when it was
-    ran: str = ""  # the model its newest session ran
+    newest: SessionRow | None = None  # its newest session but delegated children, as level 2 lists it
     usage: Usage | None = None  # the active sessions' tokens; None when the store records none
     # Those tokens by the hour each session was last active, oldest of the `ACTIVE_HOURS` first; () without columns.
     hourly: tuple[int, ...] = ()
@@ -762,9 +764,10 @@ def read_profile(name: str, home: Path, current: Path | None, now: float) -> Pro
             f"FROM sessions WHERE {activity} >= ? GROUP BY 1",
             (now, since),
         ).fetchall() if usage_select is not None else None
-        ran = opened.execute(
-            f"SELECT model FROM sessions WHERE source != ? ORDER BY {activity} DESC LIMIT 1", (SUBAGENT_SOURCE,),
-        ).fetchone() if "model" in columns else None
+        select, _activity_expression = _session_select(opened)
+        newest = opened.execute(
+            f"{select} WHERE source != ? ORDER BY {activity} DESC LIMIT 1", (SUBAGENT_SOURCE,),
+        ).fetchone()
     except sqlite3.Error as error:
         return Profile(name, home, gateway, store=_store_problem(error), this_tui=this_tui, **about)
     finally:
@@ -773,7 +776,7 @@ def read_profile(name: str, home: Path, current: Path | None, now: float) -> Pro
     last = max((_number(row[3]) for row in rows), default=0.0)
     return Profile(
         name, home, gateway, tuple(sources), sum(int(_number(row[2])) for row in rows), last or None, this_tui=this_tui,
-        ran=_text(ran[0]) if ran is not None else "", usage=usage, hourly=_hourly(hours), **about,
+        newest=_session_row(newest) if newest is not None else None, usage=usage, hourly=_hourly(hours), **about,
     )
 
 
@@ -1282,8 +1285,9 @@ def _model_row(profile: Profile, cols: int, theme: Theme) -> Line:
     pieces: list[Piece] = [(0, "", model)]
     if profile.provider and not profile.config:
         pieces.append((2, "  ", (Span(profile.provider, theme.muted),)))
-    if profile.ran and profile.ran != profile.model:
-        pieces.append((1, " · ", (Span("newest ", theme.muted), Span(profile.ran, theme.text))))
+    ran = profile.newest.model if profile.newest is not None else ""
+    if ran and ran != profile.model:
+        pieces.append((1, " · ", (Span("newest ", theme.muted), Span(ran, theme.text))))
     return _fit(_label("model", theme), pieces, cols)
 
 
@@ -1321,21 +1325,88 @@ def _memory_row(profile: Profile, cols: int, theme: Theme, charset: str) -> Line
     return _fit(_label("memory", theme), pieces, cols)
 
 
-def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, width: int, theme: Theme,
-            charset: str = "unicode") -> list[Line]:
-    """One bot's box: its name and gateway mark in the top edge, the running gateway's facts on its right; its face
-    and the model, last-24-hours, tokens and memory rows inside; its platforms in the bottom edge. The highlighted
-    bot's edge takes the theme's accent (`brand`), the others the rule's colour. Every box has `BOX_BODY_ROWS` rows, so boxes side by side are as tall."""
+def _faced(name: str, rows: Sequence[Line], width: int, theme: Theme, charset: str) -> list[Line]:
+    """`rows` beside the face drawn from `name`, when the box inside is `AVATAR_MIN_INNER` wide or more."""
+    if width < AVATAR_MIN_INNER:
+        return list(rows)
+    face = avatar(name, charset)
+    style = _avatar_style(name, theme)
+    blank = " " * AVATAR_COLS
+    return [(Span(face[number] if number < len(face) else blank, style), Span(AVATAR_GAP), *row)
+            for number, row in enumerate(rows)]
+
+
+def _room(width: int) -> int:
+    """What a box's rows have beside the face, inside its edges and pads."""
     inner = width - 2 - 2 * BOX_PAD
-    face = avatar(_text(profile.name), charset) if inner >= AVATAR_MIN_INNER else []
-    room = inner - (AVATAR_COLS + len(AVATAR_GAP) if face else 0)
-    rows = [_model_row(profile, room, theme), *_day_rows(profile, now, room, theme, charset),
+    return inner - (AVATAR_COLS + len(AVATAR_GAP) if inner >= AVATAR_MIN_INNER else 0)
+
+
+def _now_row(session: SessionRow, now: float, cols: int, theme: Theme) -> Line:
+    """The newest session: its title, cut with an ellipsis to the room it has, and its source and age pushed right."""
+    lead = _label("now", theme)
+    where = " · ".join(part for part in (session.source, age_text(session.last_activity, now)) if part)
+    room = cols - line_width(lead) - cell_width(where) - FIT_GAP
+    if room < NOW_TITLE_MIN:
+        where, room = "", cols - line_width(lead)
+    title = truncate(session.title or _text(session.id), max(room, 0))
+    gap = " " * (cols - line_width(lead) - cell_width(title) - cell_width(where)) if where else ""
+    return (*lead, Span(title, theme.text), Span(gap), Span(where, theme.muted))
+
+
+def bot_rows(profile: Profile, now: float, width: int, theme: Theme, charset: str = "unicode") -> list[Line]:
+    """The rows inside a bot's box, before its face: model, now (when there is a session), 24 h, tokens, memory."""
+    room = _room(width)
+    latest = (_now_row(profile.newest, now, room, theme),) if profile.newest is not None else ()
+    return [_model_row(profile, room, theme), *latest, *_day_rows(profile, now, room, theme, charset),
             _memory_row(profile, room, theme, charset)]
-    style = _avatar_style(_text(profile.name), theme)
-    body = [((Span(face[number], style), Span(AVATAR_GAP)) if face else ()) + row for number, row in enumerate(rows)]
+
+
+def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, width: int, theme: Theme,
+            charset: str = "unicode", height: int = 0) -> list[Line]:
+    """One bot's box: its name and gateway mark in the top edge, the running gateway's facts on its right; its face
+    and `bot_rows` inside, filled out to `height` rows, so boxes side by side are as tall; its platforms in the
+    bottom edge. The highlighted bot's edge takes the theme's accent (`brand`), the others the rule's colour."""
+    rows = bot_rows(profile, now, width, theme, charset)
+    rows += [()] * (height - len(rows))
+    body = _faced(_text(profile.name), rows, width - 2 - 2 * BOX_PAD, theme, charset)
     edge = theme.brand if highlighted else theme.rule
     top = (_bot_title(profile, served_by, highlighted, theme, charset), _bot_facts(profile, now, theme))
     return _box(top, _bot_platforms(profile, served_by, max(width - 6, 1), theme, charset), body, width, edge, charset)
+
+
+def _sized(memory: MemoryFile, label: str, cols: int, theme: Theme, charset: str) -> Line:
+    """A memory target's gauge with its exact entries and characters, which give way before the gauge does."""
+    pieces: list[Piece] = [(0, "", _gauge(memory, theme, charset))]
+    if memory.enabled and not memory.problem and memory.limit is not None:
+        pieces.append((1, "  ", _figure(str(memory.entries), "entry" if memory.entries == 1 else "entries", theme)))
+        pieces.append((2, " · ", (Span(f"{memory.chars:,}", theme.user), Span(f"/{memory.limit:,} chars", theme.muted))))
+    return _fit(_label(label, theme), pieces, cols)
+
+
+def profile_box(profile: Profile, served_by: str, now: float, width: int, theme: Theme, charset: str = "unicode") -> list[Line]:
+    """Level 2's header: the profile's box as level 1 draws its edges, holding the gateway record (state, pid, how
+    old), each platform's error, each memory target's gauge with its exact figures, and sessions by source. A
+    narrow box gives up the least of these whole; nothing is cut mid-word."""
+    room = _room(width)
+    gateway = profile.gateway
+    _glyph, words, style = _gateway_words(profile, served_by, theme)
+    record: list[Piece] = [(0, "", (Span(words.removeprefix("gateway "), style),))]  # the label says "gateway"
+    if gateway.updated is not None and not (gateway.problem or served_by or gateway.elsewhere):
+        record.append((1, " · ", (Span("updated ", theme.muted), Span(age_text(gateway.updated, now), theme.text))))
+    rows = [_fit(_label("gateway", theme), record, room)]
+    for platform in gateway.platforms:
+        if platform.current and platform.error:
+            rows.append(_fit(_label("error", theme), [(0, "", (Span(f"{platform.name}: {platform.error}", theme.error),))], room))
+    for memory in profile.memory:
+        rows.append(_sized(memory, "memory" if memory.target == "memory" else "user", room, theme, charset))
+    sources = [(1 + number, " · " if number else "", (Span(f"{source} ", theme.muted), Span(f"{count:,}", theme.user)))
+               for number, (source, count) in enumerate(profile.sources)]
+    if sources:
+        rows.append(_fit(_label("sources", theme), sources, room))
+    body = _faced(_text(profile.name), rows, width - 2 - 2 * BOX_PAD, theme, charset)
+    top = (_bot_title(profile, served_by, False, theme, charset), _bot_facts(profile, now, theme))
+    return _box(top, _bot_platforms(profile, served_by, max(width - 6, 1), theme, charset), body, width, theme.rule, charset)
 
 
 def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme) -> Line:
@@ -1373,9 +1444,11 @@ def profile_lines(
     across = 2 if cols >= 2 * BOX_MIN + len(BOX_GAP) else 1
     width = max((cols - (across - 1) * len(BOX_GAP)) // across, 1)
     for start in range(0, len(profiles), across):
+        group = profiles[start : start + across]
+        height = max(len(bot_rows(profile, now, width, theme, charset)) for profile in group)
         boxes = [
-            bot_box(profile, _served_by(profiles, profile), start + offset == selected, now, width, theme, charset)
-            for offset, profile in enumerate(profiles[start : start + across])
+            bot_box(profile, _served_by(profiles, profile), start + offset == selected, now, width, theme, charset, height)
+            for offset, profile in enumerate(group)
         ]
         first = len(lines)
         for parts in zip(*boxes):
@@ -1391,34 +1464,6 @@ def profile_lines(
     return [truncate_line(line, cols) for line in lines], span
 
 
-def _detail_lines(profile: Profile, served_by: str, now: float, theme: Theme) -> list[Line]:
-    """Level 2's account of the profile under its title: the gateway record in full (pid, how old, each platform
-    and its error), and the memory and session counts level 1 shows as gauges and totals."""
-    glyph, words, style = _gateway_words(profile, served_by, theme)
-    gateway = profile.gateway
-    record = [Span(f"{glyph} {words}", style)]
-    if not (gateway.problem or served_by or gateway.elsewhere):
-        tail = []
-        if gateway.updated is not None:
-            tail.append(f"updated {age_text(gateway.updated, now)}")
-        tail += [f"{platform.name} {platform.state}" + ("" if platform.current else " when last recorded")
-                 + (f" ({platform.error})" if platform.error else " (needs attention)" if platform.needs_attention else "")
-                 for platform in gateway.platforms]
-        if tail:
-            record.append(Span(f" · {' · '.join(tail)}", theme.muted))
-        if gateway.restart_requested:
-            record.append(Span(" · restart requested", theme.warn))
-    counts = []
-    for memory in profile.memory:
-        label = "memory" if memory.target == "memory" else "user profile"
-        if memory.enabled and not memory.problem:
-            limit = f"/{memory.limit:,}" if memory.limit is not None else ""
-            counts.append(f"{label} {_entries(memory.entries)}, {memory.chars:,}{limit} chars")
-    if profile.sources:
-        counts.append("sessions by source: " + ", ".join(f"{source} {count}" for source, count in profile.sources))
-    return [tuple(record), *([(Span(" · ".join(counts), theme.muted),)] if counts else [])]
-
-
 def session_lines(
     snapshot: BoardSnapshot, selected: int, now: float, cols: int, theme: Theme,
 ) -> tuple[list[Line], tuple[int, int]]:
@@ -1429,7 +1474,7 @@ def session_lines(
     lines: list[Line] = [(Span(head, theme.heading),)]
     profile = next((item for item in snapshot.profiles if item.name == view.profile), None)
     if profile is not None:
-        lines += _detail_lines(profile, _served_by(snapshot.profiles, profile), now, theme)
+        lines += profile_box(profile, _served_by(snapshot.profiles, profile), now, cols, theme)
     lines.append(())
     if snapshot.problem:
         lines.append((Span(snapshot.problem, theme.warn),))

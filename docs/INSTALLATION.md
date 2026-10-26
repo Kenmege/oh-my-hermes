@@ -1220,7 +1220,8 @@ recorded it has since stopped or restarted) and a restart Hermes was asked
 for. Inside, at the left, is a small face drawn from the bot's name alone,
 the same on every run, and beside it a label column: `model`, the default
 model its `config.yaml` names (and the model its newest session ran, when that
-differs); `24 h`, a sparkline of the active sessions' tokens by the hour each
+differs); `now`, its newest session but delegated children, its title cut to
+fit and its source and age at the right; `24 h`, a sparkline of the active sessions' tokens by the hour each
 was last active, how many were active, and how many are stored; `tokens`,
 their input, output and cache-read tokens and cost; and `memory`, Hermes'
 `MEMORY.md` and `USER.md` as gauges against the limits its `config.yaml` sets
@@ -1233,9 +1234,11 @@ file it cannot read is named as such, and a store without the token columns
 shows neither tokens nor a sparkline. A narrow terminal gives up the least
 important figures first (the face, then the top edge's figures, then the last
 chips) and never wraps a row. Enter opens a profile's
-sessions, under the gateway record in full (pid, how old it is, each
-platform's state and error) and the exact memory and per-source session
-counts, newest activity first, as a table: title, model, input and output
+sessions under that profile's box, drawn as on the first page and holding
+the gateway record in full (state, pid, how old it is), each platform's error,
+each memory target's gauge with its exact entries and characters, and the
+sessions by source, a narrow box giving up whole fields rather than cutting
+words; the sessions follow, newest activity first, as a table: title, model, input and output
 tokens, cost, source, last activity and message count, numbers
 right-aligned; a narrow terminal gives up source, then
 cost, then tokens before the title runs short (delegated subagent sessions
