@@ -248,7 +248,7 @@ discipline for how those prompts are assembled:
   batching half itself; that sentence moved here.
 
 The first three originate from the stop-condition techniques the
-oh-my-openagent research surfaced for high-effort models (terminal-condition
+upstream agent-harness research surfaced for high-effort models (terminal-condition
 rules, criterion-bound blocking, capped re-review), generalized to every
 family. The fourth comes from the DeepSeek Harness review named above. The
 fifth generalizes that harness's priced-prefix composition constraint to
@@ -385,7 +385,7 @@ family's *known* failure mode. No family carries richer guidance than another
 without a stated reason, and no vendor is privileged. Provenance falls into
 three buckets, each named per family below:
 
-- **Adapted research** — stop-condition work from the oh-my-openagent
+- **Adapted research** — stop-condition work from an upstream agent-harness
   project on how high-effort reasoning models over-verify.
 - **Observed failure modes** — behavior seen in live OMH/Hermes usage of that
   family (recorded in the commits that introduced each block).
@@ -410,7 +410,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   the contract away — GPT's tight compositional style tends to drop stated
   boundaries and criteria while shortening a prompt, and a tighter prompt
   that loses an invariant is a worse prompt.
-- **Source:** adapted research (oh-my-openagent stop-condition findings on
+- **Source:** adapted research (upstream agent-harness stop-condition findings on
   high-effort models), one of the two original calibration entries.
 - **Version rule:** the block above is written for the 5.6 generation and
   is what every `gpt-` id receives unless an exact-model override exists.
@@ -1420,7 +1420,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   Hermes Agent DeepSeek provider profile, reasoning-effort table, and
   `reasoning_content` replay path, read the same day); community
   (OpenRouter's model listing for the gateway id and the long-horizon
-  characterization, and the oh-my-openagent / oh-my-pi / models.dev
+  characterization, and the pi-family runtime / oh-my-pi / models.dev
   handling surveyed for divergence), each labeled as such above.
 - **Persona language after an OMH skill load (2026-10-01):** on a Korean
   persona, `deepseek-v4.1-flash-ultrafast` flipped the reply after an OMH

@@ -29,9 +29,9 @@ are already tracked stay tracked — gitignore only hides untracked files.
 
 Several agent products keep look-alike dot-directories. They are different
 products with different owners. Working ON this repository *with* one of
-those wrappers is perfectly normal — an oh-my-claudecode or oh-my-opencode
+those wrappers is perfectly normal — an oh-my-claudecode or pi-family runtime
 session developing oh-my-hermes will naturally create its own `.omc/` or
-`.omo/` state here, and the top-level `.gitignore` keeps that local. The
+runtime state directory here, and the top-level `.gitignore` keeps that local. The
 rule is about **ownership of artifacts**, not presence of directories:
 OMH's recorded artifacts belong in OMH's root, and another wrapper's
 runtime state never gets committed as if it were OMH's.
@@ -43,12 +43,12 @@ runtime state never gets committed as if it were OMH's.
 | `~/.hermes/` | **Hermes Agent** (the host) | Hermes' own home: `config.yaml`, `state.db`, `plugins/`. The installed OMH **plugin** lives at `~/.hermes/plugins/omh/` — an OMH-managed install *into* Hermes' home, refreshed only through `omh update`, never by hand-copying. OMH installs nothing into Hermes' terminal (`tui-widgets/`, `skins/`) any more; setup and update remove what earlier versions put there. OMH never patches Hermes itself (`~/.hermes/hermes-agent/`). |
 | `.hermes/` (repo-local) | Hermes Agent | Rare repo-scoped Hermes state; not OMH's |
 | `.omc/` | oh-my-claudecode | That wrapper's own state when a Claude Code session works on this repo — fine locally, gitignored; OMH never writes here |
-| `.omo/` | oh-my-opencode | That wrapper's own state when an OpenCode session works on this repo — fine locally, gitignored. OMH only *reads* `~/.omo/omo.json[c]` to import category model preferences |
+| pi-family runtime state dir (`RUNTIME_HOME` in `src/plugin_bundle/omh/pi_family_names.py`) | pi-family runtime | That runtime's own state when an OpenCode session works on this repo — fine locally, gitignored. OMH only *reads* the runtime's config file in the user's home (`RUNTIME_CONFIG_FILES`) to import category model preferences |
 | `.loop/` | loop runtimes | Not OMH's |
 
 If an agent proposes recording an **OMH artifact** (a plan, todo, research
-dossier) into `.omc/`, `.omo/`, or `~/.hermes/hermes-agent/` — or
+dossier) into `.omc/`, the pi-family runtime's state dir, or `~/.hermes/hermes-agent/` — or
 committing another wrapper's state as if it were OMH's — that is state-root
 drift, the class of bug fixed in #1017 (plans written to `.omc/`) and #1021
-(plans committed under `.omo/`). The correct target for OMH artifacts is
+(plans committed under the pi-family runtime's state dir). The correct target for OMH artifacts is
 always this directory (via the named `omh` commands) or the OMH home.
