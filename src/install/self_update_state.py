@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import os
 from pathlib import Path
+import secrets
 import shutil
 from typing import Any, TypedDict
 
@@ -133,6 +134,8 @@ def interrupted_activation(
         pointed = require_generation_path(root, pointed, None, "current pointer target")
         if same_existing_path(pointed, candidate):
             return candidate, previous
+    if state["activation_in_progress"].get("restore_required") is True:
+        return candidate, previous
     shutil.rmtree(candidate, ignore_errors=True)
     state["activation_in_progress"] = None
     save_state(root, state)
@@ -207,10 +210,15 @@ def _retarget_launcher(root: Path, platform: SelfUpdatePlatform) -> bool:
     if not launcher.exists() and not launcher.is_symlink():
         return False
     target = platform.scripts_dir(root / "current" / "venv") / "omh"
-    temporary = launcher.with_name(f".{launcher.name}.{os.getpid()}.tmp")
-    temporary.unlink(missing_ok=True)
+    # A random name, created exclusively by `os.symlink`: the old predictable
+    # name was unlinked first, which left a window for a planted entry.
+    temporary = launcher.with_name(f".{launcher.name}.{secrets.token_hex(16)}.tmp")
     os.symlink(str(target), temporary)
-    os.replace(temporary, launcher)
+    try:
+        os.replace(temporary, launcher)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
     return True
 
 

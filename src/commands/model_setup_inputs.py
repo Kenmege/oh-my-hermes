@@ -12,7 +12,7 @@ def validate_model_setup_args(args: argparse.Namespace) -> None:
         getattr(args, "apply_model_config", False),
         getattr(args, "model_config_digest", ""),
         getattr(args, "allow_model_alias_collision", False),
-        getattr(args, "import_omo_category_overrides", False),
+        getattr(args, "import_category_overrides", False),
     )
     if any(model_flags) and not getattr(args, "model_setup", False):
         raise OmhError("model activation flags require --model-setup.")

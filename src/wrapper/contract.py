@@ -20,6 +20,7 @@ from ..coding.routing_observation import (
     validate_routing_observation,
 )
 from ..coding.status_board import model_label_for
+from ..coding.pi_family_interop import RUNTIME_USER_NAMES
 from ..system.display_width import display_width, pad_to_width
 from ..evidence import status_label
 from .message_gate import build_message_gate, fence_marker_for, message_gate_body
@@ -603,7 +604,7 @@ _MESSAGE_EXECUTOR_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("claude-code", ("claude code", "claude-code", "claudecode", "클로드 코드", "클로드코드")),
     ("codex", ("codex", "코덱스")),
     ("omc-runtime", ("omc", "oh my claude", "oh-my-claude", "oh my claude code", "oh-my-claude-code")),
-    ("omo-runtime", ("omo", "oh my openagent", "oh-my-openagent", "openagent runtime")),
+    ("pi-family-runtime", RUNTIME_USER_NAMES),
     ("omx-runtime", ("omx", "oh my codex", "oh-my-" + "codex", "omx runtime")),
     (
         "hermes",
@@ -8318,7 +8319,7 @@ def build_chat_response_from_delegation(delegation_payload: dict[str, object], *
             claim_boundary=(
                 hermes_coding_team_claim_boundary()
                 if selected == "hermes"
-                else "Runtime handoff is prepared only; OMH has not started Hermes, OMX, OMO, OMC, workers, tmux, or worktrees."
+                else "Runtime handoff is prepared only; OMH has not started Hermes, OMX, pi-family, OMC, workers, tmux, or worktrees."
             ),
             extra_state={
                 "delegation_action": action,
@@ -8335,7 +8336,7 @@ def build_chat_response_from_delegation(delegation_payload: dict[str, object], *
                 "prepared_handoff_boundary": (
                     hermes_coding_team_claim_boundary()
                     if selected == "hermes"
-                    else "Runtime handoff is prepared only; OMH has not started Hermes, OMX, OMO, OMC, workers, tmux, or worktrees."
+                    else "Runtime handoff is prepared only; OMH has not started Hermes, OMX, pi-family, OMC, workers, tmux, or worktrees."
                 ),
                 "executor_readiness": delegation_payload.get("executor_readiness", {}),
                 "executor_resolution": executor_resolution,

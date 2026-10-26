@@ -26,7 +26,7 @@ What these pin:
 
 * **AC3 -- no source-host configuration or credential is read.** The host
   credential and config readers (`~/.codex/auth.json`, `~/.claude.json`, the
-  OMO host marker, the live readiness binding, and `Path.home()` itself) are
+  pi-family host marker, the live readiness binding, and `Path.home()` itself) are
   patched to raise, and a full session-level retarget still completes.
 
 Guards: an unknown owner is refused on both surfaces; the original handoff's

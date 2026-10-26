@@ -1,6 +1,6 @@
 """Execution-concurrency policy for the opt-in fanout dispatch path.
 
-Defaults mirror OMO's task engine (per-lane default 5, global ceiling 8) on
+Defaults mirror the pi-family runtime's task engine (per-lane default 5, global ceiling 8) on
 owner direction. Every value is a setup-profile tunable under `parallelism`,
 read with the same validated-override-plus-disclosure shape as the memory
 policy's cadence block: an invalid stored value falls back to the default
@@ -40,6 +40,7 @@ from ..system.security_posture import (
     resolve_security_posture,
     strict_override,
 )
+from .executors import canonical_executor_profile
 from .fanout_retry import FANOUT_MAX_RETRIES
 
 # One config typo must not turn the fanout pool into a fork bomb: 32 is far
@@ -132,7 +133,8 @@ def read_parallelism_policy(paths: OmhPaths, *, env: Mapping[str, str] | None = 
     raw_owners = stored.get("per_owner")
     if isinstance(raw_owners, dict):
         for owner, value in raw_owners.items():
-            label = owner.strip() if isinstance(owner, str) else ""
+            # An owner an older release wrote reads as the current profile.
+            label = canonical_executor_profile(owner.strip()) if isinstance(owner, str) else ""
             width = (
                 value
                 if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= _PARALLELISM_MAX

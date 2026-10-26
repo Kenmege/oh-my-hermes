@@ -2,9 +2,10 @@
 
 `/cost` runs Hermes' `/usage` and `/permissions` its `/approvals`, under the
 echo of the name typed. `/todos` prints this session's whole plan. Bare
-`/model` opens a picker of the models Hermes offers (`model.options`) and
-switches this session to the one picked with Hermes' own `/model <name>
---provider <slug> --session`; `/model <name>` goes to Hermes as typed.
+`/model` (or `/model --refresh`) opens a picker of the models Hermes offers
+(`model.options`) and switches this session to the one picked with
+`config.set model` `<name> --provider <slug> --session`, as `/model <name>
+[--provider <slug>]` does; any other flag goes to Hermes' `/model` as typed.
 `/export` first says what Hermes exports (a profile archive, not this
 transcript) and runs on the second try. Answers are the recorded Hermes
 6c61c3e27d frames in `tests/fixtures/tui_gateway/parity.jsonl`.
@@ -20,8 +21,9 @@ from test_tui_modes import SID, answer, drawn, make_app, notices, type_text
 from test_tui_panels import hud_payload
 from omh.tui import gateway_contract as contract
 from omh.tui import slash
-from omh.tui.app import PLACEHOLDER, App
-from omh.tui.keys import CHAR, ENTER, ESCAPE, Key
+from omh.tui.app import MODEL_OPTIONS_REFUSED, PLACEHOLDER, REFUSAL_SENTENCES, SLOT_ARM_SECONDS, App
+from omh.tui.gateway import Event, Response
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.model_picker import CLOSE, PICK, ModelPicker, model_rows
 from omh.tui.panels import HudSnapshot, plan_text
 from omh.tui.theme import DEFAULT_THEME
@@ -42,6 +44,16 @@ OPTIONS_PARAMS, OPTIONS = recorded("model_options")
 def send(app: App, text: str) -> None:
     type_text(app, text)
     app._on_input(Key(ENTER))
+
+
+def answer_call(app: App, client: object, method: str, result: dict | None = None, error: dict | None = None) -> None:
+    """Answer the newest call of `method` (a call's id is its place in `client.calls`, from 1)."""
+    request_id = max(number for number, (name, _params) in enumerate(client.calls, 1) if name == method)
+    app._on_response(Response(request_id, result, error))
+
+
+def sent(client: object, method: str) -> list[dict]:
+    return [params for name, params in client.calls if name == method]
 
 
 def commands(app: App) -> list[str]:
@@ -167,11 +179,12 @@ class ModelCommandTests(unittest.TestCase):
             app._on_input(Key(CHAR, char))
         app._on_input(Key(ENTER))
         self.assertIsNone(app.model_picker)
-        self.assertEqual(
-            client.calls[-1],
-            ("slash.exec", {"command": "model claude-opus-5-5 --provider anthropic --session", "session_id": SID}),
-        )
-        self.assertEqual(commands(app), ["/model claude-opus-5-5 --provider anthropic --session"])  # one echo, the pick's
+        value = "claude-opus-5-5 --provider anthropic --session"
+        self.assertEqual(client.calls[-1], ("config.set", {"key": "model", "value": value, "session_id": SID}))
+        self.assertEqual(commands(app), [f"/model {value}"])  # one echo, the pick's
+        answer(app, client, {"key": "model", "value": "claude-opus-5-5", "scope": "session"})
+        self.assertEqual(app.model, "claude-opus-5-5")
+        self.assertIn("This session now runs claude-opus-5-5.", notices(app))
 
     def test_esc_closes_the_picker_and_switches_nothing(self) -> None:
         app, client = self.opened()
@@ -182,10 +195,110 @@ class ModelCommandTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "")
         self.assertEqual(commands(app), [])  # no `› /model` left standing empty
 
-    def test_model_with_a_name_goes_to_hermes_as_typed(self) -> None:
+    def test_model_with_a_name_switches_as_hermes_own_tui_sends_it(self) -> None:
+        # `--session` goes only when typed (Ink's `modelValueForConfigSet` sends the arguments as typed), so without
+        # it Hermes' stdio entry applies `model.persist_switch_by_default` as its own typed `/model` does.
+        cases = (
+            ("gpt-5.4 --provider copilot", "gpt-5.4 --provider copilot"),
+            ("gpt-5.4 --provider copilot --session", "gpt-5.4 --provider copilot --session"),
+            ("gpt-5.4 --session --provider copilot", "gpt-5.4 --provider copilot --session"),
+            ("gpt-5.4", "gpt-5.4"),
+            ("gpt-5.4 --session", "gpt-5.4 --session"),
+        )
+        for typed, value in cases:
+            with self.subTest(typed=typed):
+                app, client = make_app()
+                send(app, f"/model {typed}")
+                self.assertEqual(client.calls, [("config.set", {"key": "model", "value": value, "session_id": SID})])
+
+    def test_any_other_flag_goes_to_hermes_as_typed(self) -> None:
+        for typed in ("gpt-5.4 --global", "gpt-5.4 --once", "--provider copilot", "gpt-5.4 --refresh"):
+            with self.subTest(typed=typed):
+                app, client = make_app()
+                send(app, f"/model {typed}")
+                self.assertEqual(client.calls, [("slash.exec", {"command": f"model {typed}", "session_id": SID})])
+
+    def test_model_refresh_opens_the_picker_over_a_list_hermes_asks_for_again(self) -> None:
         app, client = make_app()
-        send(app, "/model gpt-5.4 --provider copilot")
-        self.assertEqual(client.calls, [("slash.exec", {"command": "model gpt-5.4 --provider copilot", "session_id": SID})])
+        send(app, "/model --refresh")
+        self.assertEqual(client.calls, [("model.options", {"session_id": SID, "refresh": True})])
+        self.assertEqual(contract.call_problem(*client.calls[0]), "")
+        answer(app, client, OPTIONS)
+        self.assertIsNotNone(app.model_picker)
+        self.assertNotIn("nsupported", "\n".join(notices(app)))
+
+    def test_a_switch_hermes_defers_says_so_and_changes_nothing_shown(self) -> None:
+        app, client = make_app()
+        app.model = "deepseek-v4.1-flash"
+        send(app, "/model claude-opus-5-5")
+        answer(app, client, {"key": "model", "value": "claude-opus-5-5", "deferred": True})
+        self.assertEqual(app.model, "deepseek-v4.1-flash")
+        self.assertIn("This session switches to claude-opus-5-5 when its next turn starts.", notices(app))
+
+    def guarded(self, now: list[float]) -> tuple[App, object]:
+        """`/model claude-opus-5-5` answered `confirm_required`: the slot asks, keep first and selected."""
+        app, client = make_app(clock=lambda: now[0])
+        app.model = FLASH
+        send(app, "/model claude-opus-5-5")
+        answer(app, client, {"key": "model", "value": "", "confirm_required": True, "confirm_message": "Opus costs 5x."})
+        self.assertEqual(app.model, FLASH)
+        slot = app.slot
+        self.assertIsNotNone(slot)
+        self.assertTrue(slot.picking)  # the composer is hidden: only the choices answer it
+        (question,) = slot.params["questions"]
+        self.assertEqual(question["question"], "Opus costs 5x.\nSwitch this session to claude-opus-5-5?")
+        self.assertEqual(question["choices"], [f"Keep {FLASH}", "Switch to claude-opus-5-5 anyway"])
+        screen = "\n".join(drawn(app))
+        self.assertIn("Switch to claude-opus-5-5 anyway", screen)
+        self.assertNotIn("Other (type your answer)", screen)
+        self.assertEqual(slot.keys[0], "↑↓ or 1-9 · enter picks · esc cancels")  # nothing to type
+        keep = {"result": {"answers": {"confirm": f"Keep {FLASH}"}}}
+        self.assertEqual(slot.outcomes(keep), [(True, f"Keep {FLASH}")])  # the choice alone, not Hermes' message again
+        now[0] += SLOT_ARM_SECONDS
+        return app, client
+
+    def test_a_guarded_model_is_asked_about_and_switch_anyway_sends_the_confirmation(self) -> None:
+        now = [100.0]
+        app, client = self.guarded(now)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(DOWN))  # the choices end there: no text field's row
+        app._on_input(Key(ENTER))
+        self.assertIsNone(app.slot)
+        self.assertEqual(client.answers, [])  # the TUI's own question: nothing went to Hermes for it
+        confirmed = {"key": "model", "value": "claude-opus-5-5", "session_id": SID, "confirm_expensive_model": True}
+        self.assertEqual(client.calls[-1], ("config.set", confirmed))
+        answer(app, client, {"key": "model", "value": "claude-opus-5-5"})
+        self.assertEqual(app.model, "claude-opus-5-5")
+
+    def test_keep_or_esc_switches_nothing_and_a_late_second_ask_is_reported(self) -> None:
+        for key in (Key(ENTER), Key(ESCAPE), Key(CHAR, "x")):
+            with self.subTest(key=key):
+                now = [100.0]
+                app, client = self.guarded(now)
+                calls = len(client.calls)
+                app._on_input(key)
+                if key.name == CHAR:
+                    self.assertIsNotNone(app.slot)  # a letter opens no field and answers nothing
+                    continue
+                self.assertIsNone(app.slot)
+                self.assertEqual(len(client.calls), calls)
+                self.assertEqual(app.model, FLASH)
+                self.assertIn(f"Model not switched: this session stays on {FLASH}.", notices(app))
+        now = [100.0]
+        app, client = self.guarded(now)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(ENTER))
+        answer(app, client, {"key": "model", "value": "", "confirm_required": True, "confirm_message": "Opus costs 5x."})
+        self.assertIsNone(app.slot)  # asked once: a confirmed switch refused again is reported, never re-asked
+        self.assertIn("the session changed before the confirmation landed", notices(app, NOTICE_WARN)[-1])
+
+    def test_a_flag_a_shared_gateway_refuses_reads_as_what_to_do_instead(self) -> None:
+        app, client = make_app()
+        send(app, "/model gpt-5.4 --global")
+        answer(app, client, error={"code": 4001, "message": "unsupported_command", "data": {"reason": "unsupported_command"}})
+        said = notices(app)[-1]
+        self.assertNotIn("unsupported", said.lower())
+        self.assertIn("hermes model", said)
 
     def test_bare_model_waits_for_the_turn_to_end(self) -> None:
         app, client = make_app(busy=True)
@@ -200,11 +313,295 @@ class ModelCommandTests(unittest.TestCase):
         self.assertIsNone(app.exit_code)
         self.assertIsNone(app.model_picker)
 
-    def test_the_contract_declares_model_options_with_the_session_only(self) -> None:
-        self.assertEqual(contract.CLIENT_METHODS["model.options"], {"session_id"})
+    def test_the_contract_declares_model_options_with_the_session_and_refresh(self) -> None:
+        self.assertEqual(contract.CLIENT_METHODS["model.options"], {"session_id", "refresh"})
         self.assertEqual(set(OPTIONS_PARAMS), {"session_id"})
         self.assertEqual(contract.call_problem("model.options", OPTIONS_PARAMS), "")
         self.assertIn("model.options", contract.OPTIONAL_METHODS)
+
+
+FLASH = "deepseek/deepseek-v4.1-flash-ultrafast"
+OPUS_SWITCH = "claude-opus-5-5 --provider claude-proxy --session"
+
+
+class DefaultModelTests(unittest.TestCase):
+    """Hermes' configured default model moves while the session runs: the session follows it at a turn's end, once.
+
+    The launch reads the config file's mtime and the default (`model.options`
+    naming no session); each turn's end reads the mtime, and the default again
+    when the mtime moved. Only a move of the default switches, never a session
+    model that differs from it.
+    """
+
+    def launched(self, model: str = FLASH, default: tuple[str, str] = (FLASH, "og")) -> tuple[App, object]:
+        app, client = make_app()
+        app.model = model
+        app._read_default()
+        self.assertEqual(client.calls, [("config.get", {"key": "mtime"}), ("model.options", {})])
+        for method, params in client.calls:
+            self.assertEqual(contract.call_problem(method, params), "")
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        answer_call(app, client, "model.options", {"model": default[0], "provider": default[1], "providers": []})
+        return app, client
+
+    def end_turn(self, app: App, client: object, mtime: float, default: tuple[str, str] | None = None) -> None:
+        """A turn ends; Hermes says the config's mtime and, when it is asked again, the default."""
+        app.turn_pending = True
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        answer_call(app, client, "config.get", {"mtime": mtime})
+        if default is not None:
+            answer_call(app, client, "model.options", {"model": default[0], "provider": default[1], "providers": []})
+
+    def test_a_default_moved_during_a_turn_switches_the_session_once_at_its_end(self) -> None:
+        app, client = self.launched()
+        self.end_turn(app, client, 200.0, ("claude-opus-5-5", "claude-proxy"))
+        self.assertEqual(sent(client, "config.set"), [{"key": "model", "value": OPUS_SWITCH, "session_id": SID}])
+        answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5", "scope": "session"})
+        self.assertEqual(app.model, "claude-opus-5-5")  # the info line's model
+        said = "Hermes' default model is now claude-opus-5-5 (claude-proxy); this session switched to it."
+        self.assertEqual(notices(app).count(said), 1)
+        self.end_turn(app, client, 200.0)  # nothing moved since: no read, no switch
+        self.assertEqual(len(sent(client, "model.options")), 2)
+        self.end_turn(app, client, 300.0, ("claude-opus-5-5", "claude-proxy"))  # another edit, same default
+        self.assertEqual(len(sent(client, "model.options")), 3)
+        self.assertEqual(len(sent(client, "config.set")), 1)
+
+    def test_a_model_picked_with_slash_model_stays_while_the_default_does_not_move(self) -> None:
+        app, client = self.launched(model="claude-opus-5-5")  # resumed on another model than the default
+        self.end_turn(app, client, 100.0)
+        send(app, "/model gpt-5.4 --provider copilot")
+        answer_call(app, client, "config.set", {"key": "model", "value": "gpt-5.4", "scope": "session"})
+        self.end_turn(app, client, 100.0)
+        self.end_turn(app, client, 150.0, (FLASH, "og"))  # the config file changed, its default did not
+        self.assertEqual(app.model, "gpt-5.4")
+        self.assertEqual([params["value"] for params in sent(client, "config.set")], ["gpt-5.4 --provider copilot"])
+        self.assertFalse(any("default model" in said for said in notices(app)))
+
+    def test_the_switch_waits_for_a_turn_that_runs_and_goes_at_its_end(self) -> None:
+        app, client = self.launched()
+        app.turn_pending = True
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        answer_call(app, client, "config.get", {"mtime": 200.0})
+        app.turn_pending = True  # a queued prompt went before the default was read
+        answer_call(app, client, "model.options", {"model": "claude-opus-5-5", "provider": "claude-proxy"})
+        self.assertEqual(sent(client, "config.set"), [])  # never inside a turn
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(sent(client, "config.set"), [{"key": "model", "value": OPUS_SWITCH, "session_id": SID}])
+
+    def test_a_refused_switch_leaves_the_session_where_it_was(self) -> None:
+        app, client = self.launched()
+        self.end_turn(app, client, 200.0, ("claude-opus-5-5", "claude-proxy"))
+        answer_call(app, client, "config.set", error={"code": 4001, "message": "model_resolution_failed",
+                                                      "data": {"reason": "model_resolution_failed"}})
+        self.assertEqual(app.model, FLASH)
+        said = notices(app, NOTICE_WARN)[-1]
+        self.assertTrue(said.startswith("Hermes' default model is now claude-opus-5-5 (claude-proxy); "
+                                        f"this session stays on {FLASH}. Hermes found no provider"), said)
+        self.assertNotIn("model_resolution_failed", said)
+        self.end_turn(app, client, 200.0)  # not asked again until the default moves again
+        self.assertEqual(len(sent(client, "config.set")), 1)
+
+    def test_a_guarded_default_is_asked_about_and_kept_or_switched(self) -> None:
+        for switch in (False, True):
+            with self.subTest(switch=switch):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                app.model = FLASH
+                app._read_default()
+                answer_call(app, client, "config.get", {"mtime": 100.0})
+                answer_call(app, client, "model.options", {"model": FLASH, "provider": "og"})
+                self.end_turn(app, client, 200.0, ("claude-opus-5-5", "claude-proxy"))
+                answer_call(app, client, "config.set", {"key": "model", "value": "", "confirm_required": True,
+                                                        "confirm_message": "Opus costs 5x."})
+                (question,) = app.slot.params["questions"]
+                self.assertTrue(question["question"].startswith(
+                    "Hermes' default model is now claude-opus-5-5 (claude-proxy). Opus costs 5x."), question)
+                now[0] += SLOT_ARM_SECONDS
+                if switch:
+                    app._on_input(Key(DOWN))
+                app._on_input(Key(ENTER))
+                if switch:
+                    self.assertEqual(sent(client, "config.set")[-1],
+                                     {"key": "model", "value": OPUS_SWITCH, "session_id": SID, "confirm_expensive_model": True})
+                    answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
+                    self.assertEqual(app.model, "claude-opus-5-5")
+                else:
+                    self.assertEqual(len(sent(client, "config.set")), 1)
+                    self.assertEqual(app.model, FLASH)
+                    self.assertIn(f"this session stays on {FLASH}.", notices(app, NOTICE_WARN)[-1])
+
+    def test_a_switch_a_new_turn_came_before_is_tried_again_at_that_turns_end(self) -> None:
+        app, client = self.launched()
+        self.end_turn(app, client, 200.0, ("claude-opus-5-5", "claude-proxy"))
+        answer_call(app, client, "config.set", error={"code": 4001, "message": "stale_generation",
+                                                      "data": {"reason": "stale_generation"}})
+        self.assertFalse(any("default model" in said for said in notices(app)))
+        self.end_turn(app, client, 200.0)
+        self.assertEqual(len(sent(client, "config.set")), 2)
+        answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
+        self.assertEqual(app.model, "claude-opus-5-5")
+
+    def methods(self, client: object) -> list[str]:
+        return [name for name, _params in client.calls]
+
+    def test_a_default_moved_while_idle_switches_before_the_next_turn_starts(self) -> None:
+        app, client = self.launched()
+        before = len(client.calls)
+        send(app, "hello")  # Hermes' config was edited while no turn ran
+        self.assertEqual(self.methods(client)[before:], ["config.get"])  # the prompt waits for the check
+        self.assertEqual(sent(client, "prompt.submit"), [])
+        answer_call(app, client, "config.get", {"mtime": 300.0})
+        answer_call(app, client, "model.options", {"model": "claude-opus-5-5", "provider": "claude-proxy"})
+        self.assertEqual(sent(client, "prompt.submit"), [])  # still waiting: the switch goes first
+        answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
+        self.assertEqual(self.methods(client)[before:], ["config.get", "model.options", "config.set", "prompt.submit"])
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+        said = notices(app)
+        self.assertIn("Hermes' default model is now claude-opus-5-5 (claude-proxy); this session switched to it.", said)
+        self.assertEqual(app.model, "claude-opus-5-5")
+
+    def test_a_config_that_did_not_move_lets_the_prompt_go_after_one_mtime_read(self) -> None:
+        app, client = self.launched()
+        before = len(client.calls)
+        send(app, "hello")
+        send(app, "and then")  # typed while the first waits: it queues behind it
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(self.methods(client)[before:], ["config.get", "prompt.submit"])
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+        self.assertEqual([line.text for line in app.queued], ["and then"])
+
+    def test_a_model_picked_with_slash_model_is_not_undone_before_a_prompt(self) -> None:
+        app, client = self.launched()
+        send(app, "/model gpt-5.4 --provider copilot")
+        answer_call(app, client, "config.set", {"key": "model", "value": "gpt-5.4"})
+        send(app, "hello")
+        answer_call(app, client, "config.get", {"mtime": 150.0})  # another edit; the default did not move
+        answer_call(app, client, "model.options", {"model": FLASH, "provider": "og"})
+        self.assertEqual(len(sent(client, "config.set")), 1)
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+        self.assertEqual(app.model, "gpt-5.4")
+
+    def test_a_guarded_default_found_before_a_prompt_holds_it_until_answered(self) -> None:
+        for switch in (False, True):
+            with self.subTest(switch=switch):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                app.model = FLASH
+                app._read_default()
+                answer_call(app, client, "config.get", {"mtime": 100.0})
+                answer_call(app, client, "model.options", {"model": FLASH, "provider": "og"})
+                send(app, "hello")
+                answer_call(app, client, "config.get", {"mtime": 300.0})
+                answer_call(app, client, "model.options", {"model": "claude-opus-5-5", "provider": "claude-proxy"})
+                answer_call(app, client, "config.set", {"key": "model", "value": "", "confirm_required": True,
+                                                        "confirm_message": "Opus costs 5x."})
+                self.assertIsNotNone(app.slot)
+                self.assertEqual(sent(client, "prompt.submit"), [])  # held while the question is open
+                now[0] += SLOT_ARM_SECONDS
+                if switch:
+                    app._on_input(Key(DOWN))
+                app._on_input(Key(ENTER))
+                if switch:
+                    self.assertEqual(sent(client, "prompt.submit"), [])  # the confirmed switch goes first
+                    answer_call(app, client, "config.set", {"key": "model", "value": "claude-opus-5-5"})
+                self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+                self.assertEqual(app.model, "claude-opus-5-5" if switch else FLASH)
+
+    def held(self) -> tuple[App, object]:
+        """A prompt held for the default check, its mtime read not answered yet."""
+        app, client = self.launched()
+        send(app, "hello")
+        self.assertEqual(sent(client, "prompt.submit"), [])
+        return app, client
+
+    def test_a_held_prompt_goes_back_to_the_draft_when_another_session_opens(self) -> None:
+        app, client = self.held()
+        app._adopt_session({"session_id": "live-2", "info": {"model": FLASH}})  # /new, a switch or a resume answered
+        self.assertEqual(app.composer.text, "hello")
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(sent(client, "prompt.submit"), [])  # never into the session it was not typed in
+
+    def test_a_held_prompt_never_goes_to_a_session_other_than_its_own(self) -> None:
+        app, client = self.held()
+        app.sid = "live-2"  # the session changed by a path that did not adopt it yet
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(sent(client, "prompt.submit"), [])
+        self.assertEqual(app.composer.text, "hello")
+
+    def test_the_same_session_adopted_again_keeps_the_held_prompt(self) -> None:
+        app, client = self.held()
+        app._adopt_session({"session_id": SID, "info": {"model": FLASH}})
+        answer_call(app, client, "config.get", {"mtime": 100.0})
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+
+    def test_a_first_prompt_before_the_launch_read_answers_goes_at_once(self) -> None:
+        app, client = make_app()
+        app._read_default()  # asked, not answered yet
+        send(app, "hello")
+        self.assertEqual(sent(client, "prompt.submit"), [{"session_id": SID, "text": "hello"}])
+
+    def test_a_session_already_on_the_new_default_is_left_as_it_is(self) -> None:
+        app, client = self.launched()
+        app.model = "claude-opus-5-5"  # `/model claude-opus-5-5 --global` moved both
+        self.end_turn(app, client, 200.0, ("claude-opus-5-5", "claude-proxy"))
+        self.assertEqual(sent(client, "config.set"), [])
+
+    def test_without_the_launchs_read_nothing_is_measured(self) -> None:
+        app, client = make_app()
+        app.turn_pending = True
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(client.calls, [])
+
+
+class RefusalSentenceTests(unittest.TestCase):
+    """A refusal's reason code is said in words that name what to do instead; the code itself is never shown."""
+
+    def test_each_reason_reads_as_its_sentence_with_hermes_hint_after_it(self) -> None:
+        for reason, sentence in REFUSAL_SENTENCES.items():
+            with self.subTest(reason=reason):
+                app, client = make_app()
+                send(app, "/compress here 2")
+                answer(app, client, error={"code": 4001, "message": reason, "data": {"reason": reason}})
+                self.assertEqual(notices(app)[-1], sentence)
+                self.assertNotIn(reason, sentence)
+        app, client = make_app()
+        send(app, "/export")
+        send(app, "/export")
+        hint = "Run `hermes profile export [name] -o <file>` in a terminal."
+        answer(app, client, error={"code": 4001, "message": "unsupported_command",
+                                   "data": {"reason": "unsupported_command", "detail": hint}})
+        self.assertEqual(notices(app)[-1], f"{REFUSAL_SENTENCES['unsupported_command']} {hint}")
+
+    def test_a_reason_without_a_sentence_reads_as_hermes_wrote_it(self) -> None:
+        app, client = make_app()
+        send(app, "/compress")
+        answer(app, client, error={"code": 4001, "message": "the summary model is down"})
+        self.assertEqual(notices(app)[-1], "The summary model is down.")
+
+    def test_a_typed_model_flag_a_shared_gateway_refuses_names_the_way_to_the_default(self) -> None:
+        app, client = make_app()
+        send(app, "/model --refresh x")
+        answer(app, client, error={"code": 4001, "message": "unsupported_command", "data": {"reason": "unsupported_command"}})
+        self.assertEqual(notices(app)[-1], MODEL_OPTIONS_REFUSED)
+
+    def test_the_contract_lets_config_set_model_carry_only_a_switch_by_name(self) -> None:
+        def problem(value: str) -> str:
+            return contract.call_problem("config.set", {"key": "model", "value": value, "session_id": SID})
+
+        self.assertEqual(problem(OPUS_SWITCH), "")
+        self.assertEqual(problem("claude-opus-5-5 --session"), "")
+        self.assertEqual(problem("claude-opus-5-5"), "")  # typed without --session: Hermes' own persistence rule
+        self.assertEqual(problem("claude-opus-5-5 --provider claude-proxy"), "")
+        for value in ("claude-opus-5-5 --global", "claude-opus-5-5 --session --session", "x --provider y --session --global",
+                      "x --provider \u2014global --session", "x --once --session", ""):
+            with self.subTest(value=value):
+                self.assertTrue(problem(value))
+        self.assertTrue(contract.call_problem("config.set", {"key": "model", "value": OPUS_SWITCH}))  # no session
+        confirmed = {"key": "model", "value": OPUS_SWITCH, "session_id": SID, "confirm_expensive_model": True}
+        self.assertEqual(contract.call_problem("config.set", confirmed), "")
+        for wrong in ({**confirmed, "confirm_expensive_model": False},
+                      {"key": "yolo", "value": "on", "session_id": SID, "confirm_expensive_model": True}):
+            self.assertTrue(contract.call_problem("config.set", wrong))
 
 
 class ExportTests(unittest.TestCase):

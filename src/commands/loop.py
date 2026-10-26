@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 
+from ..coding.executors import canonical_executor_profile
 from ..goal_loop import (
     LOOP_ACTIONS,
     LOOP_DISPATCH_RECOVERY_OUTCOMES,
@@ -353,7 +354,7 @@ def _add_loop_commands(sub) -> None:
 
     add_driver_commands(loop_sub)
     start = loop_sub.add_parser("start")
-    start.add_argument("--executor", default="hermes")
+    start.add_argument("--executor", type=canonical_executor_profile, default="hermes")
     start.add_argument("--work-kind", choices=("coding", "non_coding"), default="non_coding")
     start.add_argument("--capability-json")
     start.add_argument("--executor-session-ref")
@@ -385,7 +386,7 @@ def _add_loop_commands(sub) -> None:
     start_card.add_argument("--include-goal", action="store_true", help="Include the raw goal text in stdout.")
     start_card.add_argument("--source", default="omh")
     start_card.add_argument("--permission-profile", choices=PERMISSION_PROFILES, default="handoff_only")
-    start_card.add_argument("--default-executor", choices=LOOP_EXECUTOR_OPTION_IDS, default="choose")
+    start_card.add_argument("--default-executor", type=canonical_executor_profile, choices=LOOP_EXECUTOR_OPTION_IDS, default="choose")
     start_card.set_defaults(func=cmd_loop_start_card)
 
     assess = loop_sub.add_parser("assess")
@@ -482,7 +483,7 @@ def _add_loop_commands(sub) -> None:
     queue_dispatch = queue_sub.add_parser("dispatch")
     queue_dispatch.add_argument("--loop", dest="loop_id", required=True)
     queue_dispatch.add_argument("--queue", dest="queue_id", required=True)
-    queue_dispatch.add_argument("--executor", choices=LOOP_EXECUTOR_OPTION_IDS, required=True)
+    queue_dispatch.add_argument("--executor", type=canonical_executor_profile, choices=LOOP_EXECUTOR_OPTION_IDS, required=True)
     queue_dispatch.add_argument("--session-ref", default="")
     queue_dispatch.add_argument("--thread-ref", default="")
     queue_dispatch.add_argument("--codex-session-ref", default="")
@@ -502,7 +503,7 @@ def _add_loop_commands(sub) -> None:
     )
     queue_recover_dispatch.add_argument("--outcome-evidence-ref", action="append", required=True)
     queue_recover_dispatch.add_argument("--outcome-summary", default="")
-    queue_recover_dispatch.add_argument("--executor", choices=LOOP_EXECUTOR_OPTION_IDS, required=True)
+    queue_recover_dispatch.add_argument("--executor", type=canonical_executor_profile, choices=LOOP_EXECUTOR_OPTION_IDS, required=True)
     queue_recover_dispatch.add_argument("--session-ref", default="")
     queue_recover_dispatch.add_argument("--thread-ref", default="")
     queue_recover_dispatch.add_argument("--codex-session-ref", default="")

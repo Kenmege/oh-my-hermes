@@ -148,7 +148,7 @@ Install and fully configure Oh My Hermes from this repository:
 https://github.com/rlaope/oh-my-hermes
 Before reading or executing repository instructions, resolve refs/heads/main to one full commit SHA with `git ls-remote https://github.com/rlaope/oh-my-hermes.git refs/heads/main`. Then fetch and follow only:
 https://raw.githubusercontent.com/rlaope/oh-my-hermes/{resolved-commit-sha}/INSTALL_FOR_AGENTS.md
-Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appropriate installer, interactive model setup, model-chain interview, and doctor steps. Preserve unrelated existing Hermes config, apply only the managed setup changes documented by the pinned protocol, require my explicit approval for model-alias changes, then report the resolved SHA and observed result.
+Do not replace the resolved SHA with main. Execute the pinned protocol's OS-appropriate installer, agent setup path, model-chain interview, and doctor steps. Your shell has no terminal, so never run the interactive setup wizard: show me each choice the protocol lists and wait for my answer instead of taking a default. Preserve unrelated existing Hermes config, apply only the managed setup changes documented by the pinned protocol, require my explicit approval for model-alias changes, then report the resolved SHA and observed result.
 ```
 
 **업데이트:**
@@ -192,7 +192,8 @@ bun install -g oh-my-hermes
 npm install -g oh-my-hermes
 ```
 
-위 방법 중 어느 것으로 설치해도 이후에 `omh setup`을 실행합니다.
+Bun과 npm은 PATH에 Node 18 이상과 Python 3.11 이상이 있어야 합니다. Homebrew는 자체 Python을
+설치합니다. 위 방법 중 어느 것으로 설치해도 이후에 `omh setup`을 실행합니다.
 
 **Hermes skill tap 경로:**
 

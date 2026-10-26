@@ -87,6 +87,29 @@ class GuardTestCase(unittest.TestCase):
         environment = mock.patch.dict(os.environ, {"HERMES_MANAGED_DIR": str(self.managed_dir)})
         environment.start()
         self.addCleanup(environment.stop)
+        # A route may only name a provider the person configured; these tests
+        # route to the providers below, so record them as held. Each keeps the
+        # family the serving check resolves it to without a record (its own
+        # catalog name, else `unknown`), so that check reads them as before.
+        routing = self.omh_home / "routing"
+        routing.mkdir(parents=True)
+        (routing / "providers.json").write_text(
+            json.dumps({
+                "schema_version": "provider_entitlements/v1",
+                "providers": {
+                    **{name: name for name in ("anthropic", "openai", "openai-codex", "google", "openrouter")},
+                    **{
+                        name: "unknown"
+                        for name in (
+                            "azure-foundry", "bedrock", "custom", "custom:cli-proxy", "gateway",
+                            "google-genai", "moa", "my-vllm", "og", "vertex", "vertexai",
+                        )
+                    },
+                },
+                "subscription_clis": [],
+            }),
+            encoding="utf-8",
+        )
 
     def write_config(self, delegation: str | None = None, *, head: str = MODEL_BLOCK) -> bytes:
         text = head if delegation is None else f"{head}delegation:\n{delegation}"
@@ -129,6 +152,7 @@ class DirectEndpointTest(GuardTestCase):
         before = self.write_config(
             f"  base_url: {ENDPOINT}\n  api_key: {ENDPOINT_KEY}\n  api_mode: chat_completions\n"
         )
+        held = {p: p.read_bytes() for p in self.omh_home.rglob("*") if p.is_file()}
 
         result = self.set_route()
 
@@ -139,9 +163,13 @@ class DirectEndpointTest(GuardTestCase):
         self.assertIn("OMH does not change these keys", result["error"])
         self.assertFalse(delegation_route_restore_path(self.omh_home).exists())
         self.assertEqual(load_delegation_route_provenance(self.omh_home), [])
-        # A refusal records nothing; the writer's lock file is the only file.
-        left = sorted(str(p.relative_to(self.omh_home)) for p in self.omh_home.rglob("*") if p.is_file())
+        # A refusal records nothing; the writer's lock file is the only file
+        # it leaves, and the fixture's own record is untouched.
+        left = sorted(
+            str(p.relative_to(self.omh_home)) for p in self.omh_home.rglob("*") if p.is_file() and p not in held
+        )
         self.assertTrue(all(name.endswith(".lock") for name in left), left)
+        self.assertEqual({p: p.read_bytes() for p in held}, held)
         # The person's values are named by key only, never echoed.
         self.assertNotIn(ENDPOINT_KEY, json.dumps(result))
         self.assertNotIn("127.0.0.1", json.dumps(result))
@@ -558,7 +586,7 @@ class RouteWithoutProviderTest(GuardTestCase):
         # Hermes names every other URL `custom`; a family recorded for the
         # person's `custom` provider says nothing about this endpoint.
         routing = self.omh_home / "routing"
-        routing.mkdir(parents=True)
+        routing.mkdir(parents=True, exist_ok=True)
         (routing / "providers.json").write_text(
             json.dumps({
                 "schema_version": "provider_entitlements/v1",

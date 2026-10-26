@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -20,12 +21,14 @@ except ImportError:  # pragma: no cover - Windows compatibility guard.
     termios = None
     tty = None
 
+from ..coding.executors import canonical_executor_profile
 from ..version import __version__
 from ..command_path import COMMAND_PATH_MISSING_NEXT_ACTION, inspect_omh_command_path
 from ..capabilities.registry import capability_summary
 from ..capabilities.skills import skill_capabilities
 from ..coding.executor_auth_signals import auth_signal_for_profile
 from ..coding.executors import EXTERNAL_CLI_PROFILES
+from ..coding.pi_family_interop import RUNTIME_SHORT_NAME
 from ..coding.fanout_dispatch import (
     DISPATCH_MODEL_PREFERENCE_SCHEMA_VERSION,
     dispatch_model_preferences_path,
@@ -120,9 +123,14 @@ from ..plugin_pack import PLUGIN_NAME, PluginPackError, install_plugin_bundle
 from ..install.plugin_pack import HERMES_PLUGIN_UPDATE_COMMAND, PluginContentProtectedError
 from ..probe import probe_capabilities
 from ..release import (
+    COMMIT_SHA_RE,
+    RELEASE_ASSET_ROOT,
     RELEASE_CHANNELS,
+    RELEASE_WHEEL_VERSION_RE,
+    ReleaseSelection,
     package_url_for,
     release_artifact_note,
+    release_from_direct_url,
 )
 from ..skin_pack import (
     SkinInstallError,
@@ -145,6 +153,7 @@ from ..setup_profiles import (
     write_setup_profile,
 )
 from ..snippet import WORKSPACE_SNIPPET
+from ..system.stdin_probe import stdin_is_tty
 from ..targets import record_target_observation
 from ..team_profiles import (
     TeamProfileError,
@@ -221,30 +230,20 @@ def _direct_url_update_guidance() -> tuple[str, str] | None:
     would create a second, conflicting install next to the one that already
     owns the command. The dist-info `direct_url.json` records the actual
     origin, so the update instruction points there instead. The curl
-    installer's own managed venv also leaves a `direct_url.json`, but it
-    names the deleted download directory, so it falls through to the
-    installer fallback as before.
+    installer's own managed venv also leaves a `direct_url.json`, naming the
+    release archive it fetched, which is neither shape below, so it falls
+    through to the installer fallback as before.
     """
-    import importlib.metadata
     from urllib.parse import urlsplit
     from urllib.request import url2pathname
 
-    try:
-        raw = importlib.metadata.distribution("oh-my-hermes").read_text("direct_url.json")
-    except (importlib.metadata.PackageNotFoundError, OSError):
-        return None
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
+    data = _installed_direct_url()
+    if data is None:
         return None
     url = str(data.get("url", "") or "")
     prefix_parts = tuple(part.casefold() for part in Path(sys.prefix).parts)
     if "uv" in prefix_parts and "tools" in prefix_parts:
-        return "uv-tool", "uv tool upgrade oh-my-hermes"
+        return "uv-tool", _uv_tool_update_instruction(data, url)
     if isinstance(data.get("vcs_info"), dict) and url and not url.startswith("file:"):
         return "pip", f'{sys.executable} -m pip install --upgrade "git+{url}"'
     dir_info = data.get("dir_info")
@@ -263,6 +262,78 @@ def _direct_url_update_guidance() -> tuple[str, str] | None:
                 f"{sys.executable} -m pip install --upgrade {checkout}"
             )
     return None
+
+
+def _uv_tool_update_instruction(data: dict[str, object], url: str) -> str:
+    """The command that moves a `uv tool install` to a newer OMH.
+
+    `uv tool upgrade` re-resolves the requirement the tool was installed
+    with, so a commit, a release tag, or an archive URL resolves to itself:
+    on uv 0.12.5, a tool installed from `git+...@<sha>` or from the release
+    wheel URL answered "Nothing to upgrade". Those installs are moved by
+    reinstalling at the new pin; a branch or unpinned git install keeps the
+    upgrade command.
+    """
+    vcs = data.get("vcs_info")
+    if isinstance(vcs, dict):
+        revision = str(vcs.get("requested_revision") or "")
+        tag = revision.startswith("v") and RELEASE_WHEEL_VERSION_RE.fullmatch(revision[1:])
+        if COMMIT_SHA_RE.fullmatch(revision) or tag:
+            return f'uv tool install --force "git+{url}@<new-ref>"'
+        return "uv tool upgrade oh-my-hermes"
+    if isinstance(data.get("archive_info"), dict) and url:
+        release = release_from_direct_url(data)
+        if release is not None and release.artifact_kind == "release-wheel":
+            return f'uv tool install --force "{RELEASE_ASSET_ROOT}/v<version>/oh_my_hermes-<version>-py3-none-any.whl"'
+        return 'uv tool install --force "<new package URL>"'
+    return "uv tool upgrade oh-my-hermes"
+
+
+def _installed_direct_url() -> dict[str, object] | None:
+    """The installed distribution's PEP 610 `direct_url.json`, or None."""
+    import importlib.metadata
+
+    try:
+        raw = importlib.metadata.distribution("oh-my-hermes").read_text("direct_url.json")
+    except (importlib.metadata.PackageNotFoundError, OSError):
+        return None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _requested_release(args: argparse.Namespace) -> ReleaseSelection:
+    """The release this install/update records: what was asked for, else what is installed.
+
+    `--channel` used to default to `preview`, so a plain `omh setup` after the
+    documented stable install recorded the `main` archive while the release
+    wheel was installed, and the installer's pinned version or commit was
+    lost (install.sh passes them only under `OMH_RUN_SETUP=1`). With no
+    `--channel`, `--version`, or `--package-url`, the installed package's PEP
+    610 record names the artifact. A package-manager install (npm, Bun,
+    Homebrew) leaves none that names a channel -- npm ships stable and beta
+    from the same wheel -- so it records the package version and no channel.
+    Any other recorded URL (a fork, a local wheel or clone) is recorded as
+    the package URL with no channel. Only an install that records nothing,
+    or an editable development checkout, keeps the `preview` default.
+    """
+    if args.channel is not None or args.version or args.package_url:
+        return package_url_for(args.channel or "preview", args.version or "", args.package_url or "")
+    record = _installed_direct_url() or {}
+    installed = release_from_direct_url(record)
+    if installed is not None:
+        return installed
+    if _command_package_update_guidance()[0] in COMMAND_PACKAGE_UPDATE_COMMANDS:
+        return ReleaseSelection("", __version__, "", "", "package-manager")
+    url = str(record.get("url") or "")
+    dir_info = record.get("dir_info")
+    if url and not (isinstance(dir_info, dict) and dir_info.get("editable")):
+        return ReleaseSelection("", "", url, "custom-url", "custom-url")
+    return package_url_for("preview")
 
 
 def _homebrew_prefix_root() -> Path | None:
@@ -322,7 +393,7 @@ def _cmd_install_agents(args: argparse.Namespace) -> int:
     if not args.agents_scope:
         raise OmhError("install --target agents requires --scope repo|user")
     if (args.from_skills_dir or args.source or args.version or args.package_url
-            or args.source_ref or args.full or args.core or args.channel != "preview"):
+            or args.source_ref or args.full or args.core or args.channel not in (None, "preview")):
         raise OmhError("Agent Skills installs generate the complete portable catalog; Hermes source/profile/release options do not apply")
     try:
         target, mirror = agent_skills_targets(args.agents_scope, host=args.host)
@@ -349,6 +420,8 @@ def _cmd_install_agents(args: argparse.Namespace) -> int:
         for relative in payload["locally_modified"]:
             print(f"Locally modified: {relative}")
         print(f"Next action: {payload['next_action']}")
+        for warning in payload["warnings"]:
+            print(f"Warning: {warning}")
         print(payload["claim_boundary"])
     return 0
 
@@ -358,7 +431,7 @@ def _install_result(args: argparse.Namespace) -> dict[str, object]:
     language = _resolve_language(args)
     operation = _install_operation(args)
     try:
-        release = package_url_for(args.channel, args.version or "", args.package_url or "")
+        release = _requested_release(args)
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
     if args.channel == "local" and not (args.from_skills_dir or args.source):
@@ -1247,6 +1320,33 @@ def _configured_path_contains_symlink(value: object) -> bool:
         current = current.parent
 
 
+def _configured_omh_home_link_refusal(args: argparse.Namespace, paths: OmhPaths) -> str | None:
+    """Resolution erases a configured home's symlink; uninstall still sees its spelling.
+
+    Checks the spelling `resolve_paths` used for the standalone lane: the
+    explicit `--omh-home`, else the home's persisted `omh_home` binding, else
+    the process `OMH_HOME`.
+    """
+    explicit = getattr(args, "omh_home", None)
+    if explicit not in (None, ""):
+        source, value = "--omh-home", str(explicit)
+    else:
+        try:
+            binding = plugin_omh_home_setting(read_config(paths.hermes_config_path))
+        except (OSError, UnicodeError):
+            return "OMH home ownership is unproven: the persisted omh_home binding is unreadable"
+        if binding:
+            raw_hermes = Path(str(getattr(args, "hermes_home", None) or os.environ.get("HERMES_HOME") or "~/.hermes")).expanduser()
+            binding = re.sub(r"\$\{(?:env:)?HERMES_HOME\}|\$HERMES_HOME\b|%HERMES_HOME%", lambda _: str(raw_hermes), binding)
+            bound = Path(os.path.expandvars(binding)).expanduser()
+            source, value = "the persisted omh_home binding", str(bound if bound.is_absolute() else raw_hermes / bound)
+        else:
+            source, value = "OMH_HOME", os.environ.get("OMH_HOME") or ""
+    if _configured_path_contains_symlink(value):
+        return f"refusing to remove an OMH home whose path configured by {source} passes through a symlink or directory junction"
+    return None
+
+
 def _command_package_self_update_plan(args: argparse.Namespace) -> dict[str, object]:
     if bool(getattr(args, "command_package_updated", False)):
         return {"should_update": False, "reason": "command package update already observed"}
@@ -1259,7 +1359,7 @@ def _command_package_self_update_plan(args: argparse.Namespace) -> dict[str, obj
     if getattr(args, "from_skills_dir", None) or getattr(args, "source", None):
         return {"should_update": False, "reason": "explicit skill source updates workflows only"}
     try:
-        release = package_url_for(args.channel, args.version or "", args.package_url or "")
+        release = package_url_for(args.channel or "preview", args.version or "", args.package_url or "")
     except ValueError as exc:
         raise OmhError(str(exc)) from exc
     if release.channel == "local" and release.package_url == "local":
@@ -2560,6 +2660,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         force=bool(args.force),
         remove_command_package=bool(remove_all and not args.keep_command),
         store_plan=plan,
+        home_refusal=_configured_omh_home_link_refusal(args, paths),
     )
     legacy_files = (
         _remove_legacy_display_files(
@@ -2853,13 +2954,16 @@ def _list_catalog_context(skills: list[dict[str, object]]) -> dict[str, object]:
 
 def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
     paths = _paths(args)
-    checks = run_doctor(paths)
+    # Both default to today's behaviour; each flag turns off one thing only.
+    personal_files = not getattr(args, "no_personal_files", False)
+    state_write = not getattr(args, "no_state_write", False)
+    checks = run_doctor(paths, state_write=state_write)
     next_action = recommended_next_action(checks)
     summary = _doctor_operator_summary(checks)
     runtime_writable = any(check.name == "runtime_artifacts" and check.ok for check in checks)
     runtime_state_readable = not any(check.name == "runtime_state" and not check.ok for check in checks)
     state_log: dict[str, str] = {}
-    if runtime_writable and runtime_state_readable:
+    if state_write and runtime_writable and runtime_state_readable:
         update_state(
             paths,
             {
@@ -2872,8 +2976,8 @@ def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
             },
         )
         state_log = {"path": str(paths.runtime_state_path), "entry": "last_doctor"}
-    advisories = run_doctor_advisories(paths)
-    return {
+    advisories = run_doctor_advisories(paths, personal_files=personal_files)
+    payload: dict[str, object] = {
         "ok": doctor_ok(checks),
         "checks": [check.__dict__ for check in checks],
         "summary": summary,
@@ -2887,6 +2991,26 @@ def _doctor_result(args: argparse.Namespace) -> dict[str, object]:
         "build_identity": probe_build_identity(),
         "language": _resolve_language(args),
     }
+    # Only when a control is on, so a default run's payload keeps its shape.
+    if not (personal_files and state_write):
+        payload["privacy_controls"] = _doctor_privacy_controls(personal_files=personal_files, state_write=state_write)
+    return payload
+
+
+def _doctor_privacy_controls(*, personal_files: bool, state_write: bool) -> dict[str, object]:
+    """Say which doctor privacy controls were on and what each one left undone."""
+    return {
+        "personal_files": "read" if personal_files else "not_read",
+        "personal_files_skipped": (
+            [] if personal_files else ["advisory:soul_missing_or_starter", "advisory:hermes_memory_staleness"]
+        ),
+        "state_write": "enabled" if state_write else "disabled",
+        "state_write_skipped": (
+            []
+            if state_write
+            else ["runtime/state.json last_doctor", "runtime_artifacts write probe", "workflow_state write probe"]
+        ),
+    }
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
@@ -2894,6 +3018,29 @@ def cmd_setup(args: argparse.Namespace) -> int:
     validate_model_setup_args(args)
     language = _setup_language(args)
     paths = _paths(args)
+    if getattr(args, "interactive", False) and _setup_should_interact(args) and not _wizard_has_terminal():
+        # Without a terminal on stdin every prompt reads EOF and takes its
+        # default, so the user would never see the choices the wizard exists
+        # to ask. Refuse before anything is written.
+        next_command = _noninteractive_rerun_command(getattr(args, "_argv", None) or sys.argv[1:])
+        print(tr(language, "setup_interactive_needs_terminal", command=next_command), file=sys.stderr)
+        refusal: dict[str, object] = {
+            "ok": False,
+            "refused": True,
+            "refusal_reason": "interactive_requires_terminal",
+            "next_action": "rerun_with_no_interactive_json",
+            "next_command": next_command,
+            "language": language,
+        }
+        # A person at a terminal reads the line above; a caller capturing
+        # stdout (the agent shell this refusal exists for) gets the record.
+        try:
+            stdout_is_terminal = sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            stdout_is_terminal = False
+        if not stdout_is_terminal:
+            _print_json(refusal)
+        return _setup_exit_code(refusal)
     if _setup_should_interact(args):
         if not _setup_paths_were_explicit(args) and not getattr(args, "scope", None):
             args.scope = _ask_setup_scope(use_color=_use_color(), language=language)
@@ -3007,7 +3154,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         progress.done(tr(language, "target_recorded"))
     if getattr(args, "model_setup", False):
-        dependencies = _model_setup_flow_dependencies()
+        dependencies = _model_setup_flow_dependencies(paths)
         steps["model_activation"] = model_activation_result(
             args,
             language=language,
@@ -3067,11 +3214,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "wrapper_backend_surface": "omh chat interact and runtime commands are adapter/operator contracts, not the normal chat UX",
     }
 
+    # `ok` means what the exit code means: every step setup was asked to run
+    # ran. A model step that could not run makes it false here and in the
+    # state record, so a reader of `ok` alone is not told otherwise.
+    setup_ok = _setup_exit_code({"steps": steps}) == 0
     if not args.dry_run:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
         state_patch: dict[str, object] = {
             "last_setup": {
-                "ok": True,
+                "ok": setup_ok,
                 "apply_skipped": bool(args.skip_apply),
                 "hermes_native": hermes_native,
                 "operator_summary": operator_summary,
@@ -3089,7 +3240,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     else:
         operator_summary = _setup_operator_summary(args, paths, steps, hermes_native)
     payload: dict[str, object] = {
-        "ok": True,
+        "ok": setup_ok,
         "steps": steps,
         "dry_run": args.dry_run,
         "hermes_native": hermes_native,
@@ -3105,6 +3256,76 @@ def cmd_setup(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         _print_setup_summary(payload, language=language)
+    return _setup_exit_code(payload)
+
+
+def _noninteractive_rerun_command(argv: list[str]) -> str:
+    """The refused command line with the wizard swapped for the scripted path.
+
+    Every other flag the user passed is kept, so `--model-setup`, `--scope`,
+    `--profile-pack` and the homes survive. argparse accepts a unique prefix
+    such as `--inter`, so a prefix of `--interactive` is dropped too.
+    """
+    rerun = ["omh"]
+    for token in argv:
+        if token.startswith("--") and len(token) > 2 and "--interactive".startswith(token):
+            continue
+        rerun.append(token)
+    rerun.extend(flag for flag in ("--no-interactive", "--json") if flag not in rerun)
+    return shlex.join(rerun)
+
+
+# Model-step statuses that mean the step could not run at all. A missing
+# prerequisite maps to 3; a Hermes that is there but failed maps to 1.
+_MODEL_STEP_NOT_RUN_STATUSES = frozenset({"hermes_unavailable", "hermes_config_missing", "hermes_config_unreadable"})
+_MODEL_STEP_FAILED_STATUSES = frozenset({"hermes_command_failed"})
+
+
+def _setup_exit_code(payload: Any) -> int:
+    """0 when every step setup was asked to run ran.
+
+    1 when setup refused to start: `--interactive` was asked for with no
+    terminal on stdin, so nothing ran and nothing was written. Not 0, because
+    a caller reading only the status would be told the user's choices were
+    collected; 1 is what the other mappers return for a refused run. Not 2,
+    which `main` returns for an OmhError: the flags parsed, and the same
+    choices succeed as `--no-interactive --json`.
+
+    3 when the install steps finished (or, on a dry run, were previewed) but
+    the requested model step could not run: no `hermes` executable was found
+    (`hermes_unavailable`), or Hermes' config file does not exist
+    (`hermes_config_missing`) or exists but cannot be read
+    (`hermes_config_unreadable`), as `steps.model_activation.status`. Not 0,
+    because a wrapper reading only the status would be told the models were
+    set up or previewed when nothing was inspected; not 1, because nothing
+    OMH installed failed and the same command succeeds once the prerequisite
+    is there; not 2, which `main` returns for an OmhError. 3 is what the
+    other mappers return for a command that ran but could not inspect what it
+    needed (`_profile_isolation_exit_code`,
+    `_memory_evidence_exit_code`).
+
+    1 when Hermes is on PATH but a command the model step needs failed: it
+    exited nonzero, timed out, or answered in a shape the adapter refuses
+    (`hermes_command_failed`). That is a fault in the Hermes the user has,
+    not a prerequisite they can supply, so it is not 3.
+
+    Generic failure signals -- a refused or interrupted run, or a unit
+    carrying a failure kind -- are never success either, so this mapper
+    cannot be passed by ignoring them.
+    """
+    summary = payload if isinstance(payload, dict) else {}
+    if summary.get("refused") or summary.get("interrupted"):
+        return 1
+    units = summary.get("units")
+    if isinstance(units, list) and any(isinstance(unit, dict) and unit.get("failure_kind") for unit in units):
+        return 1
+    steps = summary.get("steps")
+    activation = steps.get("model_activation") if isinstance(steps, dict) else None
+    status = activation.get("status") if isinstance(activation, dict) else None
+    if status in _MODEL_STEP_FAILED_STATUSES:
+        return 1
+    if status in _MODEL_STEP_NOT_RUN_STATUSES:
+        return 3
     return 0
 
 
@@ -3128,7 +3349,7 @@ def _setup_should_interact(args: argparse.Namespace) -> bool:
         or getattr(args, "model_setup", False)
     ):
         return False
-    return sys.stdin.isatty() and sys.stdout.isatty()
+    return _stdin_is_tty() and sys.stdout.isatty()
 
 
 # Binary name per external CLI profile, read-only PATH lookup only -- never
@@ -3220,7 +3441,17 @@ def _ask_maestro_delegation_choice(args: argparse.Namespace, paths: OmhPaths, la
 
 
 def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
+    return stdin_is_tty()
+
+
+def _wizard_has_terminal() -> bool:
+    """Whether an explicit `--interactive` may run the wizard at all.
+
+    The same probe as `_stdin_is_tty`, kept as its own seam: tests that drive
+    the wizard with scripted answers open this gate without also turning on
+    the terminal-only model-chains offer that `_stdin_is_tty` decides.
+    """
+    return _stdin_is_tty()
 
 
 def _will_ask_model_chains_interview(args: argparse.Namespace, paths: OmhPaths) -> bool:
@@ -3752,12 +3983,19 @@ def _print_model_preview_review(payload: dict[str, object], *, language: str) ->
     )
 
 
-def _model_setup_flow_dependencies() -> ModelSetupFlowDependencies:
+def _model_setup_flow_dependencies(paths: OmhPaths) -> ModelSetupFlowDependencies:
+    # Every `hermes` spawn on this path (inspect, apply, and the rollback and
+    # re-inspection inside apply) acts on the home setup targets -- the
+    # `--hermes-home` or `--scope project` home -- not whatever HERMES_HOME or
+    # ~/.hermes the calling shell points at.
+    hermes_env = {**os.environ, "HERMES_HOME": str(paths.hermes_home)}
     return ModelSetupFlowDependencies(
         discover_local_models=discover_local_models,
-        inspect_hermes_model_config=inspect_hermes_model_config,
+        inspect_hermes_model_config=lambda: inspect_hermes_model_config(env=hermes_env),
         preview_hermes_model_config=preview_hermes_model_config,
-        apply_hermes_model_config=apply_hermes_model_config,
+        apply_hermes_model_config=lambda preview, **kwargs: apply_hermes_model_config(
+            preview, env=hermes_env, **kwargs
+        ),
         resolve_model_recommendation=resolve_model_recommendation,
         ask_yes_no=_ask_yes_no,
         ask=_ask,
@@ -4543,7 +4781,7 @@ def _keyboard_menu_available() -> bool:
     return (
         termios is not None
         and tty is not None
-        and sys.stdin.isatty()
+        and stdin_is_tty()
         and sys.stdout.isatty()
         and os.environ.get("TERM", "") != "dumb"
         and os.environ.get("OMH_NO_TUI", "") != "1"
@@ -4866,6 +5104,7 @@ def _print_doctor_summary(payload: dict[str, object], *, language: str = "en") -
     state_log = payload.get("state_log", {})
     if isinstance(state_log, dict) and state_log.get("path") and state_log.get("entry"):
         print(f"  {tr(language, 'state_log', path=state_log.get('path'), entry=state_log.get('entry'))}")
+    _print_doctor_privacy_controls(payload)
     for check in checks:
         if not isinstance(check, dict) or (check.get("ok") and check.get("severity") != "warning"):
             continue
@@ -4884,11 +5123,24 @@ def _print_doctor_summary(payload: dict[str, object], *, language: str = "en") -
     print(f"  {tr(language, 'machine_readable')}")
 
 
+def _print_doctor_privacy_controls(payload: dict[str, object]) -> None:
+    """Say, under the summary, what a privacy control left unread or unwritten."""
+    controls = payload.get("privacy_controls")
+    if not isinstance(controls, dict):
+        return
+    if controls.get("state_write") == "disabled":
+        print("  State write: disabled (--no-state-write); runtime/state.json was not written and no write probe ran.")
+    if controls.get("personal_files") == "not_read":
+        print("  Personal files: not read (--no-personal-files); SOUL.md, memories/MEMORY.md and memories/USER.md were not opened.")
+
+
 def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None:
     """Render the read-only Advice lane, separate from doctor checks.
 
     Advice never affects the doctor status or exit code; it is a default-on,
     plain-text section that surfaces the ``hermes_config_advice`` advisory lane.
+    A ``skipped`` entry is listed with its reason, so an inspector that did not
+    run is never mistaken for one that found nothing.
     """
     advisories = payload.get("advisories", {})
     if not isinstance(advisories, dict):
@@ -4901,7 +5153,8 @@ def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None
         for entry in entries
         if isinstance(entry, dict) and entry.get("status") == "advice"
     ]
-    if not actionable:
+    skipped = [entry for entry in entries if isinstance(entry, dict) and entry.get("status") == "skipped"]
+    if not actionable and not skipped:
         return
     print(_color("Advice (read-only; does not affect doctor status)", "1;36", use_color))
     for entry in actionable:
@@ -4911,6 +5164,8 @@ def _print_doctor_advice(payload: dict[str, object], *, use_color: bool) -> None
         print(f"  - {check_id}: {observed}")
         if remediation:
             print(f"    Suggestion: {remediation}")
+    for entry in skipped:
+        print(f"  - {entry.get('check_id', 'unknown')}: skipped ({entry.get('reason', '')})")
 
 
 def _doctor_human_next_action(next_action: str, *, language: str) -> str:
@@ -5743,7 +5998,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "Other coding agent",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my runtime",
-            "omo-runtime": "Oh-my runtime",
+            "pi-family-runtime": "Oh-my runtime",
             "omc-runtime": "Oh-my runtime",
         },
         "ko": {
@@ -5753,7 +6008,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "기타 코딩 에이전트",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my 런타임",
-            "omo-runtime": "Oh-my 런타임",
+            "pi-family-runtime": "Oh-my 런타임",
             "omc-runtime": "Oh-my 런타임",
         },
         "ja": {
@@ -5763,7 +6018,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "その他のコーディングエージェント",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my ランタイム",
-            "omo-runtime": "Oh-my ランタイム",
+            "pi-family-runtime": "Oh-my ランタイム",
             "omc-runtime": "Oh-my ランタイム",
         },
         "zh": {
@@ -5773,7 +6028,7 @@ def _executor_summary(language: str, executor: str) -> str:
             "generic": "其他编码代理",
             "hermes": "Hermes",
             "omx-runtime": "Oh-my 运行时",
-            "omo-runtime": "Oh-my 运行时",
+            "pi-family-runtime": "Oh-my 运行时",
             "omc-runtime": "Oh-my 运行时",
         },
     }
@@ -6191,8 +6446,13 @@ def cmd_probe(args: argparse.Namespace) -> int:
 def _add_common_install_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--from-skills-dir", default=None, help="Import skills from a local skill directory.")
     p.add_argument("--source", default=None, help="Mockable local source directory for install/update.")
-    p.add_argument("--channel", choices=RELEASE_CHANNELS, default="preview", help="Release channel metadata for this install/update.")
-    p.add_argument("--version", default="", help="Stable release version such as 1.0.0 or v1.0.0.")
+    p.add_argument(
+        "--channel",
+        choices=RELEASE_CHANNELS,
+        default=None,
+        help="Release channel metadata for this install/update; defaults to what the installed package records, else preview.",
+    )
+    p.add_argument("--version", default="", help=f"Stable release version such as {__version__} or v{__version__}.")
     p.add_argument("--package-url", default="", help="Explicit release archive URL for support and audit metadata.")
     p.add_argument("--source-ref", default="", help="Release source ref metadata such as main, main@sha, or v1.0.1.")
     p.add_argument("--command-package-updated", action="store_true", help=argparse.SUPPRESS)
@@ -6250,9 +6510,16 @@ def _add_top_level_commands(sub) -> None:
         help="Inspect local model metadata and guide explicit Hermes model-alias activation.",
     )
     setup.add_argument(
-        "--import-omo-category-overrides",
+        "--import-category-overrides",
         action="store_true",
-        help="Import category model preferences from canonical ~/.omo/omo.json[c].",
+        help="Import category model preferences from the pi-family runtime's home config.",
+    )
+    # The flag's old spelling, for scripts written against an older release.
+    setup.add_argument(
+        f"--import-{RUNTIME_SHORT_NAME}-category-overrides",
+        dest="import_category_overrides",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     setup.add_argument(
         "--confirm-model",
@@ -6292,6 +6559,7 @@ def _add_top_level_commands(sub) -> None:
     )
     setup.add_argument(
         "--default-executor",
+        type=canonical_executor_profile,
         choices=CODING_EXECUTOR_TARGETS,
         default=None,
         help="Durable coding-owner preference for automation and scripted installs. Interactive setup never asks; by default Hermes asks at the first coding request.",
@@ -6493,6 +6761,22 @@ def _add_top_level_commands(sub) -> None:
     doctor = sub.add_parser("doctor", help="Check local OMH install health and Hermes skill registration.")
     doctor.add_argument("--json", action="store_true", help="Print the full machine-readable doctor payload.")
     doctor.add_argument("--language", default=None, help=f"Human output language ({', '.join(LANGUAGE_CODES)}).")
+    doctor.add_argument(
+        "--no-personal-files",
+        action="store_true",
+        help=(
+            "Do not open Hermes personal files (SOUL.md, memories/MEMORY.md, memories/USER.md); "
+            "the checks that need them are reported as skipped."
+        ),
+    )
+    doctor.add_argument(
+        "--no-state-write",
+        action="store_true",
+        help=(
+            "Write nothing under the OMH home: no runtime/state.json `last_doctor` entry and no write probes; "
+            "writability is then checked from permissions and reported as not probed."
+        ),
+    )
     add_doctor_profile_isolation_argument(doctor)
     doctor.set_defaults(func=cmd_doctor)
 

@@ -38,7 +38,7 @@ Boundaries, in order of importance:
   read into the payload; a candidate session ref containing whitespace or
   unprintable characters is free text, not an identifier, and is rejected.
 - Honest absence over invented coverage. Owners with no structured stdout
-  surface (`omo-runtime` and its pi/senpi/opencode hosts) report
+  surface (`pi-family-runtime` and its pi-family and opencode hosts) report
   `parsed=False`, `source="none"`. That is the required answer, not a gap to
   close later with heuristic text scraping.
 - Reporting only. Telemetry is an observation of what a CLI printed. It is not
@@ -93,8 +93,8 @@ UNIT_TELEMETRY_VALUE_KEYS: Final[tuple[str, ...]] = (
 # key, exactly like every other unreported count.
 _COST_KEY_BY_SOURCE: Final[dict[str, str]] = {"claude_json": "total_cost_usd"}
 
-# Owners with a structured stdout surface. Every other owner -- omo-runtime and
-# its pi/senpi/opencode hosts, hermes, the omx/omc runtimes, generic --
+# Owners with a structured stdout surface. Every other owner -- pi-family-runtime and
+# its pi-family and opencode hosts, hermes, the omx/omc runtimes, generic --
 # resolves to no source and reports honest absence.
 _STRUCTURED_SOURCE_BY_OWNER: Final[dict[str, str]] = {
     "codex": "codex_json",

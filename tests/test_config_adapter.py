@@ -14,7 +14,9 @@ from omh.config_adapter import (
     external_dir_registered,
     ensure_external_dir,
     external_dirs,
+    memory_provider_selection,
     remove_external_dir,
+    set_memory_provider,
 )
 
 
@@ -176,6 +178,27 @@ class ConfigAdapterTests(unittest.TestCase):
         for text in ("display:\n  skin: ares\n", "display.skin: ares\n", "display:\n  interface: cli\n"):
             with self.subTest(text=text):
                 self.assertFalse(display_key_named_twice(text, "skin"))
+
+    def test_a_column_zero_comment_does_not_end_the_skills_node(self) -> None:
+        # A comment carries no structure; `external_dirs:` below it is still
+        # a child of `skills:`, so setup extends it rather than adding a
+        # second key Hermes would refuse (#2304).
+        original = "skills:\n  disabled: []\n# =====\n# Skills\n# =====\n  external_dirs:\n    - /keep\n"
+
+        self.assertEqual(external_dirs(original), ["/keep"])
+        change = ensure_external_dir(original, "/tmp/omh/skills")
+
+        self.assertEqual(change.message, "added external dir")
+        self.assertEqual(change.text.count("external_dirs:"), 1)
+        self.assertEqual(external_dirs(change.text), ["/keep", "/tmp/omh/skills"])
+
+    def test_a_column_zero_comment_does_not_end_the_memory_node(self) -> None:
+        original = "memory:\n  memory_enabled: true\n\n# =====\n# Provider\n# =====\n  provider: ''\nother: 1\n"
+        change = set_memory_provider(original, "omh")
+
+        self.assertEqual(change.message, "set memory.provider")
+        self.assertEqual(change.text.count("provider:"), 1)
+        self.assertEqual(memory_provider_selection(change.text), "omh")
 
 
 if __name__ == "__main__":

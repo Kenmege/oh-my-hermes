@@ -11,8 +11,8 @@ def recommendation_projections(
     catalog: dict[str, object],
     main: dict[str, object],
     resolve_model_recommendation: Callable,
-    omo_overrides: dict[str, object] | None,
-    omo_override_source: str,
+    imported_category_overrides: dict[str, object] | None,
+    category_override_source: str,
 ) -> dict[str, object]:
     return {
         "main": main,
@@ -35,10 +35,10 @@ def recommendation_projections(
                 resolve_model_recommendation=resolve_model_recommendation,
             ),
         },
-        "omo_category_overrides": {
-            "status": "imported" if omo_overrides else "not_imported",
-            "source": omo_override_source,
-            "categories": sorted((omo_overrides or {}).get("categories", {})),
+        "category_overrides": {
+            "status": "imported" if imported_category_overrides else "not_imported",
+            "source": category_override_source,
+            "categories": sorted((imported_category_overrides or {}).get("categories", {})),
         },
     }
 

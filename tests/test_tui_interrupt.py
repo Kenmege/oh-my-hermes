@@ -14,8 +14,11 @@ from __future__ import annotations
 import unittest
 
 from _tui_lines import lines_text
+from test_tui_app import info_row_of
+from test_tui_choice_ui import armed
 from test_tui_modes import SID, answer, drawn, make_app, notices, type_text
-from omh.tui.app import INTERRUPTING, QUEUE_HELD_HINT, QueuedLine, queue_lines
+from test_tui_questions import COLOUR
+from omh.tui.app import EXIT_CONFIRM_SECONDS, EXIT_HINT, INTERRUPTING, QUEUE_HELD_HINT, QueuedLine, queue_lines
 from omh.tui.gateway import Event
 from omh.tui.keys import CHAR, ENTER, ESCAPE, UP, Key
 from omh.tui.theme import DEFAULT_THEME
@@ -147,3 +150,51 @@ class QueueAfterInterruptTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CtrlCExitTests(unittest.TestCase):
+    """The Ctrl+C that interrupts a turn also arms the exit, so a second one leaves while the turn is still stopping."""
+
+    def test_a_second_ctrl_c_while_the_turn_is_still_stopping_exits(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_input(CTRL_C)
+        self.assertEqual(client.named("session.interrupt"), [{"session_id": SID}])
+        screen = drawn(app)
+        self.assertIn(INTERRUPTING, "\n".join(screen))  # the working row stays, and the info line names the exit
+        self.assertIn(EXIT_HINT, info_row_of(screen))
+        now[0] += 0.4
+        app._on_input(CTRL_C)
+        self.assertEqual(app.exit_code, 0)
+        self.assertTrue(app.interrupting)  # Hermes had not stopped the turn yet
+        self.assertEqual(len(client.named("session.interrupt")), 1)  # the second press leaves; it does not ask again
+
+    def test_past_the_window_a_ctrl_c_mid_turn_interrupts_again_and_arms_again(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_input(CTRL_C)
+        now[0] += EXIT_CONFIRM_SECONDS + 0.1
+        app._expire_exit()
+        self.assertNotIn(EXIT_HINT, info_row_of(drawn(app)))
+        app._on_input(CTRL_C)
+        self.assertIsNone(app.exit_code)
+        self.assertEqual(len(client.named("session.interrupt")), 2)
+        self.assertIn(EXIT_HINT, info_row_of(drawn(app)))
+
+    def test_ctrl_c_with_a_draft_clears_it_and_neither_interrupts_nor_arms(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "half a thought")
+        app._on_input(CTRL_C)
+        self.assertEqual(app.composer.text, "")
+        self.assertIsNone(app.exit_armed_at)
+        self.assertEqual(client.named("session.interrupt"), [])
+
+    def test_ctrl_c_on_a_question_declines_it_and_arms_nothing(self) -> None:
+        app, client = make_app(busy=True)
+        app._on_server_request(COLOUR)
+        armed(app)
+        app._on_input(CTRL_C)
+        self.assertIsNone(app.slot)
+        self.assertEqual(len(client.answers), 1)  # the decline
+        self.assertIsNone(app.exit_armed_at)
+        self.assertIsNone(app.exit_code)

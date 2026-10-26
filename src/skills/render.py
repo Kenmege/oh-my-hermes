@@ -6373,9 +6373,9 @@ Load this reference once the coding owner is already explicitly chosen and a pro
 
 ## 1. Reading The Skill Set
 
-Run `omh coding executor-skills --profile <profile> [--project-root <root>] [--unit-role <role>]` before composing anything. It is a thin, read-only wrapper over local discovery: `--profile` selects which executor's declared skills to read (`claude-code`, `codex`, or `omo-runtime`; `hermes` is rejected -- Hermes-native lanes never route through this command), `--project-root` also probes project-local Claude Code skills, and `--unit-role` additionally returns a suggested sequence and, when a genuine arrangement choice exists, a selection card.
+Run `omh coding executor-skills --profile <profile> [--project-root <root>] [--unit-role <role>]` before composing anything. It is a thin, read-only wrapper over local discovery: `--profile` selects which executor's declared skills to read (`claude-code`, `codex`, or `pi-family-runtime`; `hermes` is rejected -- Hermes-native lanes never route through this command), `--project-root` also probes project-local Claude Code skills, and `--unit-role` additionally returns a suggested sequence and, when a genuine arrangement choice exists, a selection card.
 
-The payload is `executor_skill_discovery/v1`: `sources` (one entry per probed location, each with a `status` of `present`, `absent`, `unreadable`, or `unsupported`, plus a `reason` when not `present`), `skills` (each entry carries `name`, `invocation`, `role`, `role_score`, and `source` -- never a description), `rejected_name_count`, and a `claim_boundary` that must ride into the composed prompt's evidence boundary unchanged. `omo-runtime` always reports its one source as `unsupported`: its host CLIs declare no skill layout this repo can verify, so the payload says so instead of coming back empty with no trace. The command also accepts the remaining executor profiles (`generic`, `omx-runtime`, `omc-runtime`); those have no probed skill layout at all and return an empty `sources` map -- treat that exactly like an all-absent result and take the explicit-generic path.
+The payload is `executor_skill_discovery/v1`: `sources` (one entry per probed location, each with a `status` of `present`, `absent`, `unreadable`, or `unsupported`, plus a `reason` when not `present`), `skills` (each entry carries `name`, `invocation`, `role`, `role_score`, and `source` -- never a description), `rejected_name_count`, and a `claim_boundary` that must ride into the composed prompt's evidence boundary unchanged. `pi-family-runtime` always reports its one source as `unsupported`: its host CLIs declare no skill layout this repo can verify, so the payload says so instead of coming back empty with no trace. The command also accepts the remaining executor profiles (`generic`, `omx-runtime`, `omc-runtime`); those have no probed skill layout at all and return an empty `sources` map -- treat that exactly like an all-absent result and take the explicit-generic path.
 
 ## 2. Role Recipes
 
@@ -7677,7 +7677,13 @@ omh <command> --help
 store is writable it records `last_doctor`, and failed health checks can return
 a nonzero exit code while still emitting useful JSON. Disclose the
 `state-write side effect` before running it, then interpret the payload rather
-than treating a nonzero status as command absence.
+than treating a nonzero status as command absence. Use `--no-state-write` to
+skip the state update and runtime/workflow write probes; those checks then
+report write access as not probed and use a non-writing permission check. Use
+`--no-personal-files` to avoid opening `SOUL.md`, `memories/MEMORY.md`, and
+`memories/USER.md`; their two advisories are explicitly `skipped`. The flags
+are independent and work with human or JSON output. The loader-registration
+smoke can still use a temporary directory under `--no-state-write`.
 
 Record the command, selected profile/home, and observed OMH version or commit.
 Do not reinterpret a command's absence as a product-wide capability claim.
@@ -11997,7 +12003,7 @@ DESIGN_NAMED_BAR = (
 )
 
 # Concept lineage only. The wording in these references is OMH's own — the
-# nearest upstream architecture (oh-my-openagent's frontend skill) is under
+# nearest upstream architecture (the frontend skill credited below) is under
 # the Sustainable Use License, so no upstream text is reproduced anywhere in
 # this family; its permissively licensed design upstreams are credited as
 # the idea sources they are.

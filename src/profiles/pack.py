@@ -45,7 +45,7 @@ from ..capabilities.toggles import (
     toggleable_family_ids,
     write_capability_policy,
 )
-from ..coding.executors import CODING_EXECUTOR_TARGETS
+from ..coding.executors import CODING_EXECUTOR_TARGETS, canonical_executor_profile
 from ..local_store import read_json_object_result, utc_now
 from ..maintenance.advisory import parse_hermes_model_aliases
 from ..mcp.host_config import install_mcp_host_config
@@ -380,7 +380,7 @@ def apply_setup_profile_pack(
     next_actions: list[str] = []
 
     executor, executor_reason = _accepted_value(
-        "default_executor", profile.get("default_executor"), CODING_EXECUTOR_TARGETS
+        "default_executor", canonical_executor_profile(str(profile.get("default_executor") or "")), CODING_EXECUTOR_TARGETS
     )
     operating_model, operating_model_reason = _accepted_value(
         "operating_model_id", profile.get("operating_model_id"), operating_model_ids()

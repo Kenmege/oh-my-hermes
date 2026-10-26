@@ -8,10 +8,10 @@ boundary of each.
 ```
 Running work — 3 unit(s), 2 running
 
-unit              runtime            model                  status     elapsed   tokens       session
-research-sweep    claude-code        claude-opus-5-5 xhigh  running    35m       10,000,000   sess_9f2c4a
-api-ratelimit     codex              gpt-6.1-sol xhigh      running    4m        128,400      019a7b3e
-docs-pass         omo-runtime (pi)   glm-5.3                completed  12m       unknown      unknown
+unit              runtime                  model                  status     elapsed   tokens       session
+research-sweep    claude-code              claude-opus-5-5 xhigh  running    35m       10,000,000   sess_9f2c4a
+api-ratelimit     codex                    gpt-6.1-sol xhigh      running    4m        128,400      019a7b3e
+docs-pass         pi-family-runtime (pi)   glm-5.3                completed  12m       unknown      unknown
 ```
 
 Ask in chat — "what's running", "지금 뭐 돌고 있어", "what models are running" —
@@ -578,8 +578,8 @@ waited out. A matched shape is not provider, filesystem, or repository truth —
 it is what the output looked like.
 
 **Runtimes without structured output report `unknown` and say so.** The
-`omo-runtime` lane has no structured token surface, so its token columns stay
-unknown by design rather than being filled with a guess.
+`pi-family-runtime` lane has no structured token surface, so its token columns
+stay unknown by design rather than being filled with a guess.
 
 ## Why the token number is a sum, and what that means
 
@@ -944,7 +944,7 @@ they produce byte-identical summaries apart from the owner attribution block.
 the owner, so two owners agreeing is one `==`.
 
 The equality is not vacuous. An owner whose stream this repo cannot read
-carries a lower evidence ceiling, so an `omo-runtime` `full_tests_passed`
+carries a lower evidence ceiling, so a `pi-family-runtime` `full_tests_passed`
 normalizes to `unmapped_source_event` rather than `tests_passed`. That run gets
 a different summary, with an evidence gap counted where a verification would
 otherwise have been claimed. That is the correct answer, not a gap to close by

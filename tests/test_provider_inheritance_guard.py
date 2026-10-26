@@ -77,7 +77,10 @@ class ProviderInheritanceGuardTests(unittest.TestCase):
         self.assertIn("routing/model-providers.json", result["error"])
 
     def test_an_explicit_provider_is_never_second_guessed(self) -> None:
+        # The provider must be one the person configured; the serving check
+        # still never second-guesses it.
         self._session_on("openai-codex")
+        self._entitlements({"og": "gateway"})
         result = self._call(
             action="set",
             model="anthropic/claude-fable-5-1",

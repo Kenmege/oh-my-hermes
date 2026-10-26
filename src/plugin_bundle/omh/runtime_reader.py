@@ -18,6 +18,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
+from .pi_family_names import canonical_progress_record
 from .approval_bypass import effective_approval_bypass
 from .awareness_delivery import _awareness_delivery_lock
 from .delegation_graph import GRAPH_LINGER_SECONDS, build_delegation_graph, inactive_graph
@@ -210,6 +211,7 @@ _FANOUT_GRAPH_STATUSES = {
     "already_completed",
     "dry_run_planned",
     "capability_snapshot_invalid",
+    "owner_profile_renamed",
     "route_unresolved",
     "modality_unknown",
     "modality_unsupported",
@@ -881,7 +883,7 @@ def _later_status(current: str, candidate: str) -> str:
 def _ordered_activity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Running first, then blocked, then done; settled rows newest-first.
 
-    Display-priority ordering learned from OMO's DAG status widget: running
+    Display-priority ordering learned from the pi-family runtime's DAG status widget: running
     work outranks everything, and a late failure must never be pushed off
     screen by older completed rows. Running rows keep dispatch order. The
     helper orders only — the call site applies ACTIVITY_ROW_LIMIT and counts
@@ -3189,7 +3191,7 @@ def _coding_agent_label(value: Any) -> str:
         "codex": "codex",
         "claude-code": "claude-code",
         "omx-runtime": "omx-runtime",
-        "omo-runtime": "omo-runtime",
+        "pi-family-runtime": "pi-family-runtime",
         "omc-runtime": "omc-runtime",
     }
     return labels.get(normalized, normalized)
@@ -3431,6 +3433,15 @@ def _progress_bindings(
         if hud_safe
         else _read_jsonl
     )
+    # A binding, event, or report an older release wrote reads on today's lane.
+    raw_json_reader, raw_jsonl_reader = json_reader, jsonl_reader
+
+    def json_reader(path: Path) -> Any:
+        return canonical_progress_record(raw_json_reader(path))
+
+    def jsonl_reader(path: Path) -> list[Any]:
+        return [canonical_progress_record(row) for row in raw_jsonl_reader(path)]
+
     seen: dict[Path, tuple[tuple[int, int, int, int], str | None]] = {}
     for root, target_type in roots:
         for binding_path in sorted(child_files(root, "executor_progress", EXECUTOR_PROGRESS_BINDING_FILE), reverse=True):

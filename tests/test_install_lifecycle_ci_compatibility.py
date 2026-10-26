@@ -194,6 +194,8 @@ class ProtectedUpdatePlanTests(unittest.TestCase):
     def test_required_child_refusal_still_fails_a_primary_protected_dry_run(self):
         child = self.hermes / "profiles" / "bot"
         child.mkdir(parents=True)
+        # A real named profile has host identity; an empty shell is ignored.
+        (child / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         code, _, stderr = run_cli([*self.base, "setup", "--core", "--yes", "--no-interactive", "--no-menubar"])
         self.assertEqual(code, 0, stderr)
         (self.plugin / "private.txt").write_bytes(b"primary private\r\n")

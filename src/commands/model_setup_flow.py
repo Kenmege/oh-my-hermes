@@ -8,7 +8,10 @@ from typing import Callable
 
 from ..coding.hermes_model_config import (
     AliasCollisionError,
+    HermesCommandError,
+    HermesConfigUnreadableError,
     HermesModelConfigError,
+    HermesUnavailableError,
 )
 from ..coding.model_recommendations import (
     SHIPPED_MODEL_RECOMMENDATIONS,
@@ -21,7 +24,7 @@ from .model_setup_inputs import (
     confirmed_model_ids,
     model_alias_changes,
 )
-from .model_setup_overrides import load_omo_category_overrides
+from .model_setup_overrides import load_category_overrides
 from .model_setup_projections import provider_next_actions, recommendation_projections
 
 
@@ -45,9 +48,57 @@ def model_activation_result(
     dependencies: ModelSetupFlowDependencies,
 ) -> dict[str, object]:
     discovery = dependencies.discover_local_models(Path.home())
-    inspection = dependencies.inspect_hermes_model_config()
     confirmed = confirmed_model_ids(getattr(args, "confirm_model", []))
     candidates = classified_model_candidates(discovery, confirmed)
+    try:
+        inspection = dependencies.inspect_hermes_model_config()
+    # Every later stage reads, writes, or is bound to the digest of Hermes'
+    # config, so none can run; asking the interactive questions would collect
+    # answers nothing uses.
+    except HermesUnavailableError as exc:
+        return _inspection_failed_result(
+            discovery,
+            candidates,
+            status="hermes_unavailable",
+            next_action="install_hermes_then_rerun_model_setup",
+            cause="Hermes was not found",
+            details={"reason": str(exc)},
+        )
+    except HermesConfigUnreadableError as exc:
+        dry_run = bool(getattr(args, "dry_run", False))
+        details = {"config_path": str(exc.config_path), "dry_run": dry_run}
+        if not exc.missing:
+            # The file is there; no setup run creates it, and a dry run is
+            # not why it cannot be read.
+            return _inspection_failed_result(
+                discovery,
+                candidates,
+                status="hermes_config_unreadable",
+                next_action="fix_hermes_config_permissions_then_rerun",
+                cause="Hermes' config file exists but could not be read",
+                details=details,
+            )
+        return _inspection_failed_result(
+            discovery,
+            candidates,
+            status="hermes_config_missing",
+            # A dry run writes nothing, so on a fresh home the file a real
+            # setup creates (step 2 registers OMH in it) does not exist yet.
+            next_action="rerun_without_dry_run" if dry_run else "create_hermes_config_then_rerun_model_setup",
+            cause="Hermes' config file does not exist",
+            details=details,
+        )
+    except HermesCommandError as exc:
+        # `hermes config path` exited nonzero, timed out, or a query returned
+        # output the adapter refuses: Hermes is there but did not answer.
+        return _inspection_failed_result(
+            discovery,
+            candidates,
+            status="hermes_command_failed",
+            next_action="check_hermes_config_commands_then_rerun_model_setup",
+            cause="A Hermes command failed",
+            details={"reason": str(exc)},
+        )
     aliases = model_alias_changes(getattr(args, "model_alias", []))
 
     if getattr(args, "interactive", False):
@@ -70,16 +121,16 @@ def model_activation_result(
         }
         for model_id in sorted(confirmed)
     ]
-    omo_overrides = None
-    omo_override_source = ""
-    if getattr(args, "import_omo_category_overrides", False):
+    imported_category_overrides = None
+    category_override_source = ""
+    if getattr(args, "import_category_overrides", False):
         try:
-            omo_overrides, omo_override_source = load_omo_category_overrides(Path.home())
+            imported_category_overrides, category_override_source = load_category_overrides(Path.home())
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-            raise OmhError(f"cannot import OMO category overrides: {exc}") from exc
+            raise OmhError(f"cannot import category overrides: {exc}") from exc
     recommendation_catalog = merge_recommendation_catalog(
         SHIPPED_MODEL_RECOMMENDATIONS,
-        omo_overrides,
+        imported_category_overrides,
     )
     explicit_main = aliases.get("main") or ""
     recommendation = dependencies.resolve_model_recommendation(
@@ -94,8 +145,8 @@ def model_activation_result(
         catalog=recommendation_catalog,
         main=recommendation,
         resolve_model_recommendation=dependencies.resolve_model_recommendation,
-        omo_overrides=omo_overrides,
-        omo_override_source=omo_override_source,
+        imported_category_overrides=imported_category_overrides,
+        category_override_source=category_override_source,
     )
     next_actions = provider_next_actions(confirmed, inspection)
 
@@ -140,7 +191,12 @@ def model_activation_result(
         if getattr(args, "interactive", False):
             dependencies.print_model_preview_review(preview, language=language)
             args.apply_model_config = dependencies.ask_yes_no(
-                tr(language, "model_setup_apply_prompt"),
+                # A dry run writes nothing: the question is whether to list
+                # the commands an apply would run, not whether to apply.
+                tr(
+                    language,
+                    "model_setup_apply_prompt_dry_run" if getattr(args, "dry_run", False) else "model_setup_apply_prompt",
+                ),
                 default=False,
                 use_color=dependencies.use_color(),
                 language=language,
@@ -151,27 +207,37 @@ def model_activation_result(
                 expected_digest = model_preview.config_digest
             if not expected_digest:
                 raise OmhError("--apply-model-config requires --model-config-digest from this preview.")
-            try:
-                receipt = dependencies.apply_hermes_model_config(
-                    model_preview,
-                    confirmed=True,
-                    expected_config_digest=expected_digest,
-                )
-            except HermesModelConfigError as exc:
-                raise OmhError(str(exc)) from exc
-            apply_status = {
-                "status": "applied",
-                "commands": [list(command) for command in receipt.commands],
-                "before_digest": receipt.before_digest,
-                "after_digest": receipt.after_digest,
-            }
-            verification = {
-                "status": "verified" if receipt.verified else "failed",
-                "verified": receipt.verified,
-                "config_digest": receipt.after_digest,
-            }
-            status = "verified" if receipt.verified else "verification_failed"
-            next_action = "model_setup_complete" if receipt.verified else "inspect_model_config"
+            if getattr(args, "dry_run", False):
+                # A dry run never spawns a mutating Hermes command: report the
+                # exact argv the apply would run, checked against the same digest.
+                if expected_digest != model_preview.config_digest:
+                    raise OmhError("expected digest does not match the preview digest")
+                apply_status = {
+                    "status": "dry_run",
+                    "commands": [list(command) for command in model_preview.commands],
+                }
+            else:
+                try:
+                    receipt = dependencies.apply_hermes_model_config(
+                        model_preview,
+                        confirmed=True,
+                        expected_config_digest=expected_digest,
+                    )
+                except HermesModelConfigError as exc:
+                    raise OmhError(str(exc)) from exc
+                apply_status = {
+                    "status": "applied",
+                    "commands": [list(command) for command in receipt.commands],
+                    "before_digest": receipt.before_digest,
+                    "after_digest": receipt.after_digest,
+                }
+                verification = {
+                    "status": "verified" if receipt.verified else "failed",
+                    "verified": receipt.verified,
+                    "config_digest": receipt.after_digest,
+                }
+                status = "verified" if receipt.verified else "verification_failed"
+                next_action = "model_setup_complete" if receipt.verified else "inspect_model_config"
     elif recommendation["status"] == "owner_default":
         status = "defaulted"
         next_action = "model_setup_complete"
@@ -196,6 +262,37 @@ def model_activation_result(
         "claim_boundary": (
             "Model activation uses local metadata and explicit confirmation only. "
             "Observed-before records are not active-model confirmation, and preview is not apply."
+        ),
+    }
+
+
+def _inspection_failed_result(
+    discovery: dict[str, object],
+    candidates: list[dict[str, str]],
+    *,
+    status: str,
+    next_action: str,
+    cause: str,
+    details: dict[str, object],
+) -> dict[str, object]:
+    """The payload for a model step that stopped at inspection: nothing later ran."""
+    return {
+        "schema_version": "omh_model_activation/v1",
+        "status": status,
+        **details,
+        "stages": ["inspect", "confirm_active", "preview", "apply", "verify"],
+        "discovery": discovery,
+        "inspection": None,
+        "candidates": candidates,
+        "recommendations": None,
+        "provider_next_actions": [],
+        "preview": None,
+        "apply": {"status": "not_run", "commands": []},
+        "verification": {"status": "not_run", "verified": False},
+        "next_action": next_action,
+        "claim_boundary": (
+            f"{cause}, so its model config was not inspected, previewed, or changed. "
+            "Nothing about the active model was observed."
         ),
     }
 

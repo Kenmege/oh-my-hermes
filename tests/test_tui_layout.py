@@ -360,6 +360,30 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(lines_text(region), ["", "", "", "t1", "", "s1", "──", "> a", "", "__", "info"])
         self.assertEqual(region[0], BLANK)
 
+    def test_pad_rows_go_under_the_live_block_and_above_the_working_rows(self) -> None:
+        # Pad rows at the region's top left a band between the transcript and the live block it continues (the
+        # owner's report, 2026-10-25); the working row and its tip stay on the composer.
+        parts = Budget(sticky=1, tail=4, slot=0, rule=1, composer=1, bottom_rule=1, info=1, pad=3, floor=2)
+        region = compose(
+            parts,
+            sticky=(Span("↳ you: hi"),),
+            tail=plain("call", "output", "working", "tip"),
+            slot=[],
+            rule=self.rule,
+            composer=plain("> a"),
+            bottom_rule=self.bottom,
+            info=self.info,
+        )
+        self.assertEqual(
+            lines_text(region),
+            ["↳ you: hi", "call", "output", "", "", "", "working", "tip", "──", "> a", "__", "info"],
+        )
+        self.assertEqual(len(region), parts.total)
+        got = allocate(24, 80, sticky=False, tail_rows=4, slot_rows=0, composer_rows=1, min_height=12, tail_floor=2)
+        self.assertEqual((got.pad, got.floor), (12 - 8, 2))
+        self.assertEqual(allocate(24, 80, sticky=False, tail_rows=1, slot_rows=0, composer_rows=1, tail_floor=2).floor,
+                         1)  # never more rows than the tail shows
+
     def test_nothing_budgeted_draws_nothing(self) -> None:
         region = compose(
             budget(composer=1, info=1),

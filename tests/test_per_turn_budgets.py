@@ -11,8 +11,12 @@ moves -- rather than only to the number it returns today.
 from __future__ import annotations
 
 import argparse
+import ast
+import copy
 import dataclasses
+import hashlib
 import importlib.util
+import json
 import re
 import tempfile
 import unittest
@@ -271,13 +275,178 @@ class UpstreamDescriptionLimitPinTests(unittest.TestCase):
         self.assertIn('desc[:SKILL_PROMPT_DESC_LIMIT - 3] + "..."', source)
 
 
+def _module_literals(tree: ast.Module) -> dict[str, object]:
+    """Module-level names whose value is a plain literal, in source order."""
+    names: dict[str, object] = {}
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        for target in targets:
+            if not isinstance(target, ast.Name):
+                continue
+            try:
+                names[target.id] = ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                continue
+    return names
+
+
+def _eval_toolset_expr(node: ast.AST, names: dict[str, object]) -> set[str]:
+    """Evaluate a module-level toolset expression without importing Hermes.
+
+    Hermes moved `_DIRECT_SURFACE_TOOLSETS` from a literal `frozenset({...})`
+    to `CLIENT_SURFACE_TOOLSETS | TOOLSET_SESSION_PLATFORMS.keys()`.  The
+    invariant is the resulting set, not the spelling, so resolve names, literal
+    sets/dicts, `|` unions and `.keys()` calls over literal module constants.
+    """
+    if isinstance(node, ast.Name):
+        value = names.get(node.id)
+        if isinstance(value, (set, frozenset, list, tuple)):
+            return set(value)
+        if isinstance(value, dict):
+            return set(value)
+        raise TypeError(f"{node.id} is not a literal collection at module level")
+    if isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        return {ast.literal_eval(element) for element in node.elts}
+    if isinstance(node, ast.Dict):
+        return {ast.literal_eval(key) for key in node.keys}
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"frozenset", "set", "tuple", "list"}
+        and len(node.args) == 1
+    ):
+        return _eval_toolset_expr(node.args[0], names)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _eval_toolset_expr(node.left, names) | _eval_toolset_expr(node.right, names)
+    if (
+        isinstance(node, ast.Call)
+        and not node.args
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "keys"
+    ):
+        return _eval_toolset_expr(node.func.value, names)
+    if isinstance(node, ast.Attribute):
+        value = names.get(node.attr)
+        if isinstance(value, (set, frozenset, list, tuple, dict)):
+            return set(value)
+    raise TypeError(ast.dump(node))
+
+
+def _session_platform_toolsets(toolsets_source: Path) -> set[str]:
+    """Keys of `TOOLSETS` whose spec declares `platforms` (the session-gated set)."""
+    tree = ast.parse(toolsets_source.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "TOOLSETS" for target in node.targets)
+            and isinstance(node.value, ast.Dict)
+        ):
+            continue
+        names: set[str] = set()
+        for key, value in zip(node.value.keys, node.value.values):
+            if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                continue
+            declares = (
+                isinstance(value, ast.Dict)
+                and any(isinstance(item, ast.Constant) and item.value == "platforms" for item in value.keys)
+            ) or (
+                isinstance(value, ast.Call)
+                and any(keyword.arg == "platforms" for keyword in value.keywords)
+            )
+            if declares:
+                names.add(key.value)
+        return names
+    raise AssertionError(f"{toolsets_source} no longer defines TOOLSETS as a mapping")
+
+
+def _resolve_module_names(tree: ast.Module) -> dict[str, object]:
+    """Literal module names plus reducible `frozenset({...})`/union assignments."""
+    names = _module_literals(tree)
+    for _ in range(len(tree.body)):
+        progressed = False
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            try:
+                value = _eval_toolset_expr(node.value, names)
+            except (TypeError, ValueError):
+                continue
+            if names.get(node.targets[0].id) != value:
+                names[node.targets[0].id] = value
+                progressed = True
+        if not progressed:
+            break
+    return names
+
+
+def _imported_literal_names(source: Path, tree: ast.Module) -> dict[str, object]:
+    """Literal constants of `from <module> import <name>` for sibling Hermes modules."""
+    names: dict[str, object] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        for candidate in (source.parent / f"{node.module}.py", source.parent.parent / f"{node.module}.py"):
+            if candidate.is_file():
+                break
+        else:
+            continue
+        imported = _resolve_module_names(ast.parse(candidate.read_text(encoding="utf-8")))
+        for alias in node.names:
+            original = alias.name
+            if original in imported:
+                names[alias.asname or original] = imported[original]
+            elif original == "TOOLSET_SESSION_PLATFORMS":
+                names[alias.asname or original] = _session_platform_toolsets(candidate)
+    return names
+
+
+def _direct_surface_toolsets(source: Path) -> set[str]:
+    """The resolved `_DIRECT_SURFACE_TOOLSETS` of a Hermes `tools/tool_search.py`."""
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    assignments = [
+        node for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "_DIRECT_SURFACE_TOOLSETS" for target in node.targets)
+    ]
+    if not assignments:
+        raise AssertionError(f"{source} no longer defines _DIRECT_SURFACE_TOOLSETS")
+    names = {**_imported_literal_names(source, tree), **_resolve_module_names(tree)}
+    return _eval_toolset_expr(assignments[-1].value, names)
+
+
+def _tool_search_default_enabled(source: Path) -> str:
+    """`DEFAULT_CONFIG["tools"]["tool_search"]["enabled"]`, read from the AST.
+
+    The surrounding defaults mapping is not a pure literal, so walk mappings
+    for the `tool_search` block instead of parsing one indentation spelling.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values):
+            if not (isinstance(key, ast.Constant) and key.value == "tool_search" and isinstance(value, ast.Dict)):
+                continue
+            for inner_key, inner_value in zip(value.keys, value.values):
+                if (
+                    isinstance(inner_key, ast.Constant)
+                    and inner_key.value == "enabled"
+                    and isinstance(inner_value, ast.Constant)
+                    and isinstance(inner_value.value, str)
+                ):
+                    return inner_value.value
+    raise AssertionError(f"{source} no longer defines a tool_search.enabled default")
+
+
 class UpstreamToolDeferralPinTests(unittest.TestCase):
     """`plugin_tool_schema_chars` is labelled an eager ceiling because Hermes defers plugin tools.
 
     Under Hermes's default `tools.tool_search.enabled: auto` every non-core
     tool outside `_DIRECT_SURFACE_TOOLSETS` is deferrable, which puts the
-    `omh` toolset behind the bridge. Checked from the upstream source text
-    wherever a Hermes checkout is importable; skipped elsewhere, including CI.
+    `omh` toolset behind the bridge.  The invariant is the resolved set, so it
+    is read with `ast` instead of one regex spelling; the actual deferral of a
+    registered `omh` tool is observed end to end by
+    `tools/check_hermes_compatibility.py` in the Hermes compatibility workflow.
     """
 
     def test_the_omh_toolset_is_deferrable_by_default_upstream(self) -> None:
@@ -285,19 +454,14 @@ class UpstreamToolDeferralPinTests(unittest.TestCase):
         defaults = _hermes_source("hermes_cli/config_defaults.py")
         if tool_search is None or defaults is None:
             self.skipTest("no Hermes checkout is importable; tools/tool_search.py cannot be compared")
+        direct = _direct_surface_toolsets(tool_search)
+        self.assertIsInstance(direct, set)
+        self.assertNotIn("omh", direct)
+        self.assertTrue(direct, "the resolved direct-surface set is empty; the expression was not understood")
         source = tool_search.read_text(encoding="utf-8")
-        direct = re.search(r"^_DIRECT_SURFACE_TOOLSETS = frozenset\((\{[^}]*\})\)$", source, re.MULTILINE)
-        self.assertIsNotNone(direct, f"{tool_search} no longer defines _DIRECT_SURFACE_TOOLSETS")
-        assert direct is not None
-        self.assertNotIn('"omh"', direct.group(1))
         # The rule's wording has changed between Hermes versions; its name has not.
         self.assertIn("def is_deferrable_tool_name(", source)
-        block = defaults.read_text(encoding="utf-8").split('"tool_search": {', 1)
-        self.assertEqual(len(block), 2, f"{defaults} has no tool_search defaults block")
-        enabled = re.search(r'^\s*"enabled": "([a-z]+)"', block[1], re.MULTILINE)
-        self.assertIsNotNone(enabled, f"{defaults} tool_search block has no enabled default")
-        assert enabled is not None
-        self.assertIn(enabled.group(1), {"auto", "on"})
+        self.assertIn(_tool_search_default_enabled(defaults), {"auto", "on"})
 
     def test_the_budget_is_described_as_an_eager_ceiling(self) -> None:
         metric = next(m for m in budget_metrics() if m.name == "plugin_tool_schema_chars")
@@ -490,6 +654,34 @@ class PluginToolSchemaProducerTests(unittest.TestCase):
     def test_the_total_is_the_sum_of_the_per_tool_sizes(self) -> None:
         by_tool = per_turn_context.plugin_tool_schema_chars_by_tool()
         self.assertEqual(per_turn_context.plugin_tool_schema_chars(), sum(by_tool.values()))
+
+    def test_parked_dag_schema_growth_is_bounded_without_spending_legacy_content(self) -> None:
+        # The approved preflight schema was also 2479 JSON characters. Remove
+        # only parked additions, retaining preflight's marker refusal and
+        # one-shot cap wording; pin its intact schema, not just its size, so
+        # removing an existing safeguard cannot finance parked growth.
+        schema = per_turn_context.registered_tool_schemas()["omh_dag"]
+        legacy = copy.deepcopy(schema)
+        parked_note = (
+            "A still-running wait may settle parked with "
+            "handle and wake_at (future UTC ISO-8601 or epoch, within 24h); ready reoffers it then, at most three parks. "
+        )
+        self.assertEqual(legacy["description"].count(parked_note), 1)
+        legacy["description"] = legacy["description"].replace(parked_note, "", 1)
+        properties = legacy["parameters"]["properties"]
+        self.assertEqual(properties.pop("handle")["maxLength"], 120)
+        self.assertEqual(properties.pop("wake_at")["type"], ["string", "number"])
+        self.assertEqual(properties["outcome"]["enum"].count("parked"), 1)
+        properties["outcome"]["enum"].remove("parked")
+        encoded = json.dumps(legacy, sort_keys=True, ensure_ascii=False)
+        self.assertEqual(len(encoded), 2479)
+        self.assertEqual(
+            hashlib.sha256(encoded.encode()).hexdigest(),
+            "39be91ffc4db311ad1222cd4f57ded619ceb643063fdaa7bb2f0605fe654d3c5",
+        )
+        delta = per_turn_context.plugin_tool_schema_chars_by_tool()["omh_dag"] - len(encoded)
+        self.assertGreater(delta, 0)
+        self.assertLessEqual(delta, 429)  # Measured feature cap, not general headroom.
 
     def test_a_longer_schema_description_moves_the_total(self) -> None:
         before = per_turn_context.plugin_tool_schema_chars()

@@ -25,6 +25,7 @@ Declared against Hermes 6c61c3e27d (2026-10-07).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import unicodedata
 
 DECLARED_AGAINST_HERMES = "6c61c3e27d"
 
@@ -39,7 +40,8 @@ DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
 # takes no field) rejects `skills.reload {session_id}` with 4000, which must not cost the person their session.
 # `config.get` is answered after the first frame and only sets the busy mode, which has a default (queue).
 # `session.list` is asked unprompted at the start of a fresh session, only to name the last one, and
-# `model.options` only fills `/model`'s picker, while `/model <name>` still switches.
+# `model.options` only fills `/model`'s picker and reads Hermes' configured default model, while
+# `/model <name>` still switches.
 OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "model.options", "session.list", "skills.reload"})
 
 # Methods the TUI calls, with the only keys it ever sends. Sending a key outside
@@ -58,12 +60,14 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     # Typed text into the running turn; see STEER_STATUSES for the answer. A refusal (`rejected`, or an error)
     # puts the text in the TUI's queue while a turn runs, and sends it as a prompt only when the session is idle.
     "session.steer": frozenset({"session_id", "text"}),
-    # See CONFIG_SET_VALUES: `scope` is deliberately not declared.
-    "config.set": frozenset({"key", "value", "session_id"}),
+    # See CONFIG_SET_VALUES: `scope` is deliberately not declared. `confirm_expensive_model` goes only with a model,
+    # once the person picked "switch anyway" after Hermes answered `confirm_required`.
+    "config.set": frozenset({"key", "value", "session_id", "confirm_expensive_model"}),
     "session.list": frozenset({"limit"}),
-    # Bare `/model`: the providers and models Hermes offers this session, for the picker. The pick goes back as
-    # Hermes' own `/model <name> --provider <slug> --session` through `slash.exec`.
-    "model.options": frozenset({"session_id"}),
+    # Bare `/model`: the providers and models Hermes offers this session, for the picker (`refresh` for
+    # `/model --refresh`: Hermes asks the providers again). The pick goes back as `config.set model`. Asked
+    # without a session, the answer's `model` and `provider` are the profile's configured default.
+    "model.options": frozenset({"session_id", "refresh"}),
     # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
     "subagent.tail": frozenset({"session_id", "subagent_id"}),
     # The two actions on one subagent, each on the person's keypress in the agent list
@@ -105,6 +109,56 @@ CONFIG_SET_VALUES: dict[str, frozenset[str]] = {
     "reasoning": frozenset(REASONING_LEVELS),
 }
 CONFIG_SET_SESSION_SCOPE = "session"  # what a yolo answer's `scope` must say
+# `config.set model` switches the session's model, as Ink's `/model` does; over a shared gateway the attach
+# adapter sends it as the owner's `session.mutate`. Its value is only ever `model_switch_value`'s: a model and
+# a provider slug, each one plain word, then `--session` unless the person typed `/model <name>` without it.
+# Hermes reads `--global` as "every new session's default" and `--once` as "the next turn only", and no value
+# the TUI sends can carry either. Without `--session` Hermes' stdio entry applies its own rule
+# (`resolve_persist_behavior`: `model.persist_switch_by_default`), as for its own typed `/model`.
+CONFIG_SET_MODEL = "model"
+MODEL_PROVIDER_FLAG = "--provider"
+MODEL_SESSION_FLAG = "--session"
+
+
+def plain_word(value: object) -> str:
+    """`value` when it is one plain word a command line carries as one argument; "" otherwise.
+
+    It may not start with a dash of any kind (Unicode category Pd, `-` and the en and em dashes among them):
+    Hermes splits `/model`'s arguments on whitespace and reads a token that starts with `--`, or with one of
+    the dashes U+2012 to U+2015 before a flag word, as a flag.
+    """
+    if not isinstance(value, str) or not value or unicodedata.category(value[0]) == "Pd":
+        return ""
+    return value if all(char.isprintable() and not char.isspace() for char in value) else ""
+
+
+def model_switch_value(model: object, provider: object = "", session: bool = True) -> str:
+    """What `config.set model` takes to switch to `model` on `provider`: this session only with `session`.
+
+    Without it, Hermes' own rule decides whether the switch also persists, as
+    for `/model <name>` typed without `--session`. "" when the model, or a
+    provider that is given, is not one plain word.
+    """
+    name, slug = plain_word(model), plain_word(provider)
+    if not name or (provider and not slug):
+        return ""
+    words = [name, MODEL_PROVIDER_FLAG, slug] if slug else [name]
+    return " ".join([*words, MODEL_SESSION_FLAG] if session else words)
+
+
+def model_switch_parts(value: object) -> tuple[str, str] | None:
+    """The model and provider of a value `model_switch_value` made; None for any other value."""
+    words = value.split(" ") if isinstance(value, str) else []
+    session = bool(words) and words[-1] == MODEL_SESSION_FLAG
+    named = words[:-1] if session else words
+    if len(named) == 1:
+        parts = (named[0], "")
+    elif len(named) == 3 and named[1] == MODEL_PROVIDER_FLAG:
+        parts = (named[0], named[2])
+    else:
+        return None
+    built = model_switch_value(*parts, session=session)
+    return parts if built and built == value else None
 
 # Events whose envelope `session_id` is not the live session are dropped, except
 # these: they belong to the gateway, not to a session.
@@ -317,7 +371,8 @@ def call_problem(method: str, params: dict[str, object]) -> str:
     An undeclared key; a `prompt.submit` that truncates without both an int
     `truncate_before_row_id` and `confirm_truncate: true` (a rewind names the
     row the person picked and says so); a `config.set` that Hermes would apply
-    beyond one session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
+    beyond one session (a key or a value outside `CONFIG_SET_VALUES`, a model value
+    `model_switch_value` did not make, or no session id);
     or a `subagent.tail`, `subagent.interrupt` or `subagent.steer` that does
     not name both a session and a subagent (a steer, its text too).
     Hermes answers a tail without a subagent id as a rejected parameter
@@ -342,9 +397,14 @@ def call_problem(method: str, params: dict[str, object]) -> str:
         return ""
     key, value, session_id = params.get("key"), params.get("value"), params.get("session_id")
     allowed = CONFIG_SET_VALUES.get(key) if isinstance(key, str) else None
-    if allowed is None:
+    if "confirm_expensive_model" in params and (key != CONFIG_SET_MODEL or params["confirm_expensive_model"] is not True):
+        return "config.set sends confirm_expensive_model only as true, and only with a model"
+    if key == CONFIG_SET_MODEL:
+        if model_switch_parts(value) is None:
+            return f"config.set model takes only a model_switch_value, not {value!r}"
+    elif allowed is None:
         return f"config.set does not declare the key {key!r} in the gateway contract"
-    if not isinstance(value, str) or value not in allowed:
+    elif not isinstance(value, str) or value not in allowed:
         return f"config.set does not declare the value {value!r} for {key} in the gateway contract"
     if not isinstance(session_id, str) or not session_id:
         return f"config.set {key} needs a session id: without one Hermes writes beyond the session"

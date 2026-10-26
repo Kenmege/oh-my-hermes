@@ -181,6 +181,22 @@ class AgentSkillsProjectionTests(unittest.TestCase):
             self.assertNotIn(name, names)
             self.assertEqual(skill_portability(name), PORTABILITY_HERMES_ONLY)
 
+    def test_hermes_only_is_exactly_skills_absent_from_the_committed_pack(self):
+        # docs/AGENT-SKILLS.md states this rule instead of listing names, which
+        # went stale; the two committed trees and the producer must agree.
+        from omh.skills.catalog_portable import PORTABILITY_HERMES_ONLY, skill_portability
+        root = Path(__file__).resolve().parents[1]
+        hermes = {p.name for p in (root / "skills").iterdir() if (p / "SKILL.md").is_file()}
+        pack = {p.name for p in (root / "agent-skills").iterdir() if (p / "SKILL.md").is_file()}
+        self.assertLessEqual(pack, hermes)
+        for name in sorted(hermes):
+            with self.subTest(skill=name):
+                self.assertEqual(skill_portability(name) == PORTABILITY_HERMES_ONLY, name not in pack)
+        doc = (root / "docs/AGENT-SKILLS.md").read_text(encoding="utf-8")
+        section = doc.split("### Hermes-only boundary\n", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("`skill_portability()` in `src/skills/catalog_portable.py`", section)
+        self.assertNotIn("| --- |", section)
+
     def test_portable_files_name_no_skill_the_portable_projection_does_not_ship(self):
         """A portable host is never told to load a skill it does not have.
 

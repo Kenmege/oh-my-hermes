@@ -567,6 +567,16 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "`absent`, never a working backend, and never a raise (#2166 follow-up).",
     ),
     ClassifiedSite(
+        "src/tui/bot_board.py",
+        "poll_once",
+        INTENTIONAL,
+        "The bot board's reading thread runs the board's readers, which catch the file and SQLite errors "
+        "they expect. Any other failure becomes a snapshot with no profiles and a `problem` naming the "
+        "exception class, which the board draws as `the board could not be read: <class>` in the warning "
+        "colour, so it is never mistaken for a machine without bots; catching it keeps the thread alive "
+        "and keeps a traceback from being printed over the board.",
+    ),
+    ClassifiedSite(
         "src/tui/panels.py",
         "_read",
         INTENTIONAL,
@@ -628,6 +638,17 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "classification, never the exception message or raw backend body, so failure is surfaced "
         "without leaking search content.",
     ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/dag_tool.py",
+        "_single_query_session",
+        INTENTIONAL,
+        "Hermes' optional `agent.oneshot_footprint` detector is imported and called at define time. Only "
+        "ModuleNotFoundError during import naming exactly `agent` or `agent.oneshot_footprint` is the "
+        "documented absent path (no cap). A missing unrelated dependency during import, or any callable "
+        "or truth-conversion failure including ModuleNotFoundError, is refused with the named reason "
+        "`oneshot_detection_unavailable` and actionable text; the raw exception is suppressed. These "
+        "failures are never answered `False`, which would silently disable the one-shot child budget.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
@@ -672,8 +693,14 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 68 -> 69 / 60 -> 61: `search_tool.omh_search_handler`, which classifies
 # unexpected delegated search failures separately from success and optional
 # backend absence, without returning raw backend content.
-EXPECTED_HANDLER_COUNT = 69
-EXPECTED_ANCHOR_COUNT = 61
+# 69 -> 70 / 61 -> 62: `dag_tool._single_query_session`, Hermes' optional
+# one-shot detector at define time (an installed detector that fails is a named
+# refusal, `oneshot_detection_unavailable`, never a healthy `False` that
+# silently drops the child budget; #preflight review).
+# 70 -> 71 / 62 -> 63: `bot_board.BoardReader.poll_once`, the bot board's reading
+# thread, which draws an unexpected reader failure as a named warning row.
+EXPECTED_HANDLER_COUNT = 71
+EXPECTED_ANCHOR_COUNT = 63
 
 
 class DerivedSite(NamedTuple):

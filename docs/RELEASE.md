@@ -608,7 +608,7 @@ The live smoke runs the selected Hermes install path plus:
 ```sh
 hermes skills tap list
 hermes skills list --enabled-only
-hermes skills check oh-my-hermes
+hermes skills check omh-routing
 hermes skills inspect rlaope/oh-my-hermes/skills/omh-routing
 ```
 

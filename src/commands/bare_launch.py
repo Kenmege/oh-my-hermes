@@ -19,6 +19,7 @@ import time
 from typing import NoReturn
 
 from ..paths import resolve_paths
+from ..system.stdin_probe import stdin_is_tty
 
 
 def _paths(args: argparse.Namespace):
@@ -327,19 +328,31 @@ def _hermes_passthrough_argv(args: argparse.Namespace, *, tui: bool = False) -> 
     return argv
 
 
-def _print_resume_hint(
+def _print_exit_card(
     args: argparse.Namespace,
     paths,
     started_at: float,
     ended_at: float,
     returncode: int,
+    closed: tuple[str, str, tuple[str, ...]] = ("", "", ()),
 ) -> None:
-    """Print one copyable `omh --resume <id>` line after the TUI's own epilogue.
+    """Print the OMH exit card after the TUI's own epilogue: the session, its counts, and the `omh` way back.
 
-    Hermes prints its exit summary first, naming `hermes --tui --resume <id>`.
-    OMH cannot suppress that without capturing the child's stdout, which would
-    break the TUI, so this line follows it and gives someone who came in
-    through `omh` the `omh` way back.
+    When the OMH TUI closed the session it exited `CLOSED_EXIT`, so Hermes'
+    launcher printed no exit summary and the card is the only one; it carries
+    what Hermes' summary did (`hermes_resume.exit_card_lines`) and only the
+    `omh` way back. Hermes' own terminal (the fallback) still prints its
+    summary first, naming `hermes --tui --resume <id>`, and the card follows
+    it. A session nothing was said in gets one line saying there is nothing
+    to resume.
+
+    `closed` is the session id and Hermes home the OMH TUI recorded, with the
+    sessions it had open before that one (`tui.launch.closed_session`); when
+    nothing was said in the last one (a `/new` just before quitting), the card
+    names the newest earlier one that has messages. Without a record, the
+    session that ended with the child is recovered from the state database's
+    end stamps (`resumable_session_id`), in the home and profile this launch
+    named.
 
     Only the two exit codes Hermes itself treats as a normal close print
     anything, matching the condition its own epilogue uses. Everything else is
@@ -353,19 +366,33 @@ def _print_resume_hint(
     """
     if returncode not in (0, 130):
         return
+    from pathlib import Path
+
     from ..maintenance.hermes_resume import (
+        NOTHING_SAID_LINE,
+        exit_card_lines,
         hermes_state_db_path,
         resumable_session_id,
-        resume_command_line,
     )
 
     profile = getattr(args, "tui_profile", None) or None
+    session_id, hermes_home, earlier = closed
     try:
-        session_id = resumable_session_id(
-            hermes_state_db_path(paths.hermes_home, profile), started_at, ended_at
-        )
         if session_id:
-            print(resume_command_line(session_id, profile))
+            db_path = Path(hermes_home) / "state.db"
+        else:
+            db_path = hermes_state_db_path(paths.hermes_home, profile)
+            session_id = resumable_session_id(db_path, started_at, ended_at) or ""
+        lines = exit_card_lines(db_path, session_id, ended_at - started_at, profile)
+        for opened in reversed(earlier) if lines == [NOTHING_SAID_LINE] else ():
+            said = exit_card_lines(db_path, opened, ended_at - started_at, profile)
+            if said and said != [NOTHING_SAID_LINE]:
+                lines = said
+                break
+        if lines and lines != [NOTHING_SAID_LINE]:
+            print()  # apart from the transcript above it, or Hermes' epilogue after its own terminal
+        for line in lines:
+            print(line)
     except (OSError, ValueError):
         return
 
@@ -392,7 +419,7 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     """
     import shutil
 
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
+    if not stdin_is_tty() or not sys.stdout.isatty():
         return None
     hermes = shutil.which("hermes")
     if not hermes:
@@ -400,11 +427,12 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     _run_startup_update_check(args)
     paths = _paths(args)
     started_at = time.time()
+    closed: list[tuple[str, str, tuple[str, ...]]] = []
     try:
-        returncode = _run_terminal(hermes, args, paths)
+        returncode = _run_terminal(hermes, args, paths, closed)
     except (OSError, KeyboardInterrupt):
         return None
-    _print_resume_hint(args, paths, started_at, time.time(), returncode)
+    _print_exit_card(args, paths, started_at, time.time(), returncode, closed[0] if closed else ("", "", ()))
     return returncode
 
 
@@ -449,8 +477,16 @@ def _node_available(paths) -> bool:
     return node_available(os.environ, paths.hermes_home)
 
 
-def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
+def _run_terminal(
+    hermes: str, args: argparse.Namespace, paths, closed: list[tuple[str, str, tuple[str, ...]]] | None = None
+) -> int:
     """Run the OMH TUI through `hermes --tui`, or Hermes' own terminal when it cannot start.
+
+    `closed`, when given, receives the session the OMH TUI had open as it
+    exited (`closed_session`), read before its private directory goes.
+
+    `CLOSED_EXIT` is the OMH TUI saying the person closed the session; it is
+    returned as 0, after Hermes' launcher has skipped its own epilogue for it.
 
     Only `FALLBACK_EXIT` together with the sentinel file this launch named
     reopens Hermes' terminal: it is the OMH TUI saying it never got going (it
@@ -466,6 +502,8 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     own, and a SIGTERM sent to `omh` alone leaves it running, as before.
     """
     from ..tui.launch import (
+        CLOSED_EXIT,
+        closed_session,
         exit_on_signals,
         fallback_reason,
         fallback_requested,
@@ -484,13 +522,17 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
                 site=omh_import_root(),
                 omh_home=_tui_omh_home(args, paths),
                 fallback_sentinel=sentinel,
+                session_file=sentinel.with_name("session"),
             )
             child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, tui=True)], env=environment)
             returncode = int(child.wait())
             fell_back = fallback_requested(returncode, sentinel)
             said = fallback_reason(sentinel) if fell_back else []
+            if closed is not None and not fell_back:
+                closed.append(closed_session(sentinel.with_name("session")))
         if not fell_back:
-            return returncode
+            # The person closed the session: Hermes printed no epilogue, and the shell sees the 0 it always did.
+            return 0 if returncode == CLOSED_EXIT else returncode
         blocker = "the OMH TUI did not start (its reason is above)"
     return _run_hermes_fallback(hermes, args, paths, blocker, said)
 

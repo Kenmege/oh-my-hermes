@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..capabilities.toggles import build_capability_policy
-from ..executors import CODING_EXECUTOR_TARGETS
+from ..executors import CODING_EXECUTOR_TARGETS, canonical_executor_profile
 from ..local_store import atomic_write_json, read_json_object, utc_now
 from ..paths import OmhPaths
 from .team import inspect_operating_model, operating_model_ids
@@ -69,7 +69,7 @@ _CATEGORY_ID_BY_EXECUTOR = {
     "claude-code": "prompt-only-coding",
     "generic": "prompt-only-coding",
     "omx-runtime": "plugin-runtime",
-    "omo-runtime": "plugin-runtime",
+    "pi-family-runtime": "plugin-runtime",
     "omc-runtime": "plugin-runtime",
 }
 
@@ -165,7 +165,10 @@ def _explicit_memory_mode(existing: dict[str, Any] | None) -> str | None:
 
 
 def read_setup_profile(paths: OmhPaths) -> dict[str, Any] | None:
-    return read_json_object(paths.setup_profile_path)
+    profile = read_json_object(paths.setup_profile_path)
+    if isinstance(profile, dict) and isinstance(profile.get("default_executor"), str):
+        profile["default_executor"] = canonical_executor_profile(profile["default_executor"])
+    return profile
 
 
 def setup_profile_categories_for_executor(executor: str) -> list[str]:
@@ -233,7 +236,7 @@ def _default_executor_for_categories(selected: list[dict[str, object]], *, defau
 
 
 def _normalize_executor(value: str) -> str:
-    executor = str(value).strip()
+    executor = canonical_executor_profile(str(value).strip())
     if executor not in CODING_EXECUTOR_TARGETS:
         valid = ", ".join(CODING_EXECUTOR_TARGETS)
         raise ValueError(f"unsupported setup default executor: {executor}; expected one of {valid}")
