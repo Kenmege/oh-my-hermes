@@ -4,8 +4,10 @@ from .catalog_types import SkillDefinition, SkillExample
 DEFINITION = SkillDefinition(
     'repro-audit',
     'Evaluation logs versus reported paper conditions: audit supplied HellaSwag results with exact scores and review-gated evidence; never run a model.',
-    ('repro-audit', 'research result audit', 'hellaswag log', 'evaluation log comparison',
-     'compare evaluation results', 'audit harness results', 'reported conditions'),
+    # Every trigger is anchored on the one supported benchmark. Generic
+    # evaluation, audit and reported-conditions phrases dispatched medical,
+    # insurance, sales and CI requests, so they were dropped (#2242 review).
+    ('repro-audit', 'hellaswag log', 'hellaswag results', 'hellaswag score'),
     'Use when supplied evaluation logs must be compared with paper conditions, not when a new evaluation must run.',
     category='research', phase='result-audit', hermes_role='retained-cognition',
     delegation_boundary='retained-catalog-intent',
@@ -20,7 +22,7 @@ DEFINITION = SkillDefinition(
         'Use only supplied local files. If no evaluation record is available, ask for one; do not run or fetch a model.',
         'For agent infrastructure, call `omh paper import-harness --results FILE --metric acc_norm --out NEW_CASE` for native Harness JSON; `--metric acc` is a separate profile.',
         'When authoring a normalized case instead, call `omh paper audit-init --out NEW_CASE [--metric acc_norm]`; omitted metric preserves the acc default. All conditions start unknown.',
-        'Review the selected source claims and paper conditions with the person before recording human confirmation. Imported mappings remain unconfirmed; never approve them automatically.',
+        'Review the selected source claims and paper conditions with the person. No command records confirmation yet: never edit evidence.json or reported.json by hand, so imported claims stay pending and the audit reports them as blockers.',
         'Call `omh paper audit --case CASE --out NEW_REPORT`; read validation.json and report.json, then explain blockers and the offline report. Exit 0 means an audit artifact was written, not that conditions match.',
     ),
     artifact_expectations=('Keep selected evidence only; never copy arbitrary model_args, credentials or raw logs.',
@@ -38,13 +40,14 @@ DEFINITION = SkillDefinition(
                      'A pull request needs code correctness review rather than research evidence mapping.',
                      'The request requires running an evaluator, downloading weights or verifying scientific reproduction.'),
     good_example=SkillExample(prompt="Compare this HellaSwag log to the paper's reported conditions", expected='Ask for the metric, import selected claims, retain pending review and explain audit blockers.', why='The person has existing results, not a request for model execution.'),
-    bad_example=SkillExample(prompt='Explain the word audit in this essay.', expected='Answer the vocabulary question directly.', why='A word in prose is not a request to compare evaluation records.'),
+    bad_example=SkillExample(prompt='Explain how HellaSwag score is computed', expected='Answer the question directly.', why='Naming the benchmark is not a request to compare a supplied record with a paper.'),
     final_checklist=('The selected metric and source pointers are explicit.',
                      'No model or tokenizer was executed; unknown and pending confirmation stay blocked.',
                      'Report paths exist only after observed command success; an accepted artifact is not a reproduction verdict.'),
     recovery_notes=('If validation rejects an input, show sanitized reason codes, not source contents, and request a corrected file.',
+                    'A raw lm-eval results file that holds a home-directory path (model_args pretrained=/home/...) is refused as an attached artifact (sensitive_input); import it with import-harness, which keeps only the derived extract.',
                     'If the output exists, choose a new directory instead of deleting or replacing it.'),
     situations=('compare a benchmark log against paper settings', 'why do evaluation conditions differ',
-                'audit existing HellaSwag results without running a model',
+                'audit existing HellaSwag numbers without running a model',
                 'check whether a log uses acc or acc_norm', 'identify missing evaluation provenance in supplied records'),
 )

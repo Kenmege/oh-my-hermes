@@ -43,10 +43,14 @@ pointers and lexical number token, plus a different hash for the whitelisted
 `artifacts/harness-extract.json`. The original log is not copied or changed;
 arbitrary configuration, `model_args`, credentials and executable text are not
 exported. Hashes establish byte identity, not source truth or loaded model/data.
+A raw results file that contains a home-directory path, as `model_args` usually
+does, is refused as an attached artifact (`sensitive_input`); import it with
+`import-harness`, which attaches only the derived extract.
 
-Hermes must ask the person to review source mappings before recording any human
-confirmation in a normalized case. There is no automatic approval command.
-Imported pending evidence remains ineffective for comparability. Absent a
+Hermes asks the person to review source mappings, but no command records a
+human confirmation yet, and Hermes must not edit `evidence.json` or
+`reported.json` by hand to stand in for one. Imported pending evidence therefore
+remains ineffective for comparability, and an imported case audits as blocked. Absent a
 supported completed-run record, effective run state is `not_run`; this means
 no usable record, not proof that no past evaluation occurred. Scientific verdict
 remains `not_assessed` even for otherwise comparable conditions.

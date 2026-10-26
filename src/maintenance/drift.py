@@ -873,8 +873,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Normalized actor/objective follow-up adds seven employer contrasts.
             # The pi-family runtime rename: `family` alone never names the
             # executor readiness owner (+1).
-            # repro-audit adds one vocabulary control (+1).
-            expected=1116,
+            # repro-audit adds one vocabulary control (+1). Its review replaces
+            # that control, which no trigger reached, with 19 that each say a
+            # phrase the skill once dispatched on or a HellaSwag phrase in
+            # another sense, one per clause of its admission rule (+18).
+            expected=1134,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1379,8 +1382,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Actor/objective follow-up adds two third-person candidate controls.
             # The pi-family runtime rename: asking whether pi-family is ready
             # checks executor readiness (+1).
-            # repro-audit adds one HellaSwag log versus paper request (+1).
-            expected=1132,
+            # repro-audit adds one HellaSwag log versus paper request (+1), and
+            # its review three more: own results, a score against a reported
+            # metric, a courtesy opener (+3).
+            expected=1135,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

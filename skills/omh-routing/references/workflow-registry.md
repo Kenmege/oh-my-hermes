@@ -143,7 +143,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `product-discovery-validation`: `product-discovery-validation`, `product discovery validation`, `product discovery`, `customer discovery`, `customer discovery plan`, `zero to one validation`, `validate the problem before building`, `problem solution interview`, `customer interview guide`
 - `sales-pipeline-review`: `sales-pipeline-review`, `sales pipeline review`, `pipeline review`, `pipeline health`, `pipeline coverage`, `deal review`, `deal health`, `sales forecast review`, `forecast call`
 - `show-reel`: `show-reel`, `show reel`, `showreel`, `product showcase video`, `animated product film`, `motion showcase`, `animated portfolio`, `launch film`, `product teaser video`
-- `repro-audit`: `repro-audit`, `research result audit`, `hellaswag log`, `evaluation log comparison`, `compare evaluation results`, `audit harness results`, `reported conditions`
+- `repro-audit`: `repro-audit`, `hellaswag log`, `hellaswag results`, `hellaswag score`
 - `geospatial-analysis`: `geospatial-analysis`, `geospatial overlay`, `spatial intersection`, `intersect geojson layers`, `compute overlap area`
 - `biomedical-evidence`: `biomedical-evidence`, `biomedical evidence reconciliation`, `ClinVar cross-check`, `variant evidence matrix`, `BioMCP capture reconciliation`
 - `molecular-docking`: `molecular-docking`, `rigid-receptor docking`, `PDBQT docking`, `ligand docking poses`, `AutoDock Vina`

@@ -109,7 +109,32 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("career-employer-reference", "An employer campaign named as a phrase is reference input", 'Explain the phrase "our recruiting team runs a job search campaign".', "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("career-financial-definition", "Financial terms do not request career work", "Explain what a salary bond is in finance.", "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("career-resume-process", "Resume as a verb is not career tailoring", "Explain how to resume a paused process.", "answer_directly", "direct_answer", "ai-job-search"),
-    RoutingPrecisionCase("repro-audit-vocabulary", "Audit vocabulary is not retained research evidence", "Explain the word audit in this essay.", "answer_clarification", "", "repro-audit"),
+    # repro-audit (#2242 review): each control says a phrase the PR once
+    # triggered on, or one of the HellaSwag phrases, in a sense that is not a
+    # comparison of the person's own record with a paper. A clarify that only
+    # lists the workflow as an option passes; forbidden_candidate pins the
+    # sentences where it is not even listed today.
+    RoutingPrecisionCase("repro-audit-score-explainer", "Explaining a benchmark score is a direct answer", "Explain how HellaSwag score is computed", "answer_directly", "direct_answer", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-patient-conditions", "A patient's reported conditions are not paper conditions", "List the reported conditions for this patient", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-insurance-conditions", "An insurance claim's conditions are not evaluation evidence", "Write up the reported conditions for the insurance claim", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-weather-conditions", "Weather conditions are not evaluation conditions", "Summarize the reported conditions from the weather report", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-soccer-evaluations", "Player evaluations are not benchmark records", "Compare evaluation results for our soccer players this season", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-student-evaluations", "Student evaluations are not benchmark records", "Compare evaluation results for my students between midterm and final", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-sales-evaluations", "A sales team review is not a paper comparison", "Compare evaluation results for our sales team", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-rag-eval", "An app eval run is outside the HellaSwag contract", "Compare evaluation results of our RAG pipeline eval run", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-hiring-log", "A hiring log is not an evaluation log", "Check the evaluation log comparison for the hiring process", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-ci-harness", "CI harness results are not paper evidence", "audit harness results from CI", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-survey-audit", "A survey audit is not a benchmark audit", "Run a research result audit of our marketing survey", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-run-request", "Producing a new score is evaluation, which the audit never runs", "Run HellaSwag on my model and report the HellaSwag score", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-generate-log", "Generating a log is evaluation, not an audit of one", "Generate a HellaSwag log for my checkpoint", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-tweet", "Writing about reported results is not comparing a record", "Draft a tweet about the HellaSwag results our paper reported", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-spreadsheet", "Copying published numbers is not comparing a record", "Add the published HellaSwag results to my spreadsheet", "answer_clarification", ""),
+    # One control per clause of `_repro_audit_offers_itself`: no comparison
+    # lead verb, no own record, no paper or reported target, a request to rerun.
+    RoutingPrecisionCase("repro-audit-format-table", "Formatting results for a paper is writing, not a comparison", "Format my HellaSwag results table for the paper's appendix", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-two-papers", "Two papers' numbers are not the person's own record", "Compare the HellaSwag results reported by two different papers", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-last-week", "Comparing two own runs has no paper target", "Compare my HellaSwag results with last week's", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-then-rerun", "A rerun request asks for new numbers", "Compare this HellaSwag log to the paper and then rerun it with 10-shot", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),
     RoutingPrecisionCase("docking-boat-reservation", "Boat docking is not a molecular search", "Explain the boat docking reservation policy.", "answer_directly", "direct_answer", "molecular-docking"),
@@ -8829,6 +8854,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("career-interview", "Interview preparation reaches versioned evidence", "Prepare for my job interview from the selected application version.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("career-tracking", "Outcome tracking requires confirmed events", "Track my job applications and record my explicitly confirmed outcome.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("repro-audit-log-conditions", "Compare retained results to reported conditions", "Compare this HellaSwag log to the paper's reported conditions", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-own-results", "The person's own HellaSwag results against the paper", "Audit my lm-eval HellaSwag results against the paper", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-score-metric", "A score check against a paper's reported metric", "Check whether my HellaSwag score matches the paper's reported acc_norm", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-courtesy-lead", "A courtesy opener still leads with the comparison", "Can you compare my HellaSwag log with the paper's numbers?", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
     RoutingInterventionCase("gis-metric-overlay", "Supplied geometry requires actual metric computation", "Intersect these two GeoJSON layers in a metric CRS and compute overlap area.", "dispatch", "geospatial-analysis", "prepare_geospatial_analysis", "geospatial_analysis"),
     RoutingInterventionCase("bio-public-source-comparison", "Public claims require source-labelled reconciliation", "Cross-check this public BRAF V600E melanoma query with a ClinVar cross-check and trial registry records, retaining disagreements and update dates.", "dispatch", "biomedical-evidence", "prepare_biomedical_evidence", "biomedical_evidence"),
     RoutingInterventionCase("docking-prepared-search", "Prepared inputs require actual bounded pose search", "Run rigid-receptor docking for these prepared PDBQT inputs and declared binding box, returning real poses and replay settings.", "dispatch", "molecular-docking", "prepare_molecular_docking", "molecular_docking"),

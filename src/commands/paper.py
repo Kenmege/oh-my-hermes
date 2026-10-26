@@ -232,16 +232,16 @@ def _add_paper_commands(sub) -> None:
     audit_init = paper_sub.add_parser("audit-init", help="Agent infrastructure: create all-unknown audit inputs; no evaluation.")
     audit_init.add_argument("--out", required=True)
     audit_init.add_argument("--metric", choices=("acc", "acc_norm"), default="acc")
-    audit_init.set_defaults(func=cmd_paper_audit, command="init")
+    audit_init.set_defaults(func=cmd_paper_audit, audit_command="init")
     native = paper_sub.add_parser("import-harness", help="Agent infrastructure: import local Harness claims for human review; no evaluation.")
     native.add_argument("--results", required=True)
     native.add_argument("--metric", choices=("acc", "acc_norm"), required=True)
     native.add_argument("--out", required=True)
-    native.set_defaults(func=cmd_paper_audit, command="import-harness")
+    native.set_defaults(func=cmd_paper_audit, audit_command="import-harness")
     audit = paper_sub.add_parser("audit", help="Agent infrastructure: compare local normalized evidence; no evaluation.")
     audit.add_argument("--case", required=True)
     audit.add_argument("--out", required=True)
-    audit.set_defaults(func=cmd_paper_audit, command="audit")
+    audit.set_defaults(func=cmd_paper_audit, audit_command="audit")
 
     plan = paper_sub.add_parser(
         "plan",

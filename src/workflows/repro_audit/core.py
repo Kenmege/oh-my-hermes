@@ -7,6 +7,7 @@ import os
 import pathlib
 import re
 import stat
+import sys
 from fractions import Fraction
 from importlib import resources
 
@@ -244,6 +245,26 @@ def _artifact_path(value, pointer):
     return parts
 
 
+def system_alias(candidate):
+    """Trust only macOS's own /etc, /tmp and /var links into /private.
+
+    The default temp dir lives under /var. Only root can create a top-level
+    entry, so the exact name and the exact link text are both required; every
+    other symlink, at any depth, is still refused.
+    """
+    if sys.platform != 'darwin' or candidate.parent != pathlib.Path('/') or candidate.name not in ('etc', 'tmp', 'var'):
+        return False
+    try:
+        return os.readlink(candidate) in ('private/' + candidate.name, '/private/' + candidate.name)
+    except OSError:
+        return False
+
+
+def nofollow_unless_alias(index, part):
+    """`O_NOFOLLOW` for every component but a trusted alias directly under `/`."""
+    return 0 if index == 0 and system_alias(pathlib.Path('/', part)) else os.O_NOFOLLOW
+
+
 class _Snapshot:
     """Descriptor-relative, no-follow traversal closes symlink TOCTOU windows."""
     def __init__(self, root):
@@ -259,7 +280,7 @@ class _Snapshot:
             fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
             components = self.root.parts[1:] + tuple(relative.split('/'))
             for i, part in enumerate(components):
-                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+                flags = os.O_RDONLY | os.O_NONBLOCK | nofollow_unless_alias(i, part)
                 if i < len(components) - 1:
                     flags |= os.O_DIRECTORY
                 child = os.open(part, flags, dir_fd=fd)

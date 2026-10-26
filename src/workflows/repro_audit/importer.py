@@ -87,7 +87,8 @@ def import_harness(raw, metric):
     configs = native.get('configs')
     task_config = configs.get('hellaswag') if type(configs) is dict else None
     for obj, pointer in ((config, '/config/num_fewshot'), (task_config, '/configs/hellaswag/num_fewshot')):
-        if type(obj) is dict and 'num_fewshot' in obj:
+        # Some Harness versions write `null` for an unset count; that is absent, not invalid.
+        if type(obj) is dict and obj.get('num_fewshot') is not None:
             fewshot = obj['num_fewshot']
             if type(fewshot) is not _Integer or not 0 <= int(fewshot) <= 2147483647:
                 _fail('invalid_fewshot', '/results')

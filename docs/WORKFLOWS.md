@@ -8697,22 +8697,22 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Use only supplied local files. If no evaluation record is available, ask for one; do not run or fetch a model.
   - For agent infrastructure, call `omh paper import-harness --results FILE --metric acc_norm --out NEW_CASE` for native Harness JSON; `--metric acc` is a separate profile.
   - When authoring a normalized case instead, call `omh paper audit-init --out NEW_CASE [--metric acc_norm]`; omitted metric preserves the acc default. All conditions start unknown.
-  - Review the selected source claims and paper conditions with the person before recording human confirmation. Imported mappings remain unconfirmed; never approve them automatically.
+  - Review the selected source claims and paper conditions with the person. No command records confirmation yet: never edit evidence.json or reported.json by hand, so imported claims stay pending and the audit reports them as blockers.
   - Call `omh paper audit --case CASE --out NEW_REPORT`; read validation.json and report.json, then explain blockers and the offline report. Exit 0 means an audit artifact was written, not that conditions match.
 - Use when: Use when supplied evaluation logs must be compared with paper conditions, not when a new evaluation must run.
 - Do not use when:
   - A supplied article needs section-by-section explanation rather than comparison of retained records.
   - A pull request needs code correctness review rather than research evidence mapping.
   - The request requires running an evaluator, downloading weights or verifying scientific reproduction.
-- Strong routing signals: `repro-audit`, `research result audit`, `hellaswag log`, `evaluation log comparison`, `compare evaluation results`, `audit harness results`, `reported conditions`
+- Strong routing signals: `repro-audit`, `hellaswag log`, `hellaswag results`, `hellaswag score`
 - Good example:
   - Prompt: Compare this HellaSwag log to the paper's reported conditions
   - Expected behavior: Ask for the metric, import selected claims, retain pending review and explain audit blockers.
   - Why: The person has existing results, not a request for model execution.
 - Bad example:
-  - Prompt: Explain the word audit in this essay.
-  - Expected behavior: Answer the vocabulary question directly.
-  - Why: A word in prose is not a request to compare evaluation records.
+  - Prompt: Explain how HellaSwag score is computed
+  - Expected behavior: Answer the question directly.
+  - Why: Naming the benchmark is not a request to compare a supplied record with a paper.
 - Quality bar:
   - Check original bytes remain unchanged and the original and derived evidence hashes bind the intended inputs.
   - Keep missing reported conditions, unusable provenance and run completion blockers visible even when the raw score is known.
@@ -8722,6 +8722,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Report paths exist only after observed command success; an accepted artifact is not a reproduction verdict.
 - Recovery notes:
   - If validation rejects an input, show sanitized reason codes, not source contents, and request a corrected file.
+  - A raw lm-eval results file that holds a home-directory path (model_args pretrained=/home/...) is refused as an attached artifact (sensitive_input); import it with import-harness, which keeps only the derived extract.
   - If the output exists, choose a new directory instead of deleting or replacing it.
 - Required inputs:
   - local Harness results JSON or normalized case

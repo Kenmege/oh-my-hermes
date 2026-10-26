@@ -8,7 +8,7 @@ import stat
 import sys
 import uuid
 from pathlib import Path
-from .core import template_case, load_case, compare_case, ValidationError
+from .core import template_case, load_case, compare_case, nofollow_unless_alias, ValidationError
 from .render import render_report
 from .core import MAX_FILE_BYTES
 from .importer import import_harness
@@ -33,8 +33,8 @@ def _path(value):
 def _open_directory(path):
     fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
     try:
-        for part in path.parts[1:]:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        for index, part in enumerate(path.parts[1:]):
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | nofollow_unless_alias(index, part), dir_fd=fd)
             os.close(fd)
             fd = child
         return fd
@@ -151,20 +151,26 @@ def _publish(out, files, directories=()):
         if not _same_entry(parent, root.name, owned):
             raise _SafetyError()
     except BaseException:
-        if stage_fd is not None:
-            # Remove normal-summary files first if publication had succeeded.
-            for name in created_files:
-                try:
-                    os.unlink(name, dir_fd=stage_fd)
-                except FileNotFoundError:
-                    pass
-            for name in created_dirs:
-                os.rmdir(name, dir_fd=stage_fd)
-            name = root.name if published else stage
-            if _same_entry(parent, name, owned):
-                os.rmdir(name, dir_fd=parent)
-        if stage_fd is None and owned is not None and _same_entry(parent, stage, owned):
-            os.rmdir(stage, dir_fd=parent)
+        # Rollback is best effort: a cleanup that fails (a late entry makes a
+        # directory ENOTEMPTY) leaves that entry in place and must not replace
+        # the failure being reported.
+        try:
+            if stage_fd is not None:
+                # Remove normal-summary files first if publication had succeeded.
+                for name in created_files:
+                    try:
+                        os.unlink(name, dir_fd=stage_fd)
+                    except FileNotFoundError:
+                        pass
+                for name in created_dirs:
+                    os.rmdir(name, dir_fd=stage_fd)
+                name = root.name if published else stage
+                if _same_entry(parent, name, owned):
+                    os.rmdir(name, dir_fd=parent)
+            if stage_fd is None and owned is not None and _same_entry(parent, stage, owned):
+                os.rmdir(stage, dir_fd=parent)
+        except OSError:
+            pass
         raise
     finally:
         if stage_fd is not None:
@@ -182,12 +188,12 @@ def run(args):
         print('omh paper audit: unsupported platform; safe audit filesystem requires macOS or Linux', file=sys.stderr)
         return 2
     try:
-        if args.command == 'audit':
+        if args.audit_command == 'audit':
             # Lexical overlap check does not follow or open any input path.
             case_root, out_root = Path(os.path.abspath(args.case)), _path(args.out)
             if case_root == out_root or case_root in out_root.parents:
                 raise _SafetyError()
-        if args.command == 'import-harness':
+        if args.audit_command == 'import-harness':
             try:
                 source = _path(args.results)
                 parent = _open_directory(source.parent)
@@ -214,7 +220,7 @@ def run(args):
             _publish(args.out, files, ('artifacts',))
             print('omh paper audit: Harness source claims imported; operator review pending; no model execution')
             return 0
-        if args.command == 'init':
+        if args.audit_command == 'init':
             templates = template_case('case-001')
             if args.metric == 'acc_norm':
                 templates['case.json']['profile_id'] = 'hellaswag-acc-norm-audit-v0.2'
@@ -247,5 +253,5 @@ def run(args):
     except OSError:
         print('omh paper audit: I/O failure; no audit completed', file=sys.stderr)
         return 3
-    print('omh paper audit: unknown templates created' if args.command == 'init' else 'omh paper audit: accepted audit created; scientific verdict not assessed')
+    print('omh paper audit: unknown templates created' if args.audit_command == 'init' else 'omh paper audit: accepted audit created; scientific verdict not assessed')
     return 0

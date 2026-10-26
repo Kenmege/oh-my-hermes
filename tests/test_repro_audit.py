@@ -176,6 +176,33 @@ class NativeImport(AuditSurface):
         self.assertEqual(p.returncode, 2)
         self.assertEqual(before, {str(x.relative_to(out)): x.read_bytes() for x in out.rglob('*') if x.is_file()})
 
+    def test_null_fewshot_is_absent_not_invalid(self):
+        source = self.root / 'source.json'
+        source.write_text('{"results":{"hellaswag":{"acc":0.2}},"config":{"num_fewshot":null},'
+                          '"configs":{"hellaswag":{"num_fewshot":5}}}')
+        out = self.root / 'out'
+        p = self.cli('import-harness', '--results', source, '--metric', 'acc', '--out', out)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        actual = json.loads((out / 'actual.json').read_text())
+        self.assertEqual(actual['values']['fewshot.count']['value'], 5)
+        review = json.loads((out / 'import-review.json').read_text())
+        self.assertNotIn('/config/num_fewshot', review['original_json_pointers'])
+
+    def test_unresolved_temp_and_tmp_paths_are_accepted(self):
+        # The default macOS temp dir sits under the /var alias and /tmp is one
+        # itself; neither may be refused as a symlink (#2242 review).
+        unresolved = Path(self.temp.name)
+        source = unresolved / 'source.json'
+        source.write_text('{"results":{"hellaswag":{"acc":0.2}}}')
+        p = self.cli('import-harness', '--results', source, '--metric', 'acc', '--out', unresolved / 'imported')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        p = self.cli('audit', '--case', unresolved / 'imported', '--out', unresolved / 'report')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        if Path('/tmp').is_dir():
+            with tempfile.TemporaryDirectory(dir='/tmp') as tmp:
+                p = self.cli('audit-init', '--out', Path(tmp) / 'case')
+                self.assertEqual(p.returncode, 0, p.stderr)
+
     def test_old_and_new_exact_source_claims_audit_and_minimal_export(self):
         for key in ('acc', 'acc,none'):
             source = self.root / ('source-' + key + '.json')
@@ -226,7 +253,8 @@ class ChatDiscovery(unittest.TestCase):
         self.assertEqual(payload['route']['selected_skill'], 'repro-audit')
         self.assertEqual(payload['chat_response']['kind'], 'repro_audit')
         for message in ('Explain this paper in simple terms', 'Review this pull request for bugs',
-                        'Explain the word audit in this essay'):
+                        'Explain the word audit in this essay', 'List the reported conditions for this patient',
+                        'Compare evaluation results for our sales team', 'Generate a HellaSwag log for my checkpoint'):
             other = build_chat_interaction_payload(message, source='discord')
             self.assertNotEqual(other['route'].get('selected_skill'), 'repro-audit')
 
@@ -237,8 +265,33 @@ class PlatformBoundary(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             out = Path(root) / 'out'
             with patch('omh.workflows.repro_audit.operations.sys.platform', 'win32'):
-                self.assertEqual(cmd_paper_audit(Namespace(command='init', out=str(out), metric='acc')), 2)
+                self.assertEqual(cmd_paper_audit(Namespace(audit_command='init', out=str(out), metric='acc')), 2)
             self.assertFalse(out.exists())
+
+class SystemAliasBoundary(unittest.TestCase):
+    def test_only_top_level_macos_aliases_are_trusted(self):
+        from _toolkit_path_guard import ALIAS_CASES
+        from omh.workflows.repro_audit.core import system_alias
+        for platform, part, link_text, trusted in (*ALIAS_CASES, ('darwin', '/x/var', 'private/var', False)):
+            with self.subTest(platform=platform, part=part, link=link_text), \
+                    patch('sys.platform', platform), patch('os.readlink', return_value=link_text):
+                self.assertIs(system_alias(Path(part)), trusted)
+
+    def test_rollback_failure_keeps_the_original_error(self):
+        from omh.workflows.repro_audit import operations
+        with tempfile.TemporaryDirectory() as root:
+            out = Path(root).resolve() / 'out'
+            with patch.object(operations, '_rename_noreplace', side_effect=OSError(5, 'publication failed')), \
+                    patch.object(operations.os, 'rmdir', side_effect=OSError(66, 'not empty')):
+                with self.assertRaises(OSError) as raised:
+                    operations._publish(str(out), {'a.json': b'{}'}, ('artifacts',))
+            self.assertEqual(raised.exception.strerror, 'publication failed')
+
+    def test_audit_subcommand_keeps_the_top_level_command(self):
+        from omh.commands.main import build_parser
+        args = build_parser().parse_args(['paper', 'audit-init', '--out', 'case'])
+        self.assertEqual((args.command, args.audit_command), ('paper', 'init'))
+
 
 class DistributionContract(unittest.TestCase):
     def test_explicit_package_and_contract_resource_registration(self):

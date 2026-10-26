@@ -5973,6 +5973,38 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
     return False
 
 
+# `repro-audit` compares a HellaSwag record the person holds with what a paper
+# reported. Its phrases name the benchmark only, so they count on one request
+# shape alone: a sentence that leads with a comparison verb, names the
+# person's own record (`my`, `our`, `this`, `these` before `hellaswag`) and
+# the paper or reported target, and asks for no new numbers -- the workflow
+# never runs a model. A tweet, a proofread, a spreadsheet entry or a question
+# about someone else's reported score routes as it did before the skill.
+_REPRO_AUDIT_WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
+_REPRO_AUDIT_LEAD_VERBS = frozenset({"compare", "check", "audit", "verify", "reconcile", "diff"})
+_REPRO_AUDIT_OWNERS = frozenset({"my", "our", "this", "these"})
+_REPRO_AUDIT_TARGETS = frozenset({"paper", "paper's", "papers", "reported", "published"})
+_REPRO_AUDIT_EXECUTION_WORDS = frozenset(
+    {"run", "rerun", "execute", "evaluate", "benchmark", "generate", "produce", "train", "download", "compute"}
+)
+
+
+def _repro_audit_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    """Admit a comparison of the person's own HellaSwag record with a paper's report."""
+    del query_tokens
+    request = after_courtesy(normalized_query.strip())
+    sentence = re.split(r"[.!?;](?:\s|$)", request, maxsplit=1)[0]
+    words = _REPRO_AUDIT_WORD.findall(sentence)
+    if not words or words[0] not in _REPRO_AUDIT_LEAD_VERBS or "hellaswag" not in words:
+        return False
+    benchmark = words.index("hellaswag")
+    return (
+        bool(_REPRO_AUDIT_OWNERS.intersection(words[1:benchmark]))
+        and bool(_REPRO_AUDIT_TARGETS.intersection(words[benchmark + 1:]))
+        and not _REPRO_AUDIT_EXECUTION_WORDS.intersection(words)
+    )
+
+
 @lru_cache(maxsize=1)
 def _spend_gate_trigger_phrases() -> tuple[str, ...]:
     definition = next(item for item in builtin_definitions() if item.name == "spend-gate")
@@ -6048,6 +6080,10 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # (`_market_research_offers_itself`). Like the two gates above it has no
     # boost and stands down no guard.
     "market-research": _market_research_offers_itself,
+    # `repro-audit`: a lead comparison verb over the person's own HellaSwag
+    # record and a paper's report (`_repro_audit_offers_itself`). No boost, no
+    # stand-down.
+    "repro-audit": _repro_audit_offers_itself,
 }
 # A skill whose admission reads where the data goes reads a stricter predicate
 # when the masker removed quoted, code, link or relayed text from the message
