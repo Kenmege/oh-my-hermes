@@ -830,7 +830,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # (+3072) for career discovery/drafting/interviews/evidenced outcomes. Retire
 # the old 22 unused characters, not carry them forward. Existing rows are
 # byte-stable and test_ai_job_search_context_budget pins them and this delta.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525379
+# 525379 -> 525376: the model-setup row drops the retired Apitopia, Qwen and
+# realtime-search/design wording and names Kimi K3 as superseded and DeepSeek
+# as a candidate (-3). Re-derived from the producer; the slack is retired.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525376
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

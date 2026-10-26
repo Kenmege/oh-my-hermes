@@ -217,8 +217,8 @@ hermes --oneshot "Reply with exactly the single word OK." --in "$PWD" \
 `usage.json` names the `model` and `provider` that answered and a
 `cost_status` (`included` for a subscription route, `unknown` when the host
 cannot price it); a provider rejection lands there too, with `failed: true`.
-Gateways serve vendor-prefixed ids (`z-ai/glm-5.2-ultrafast`,
-`moonshotai/kimi-k3-ultrafast`) and reject the bare alias, so probe the id
+Gateways serve vendor-prefixed ids (OpenRouter lists Kimi K3.1 Pro as
+`moonshotai/kimi-k3.1-pro`) and reject the bare alias, so probe the id
 exactly as the manifest will name it. GPT-6 Astra sat "released" for a day
 before the owner account served it; #1310 stayed blocked on this probe, not
 on the release note.
@@ -328,7 +328,7 @@ official contract.
    benchmarks with says how much scaffolding the model wants (DeepSeek:
    Minimal — one shell tool, a one-line persona — scored above Standard).
 4. **Community harnesses** — OpenCode / models.dev, OpenRouter's endpoint
-   listing, oh-my-openagent, oh-my-pi, Aider, and the issue trackers. Use
+   listing, oh-my-pi, Aider, and the issue trackers. Use
    them for divergence (which ids 400, which harnesses drop the passback,
    who records off-peak as list price), never for the contract.
 
@@ -458,7 +458,7 @@ Files that move together (grep the old id to find every site):
 | Hermes-lane editorial chains | `src/coding/model_recommendations.py` |
 | Plugin mirror of those chains + approximate price table | `src/plugin_bundle/omh/hermes_delegation.py` (parity test in `tests/test_plugin_hermes_delegation.py`) |
 | Maestro-lane built-in table + executor option rows | `src/coding/model_routing.py` (`BUILTIN_CATEGORY_MODELS`, `EXECUTOR_MODEL_OPTIONS`) |
-| `model-setup` skill text naming the chains verbatim | `src/skills/catalog_definitions.py` → regenerate `skills/omh-model-setup/SKILL.md` and `docs/WORKFLOWS.md` |
+| `model-setup` skill text naming the chains verbatim | `src/skills/catalog_definitions.py` → regenerate `skills/omh-model-setup/SKILL.md` (`uv run python tools/render_skill_pack.py --write`) and `docs/WORKFLOWS.md`, and re-derive `tests/fixtures/agent_skills_hermes_digests.json` (sorted keys) in the same commit; `test_hermes_projection_byte_stable` names the bodies that moved |
 | Skill body budget note | `src/maintenance/release.py`, only when `release drift` or the body-budget tests report one: `FULL_PROFILE_SKILL_BODY_CHAR_LIMIT` or `FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT` (ceilings with headroom; re-derive from the producer by the policy written there and add the `old -> new` line) |
 | Hand-maintained public chain tables | `site/index.html`, `site/docs/model-routing/index.html` (`tests/test_model_recommendations.py` reads both and checks alias order inside each category row). The READMEs carry no chain table; they link to `docs/INSTALLATION.md#guided-model-setup` |
 | Generated public chain table | `docs/INSTALLATION.md` is not hand-edited: its marked region renders from `SHIPPED_MODEL_RECOMMENDATIONS` through `src/catalogs/model_chain_table.py`. Run `uv run python -m omh.cli docs chain-table` and add the new alias to `MODEL_DISPLAY_LABELS` there — the renderer raises with the key to add when it is missing |
@@ -467,7 +467,7 @@ Files that move together (grep the old id to find every site):
 | Placement and retirement records | `RECOMMENDATION_DECISIONS` (move the slot tuples to the new id) and `RETIREMENT_DECISIONS` (one row per superseded id, with successor, scope, and `decision_date`) in `src/coding/model_portfolio_qualification.py`; `tests/test_model_portfolio_qualification.py` checks every full retiree is out of both lanes, recognition-only, and priced |
 | Claude always-thinking guard | `_ALWAYS_THINKING_CLAUDE_PREFIXES` in `src/plugin_bundle/omh/tools/delegate_route_tool.py` — add the id when the vendor documents that thinking cannot be disabled, so `omh_delegate_route` refuses a no-thinking effort instead of sending a request the API rejects |
 | Benchmark arms | `benchmarks/live-model-tools/v1/manifest.json` — the old generation's arm, where one exists, stays as the baseline of the §8 pair and the new id's arm lands with the measurement PR; a line with no arm (GPT-5.6 Luna) gets both arms in that PR |
-| Last-resort prose | the shared-final-order sentences in `docs/INSTALLATION.md` and `docs/ARCHITECTURE.md` name the `last_resort.any` models by display label; `tests/test_model_recommendations.py` derives the expected order and fails when either sentence goes stale |
+| Last-resort prose | the shared-final-order sentences in `docs/INSTALLATION.md`, `docs/ARCHITECTURE.md`, `site/docs/model-routing/index.html`, and the `model-setup` skill source name the `last_resort.any` models by display label; `tests/test_model_recommendations.py` derives the expected order and fails when any of them goes stale |
 | Contract audit doc paths | `_MODEL_DOCS` in `src/coding/model_contract_coverage.py` |
 | CLI help examples | `src/commands/coding.py` |
 
@@ -532,16 +532,21 @@ base id.
 ```sh
 PYTHONPATH=tests uv run python -m unittest discover -s tests
 uv run python -m compileall -q src tests
-uv run --group lint ruff check src tests
+uv run --group lint ruff check src tests tools packaging
 uv run python -m omh.cli coding model-contract-audit --inventory <fixture.json> --json
 uv run python -m omh.cli docs workflows --check
 uv run python -m omh.cli docs roles --check
+uv run python -m omh.cli docs claims --check --json
 uv run python -m omh.cli docs capability-families --check
 uv run python -m omh.cli docs ulw-inventory --check
 uv run python -m omh.cli docs ulw-site --check
 uv run python -m omh.cli docs chain-table --check
+uv run python -m omh.cli docs agent-skills --check
+uv run python -m omh.cli docs navigation --check
+uv run python -m omh.cli docs skill-shortlist --check
+uv run python -m omh.cli docs skill-sources --check
+uv run python tools/render_skill_pack.py --check
 uv run python -m omh.cli release drift
-uv run --group lint ruff check src tests
 git diff --check
 ```
 

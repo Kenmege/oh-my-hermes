@@ -56,8 +56,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
 
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
-            (skill_capabilities, 522307, FULL_ROW_DELTA_CAP,
-             '774f87898595ab3e55d6e1fc98136afeb6c8b542fdfc943b1c5f917db027982a',
+            # Base and hash re-derived for the model-setup row refresh (-3);
+            # no other row moved.
+            (skill_capabilities, 522304, FULL_ROW_DELTA_CAP,
+             '40a6b22feed8c08256451101236b7cef97191df5d8193dd064ebd09e69ef5d90',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -117,7 +119,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance; only dag-ulw moves versus main.
-        self.assertEqual(_digest(legacy_hashes), '5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3')
+        # Re-derived again for the model-setup body refresh (retired provider
+        # and role-slot wording); only model-setup moves versus main.
+        self.assertEqual(_digest(legacy_hashes), '29e1df7f15ca6602ef52cff0d15309b284638ae5d3793650676e759249e07c76')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
