@@ -1,0 +1,10 @@
+{
+  "capabilities": {
+    "visual_qa": {
+      "status": "unknown"
+    }
+  },
+  "executor": "<LEGACY_PROFILE_ID>",
+  "recorded_at": "2026-10-01T00:00:00Z",
+  "schema_version": "executor_capability_snapshot/v3"
+}

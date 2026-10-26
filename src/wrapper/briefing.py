@@ -1062,7 +1062,7 @@ def _label(profile: str) -> str:
         "codex": "Codex",
         "claude-code": "Claude Code",
         "omx-runtime": "OMX runtime",
-        "omo-runtime": "OMO runtime",
+        "pi-family-runtime": "Pi-family runtime",
         "omc-runtime": "OMC runtime",
         "hermes": "Hermes",
         "generic": "the selected coding agent",

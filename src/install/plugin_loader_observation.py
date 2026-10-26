@@ -48,9 +48,6 @@ def observe_real_loader_registration(
     runner: Runner | None = None,
     timeout_seconds: int = 120,
 ) -> dict[str, Any]:
-    hermes_python = python_executable or _find_hermes_python()
-    if hermes_python is None or not hermes_python.is_file():
-        return _not_observed("hermes_not_installed")
     if not plugin_dir.is_dir():
         return _not_observed("plugin_bundle_not_installed")
     # The code tree owns Hermes' version identity. Without it on the path the
@@ -90,7 +87,10 @@ def observe_real_loader_registration(
             )
         (hermes_home / "config.yaml").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
         env = _probe_env(hermes_home, hermes_code_root)
-        command = [str(hermes_python), "-c", _PROBE_SCRIPT]
+        try:
+            command = _loader_command(python_executable, hermes_code_root, execute, env, timeout_seconds)
+        except _RuntimeUnavailable as exc:
+            return _not_observed(str(exc))
         try:
             result = execute(command, timeout_seconds, env)
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -159,8 +159,11 @@ _BASELINE_ENV = ("SystemRoot", "SYSTEMDRIVE", "windir", "TEMP", "TMP")
 def _probe_env(hermes_home: Path, hermes_code_root: Path | None) -> dict[str, str]:
     """The isolated child's environment: the probe's own, plus the OS baseline."""
     env = {
-        "HOME": os.environ.get("HOME", ""),
+        "HOME": str(hermes_home),
         "HERMES_HOME": str(hermes_home),
+        "OMH_HOME": str(hermes_home / "omh"),
+        "TMPDIR": str(hermes_home),
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PATH": os.environ.get("PATH", ""),
     }
     for key in _BASELINE_ENV:
@@ -172,8 +175,79 @@ def _probe_env(hermes_home: Path, hermes_code_root: Path | None) -> dict[str, st
     return env
 
 
+class _RuntimeUnavailable(ValueError):
+    """A present runtime is distinct from an absent installation."""
+
+
+def _loader_command(python, root, execute, env, timeout):
+    override = python or _hermes_python_override()
+    if override is not None:
+        if not override.is_file():
+            raise _RuntimeUnavailable("hermes_python_override_missing")
+        return [str(override), "-c", _PROBE_SCRIPT]
+    launcher = shutil.which("hermes")
+    if launcher:
+        direct = _python_shebang(Path(launcher))
+        if direct is not None:
+            return [str(direct), "-c", _PROBE_SCRIPT]
+        try:
+            result = execute([launcher, "--print-runtime-command"], min(timeout, 15), env)
+            argv = json.loads(result.stdout) if result.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            raise _RuntimeUnavailable("hermes_runtime_command_failed") from None
+        if (not isinstance(argv, list) or not 1 <= len(argv) <= 64
+                or not all(isinstance(arg, str) and arg and "\0" not in arg for arg in argv)
+                or not Path(argv[0]).is_absolute() or not Path(argv[0]).is_file()):
+            raise _RuntimeUnavailable("hermes_runtime_command_failed")
+        root = root or _launcher_code_root(Path(launcher))
+        if root is None or not (root / "hermes_cli").is_dir():
+            raise _RuntimeUnavailable("hermes_code_tree_absent")
+        # The printer owns interpreter selection. Read PM's committed dependency
+        # environment, never run bootstrap (it repairs/publishes/leases live state).
+        # This is a read-only loader observation, not a host startup simulation.
+        setup = ("import sys, site; from pathlib import Path; "
+                 "sys.dont_write_bytecode = True; "
+                 f"sys.path.insert(0, {str(root)!r}); "
+                 "from pm.environments import committed_venv, site_packages, owning_home_root; "
+                 "from hermes_constants import set_hermes_home_override, reset_hermes_home_override; "
+                 f"root = Path({str(root)!r}); "
+                 "owner = owning_home_root(root); "
+                 "token = set_hermes_home_override(owner); "
+                 "environment = committed_venv(root); "
+                 "reset_hermes_home_override(token); "
+                 "assert environment is not None, 'pm_dependency_environment_absent'; "
+                 "selected = site_packages(environment); "
+                 "assert selected.is_dir(), 'pm_dependency_site_absent'; "
+                 "site.addsitedir(str(selected)); "
+                 f"sys.path.insert(0, {str(root)!r}); ")
+        return [argv[0], "-I", "-c", setup + _PROBE_SCRIPT]
+    legacy = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python"
+    if legacy.is_file():
+        return [str(legacy), "-c", _PROBE_SCRIPT]
+    raise _RuntimeUnavailable("hermes_not_installed")
+
+
+def _launcher_code_root(launcher: Path) -> Path | None:
+    target = launcher.resolve()
+    for root in target.parents:
+        if (root / "hermes_cli").is_dir():
+            return root
+    return None
+
+
+def _python_shebang(executable: Path) -> Path | None:
+    try:
+        first_line = executable.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, UnicodeError, IndexError):
+        return None
+    if first_line.startswith("#!") and "python" in first_line.lower():
+        candidate = Path(first_line[2:].strip())
+        return candidate if candidate.is_file() else None
+    return None
+
+
 def _hermes_python_override() -> Path | None:
-    override = " ".join(os.environ.get("HERMES_PYTHON", "").split())
+    override = os.environ.get("HERMES_PYTHON", "").strip()
     return Path(override).expanduser() if override else None
 
 

@@ -20,7 +20,8 @@ from ..goal_ledger import (
     slop_cleanup_arm_needed,
 )
 from ..hashutil import sha256_text
-from ..local_store import ensure_dir, read_json_object, utc_now
+from ..coding.executors import canonical_executor_profile
+from ..local_store import ensure_dir, read_runtime_record, utc_now
 from ..system.record_revision import DuplicateMutationReplay, guarded_record_update, revision_field_errors
 from ..loopability import LOOPABILITY_ASSESSMENT_SCHEMA, assess_loopability, validate_loopability_assessment
 from ..paths import OmhPaths
@@ -753,7 +754,7 @@ def _started_loopability_assessment(assessment: dict[str, Any], goal_reframe: st
 
 
 def read_loop_cycle(paths: OmhPaths, loop_id: str) -> dict[str, Any]:
-    data = read_json_object(loop_cycle_path(paths, loop_id))
+    data = read_runtime_record(loop_cycle_path(paths, loop_id))
     if data is None:
         raise FileNotFoundError(loop_cycle_path(paths, loop_id))
     validation = validate_loop_cycle(data)
@@ -767,7 +768,7 @@ def list_loop_cycles(paths: OmhPaths) -> list[dict[str, Any]]:
         return []
     cycles: list[dict[str, Any]] = []
     for loop_json in sorted(paths.loops_dir.glob("*/cycle.json")):
-        data = read_json_object(loop_json)
+        data = read_runtime_record(loop_json)
         if isinstance(data, dict):
             cycles.append(data)
     return cycles
@@ -1040,7 +1041,7 @@ def update_loop_permission(
 ) -> dict[str, Any]:
     requested_allow = _valid_actions(allow_actions or [])
     requested_forbid = _valid_actions(forbid_actions or [])
-    requested_executors = _safe_list(allowed_executors or [], limit=120)
+    requested_executors = [canonical_executor_profile(item) for item in _safe_list(allowed_executors or [], limit=120)]
     arm = {"goal_id": ""}
 
     def mutate(cycle: dict[str, Any]) -> dict[str, Any]:
@@ -1051,7 +1052,7 @@ def update_loop_permission(
         existing_forbidden = _string_set(current.get("forbidden_actions", []))
         forbidden = sorted(existing_forbidden | requested_forbid)
         allowed = sorted((existing_allowed | requested_allow) - set(forbidden))
-        existing_executors = _string_set(current.get("allowed_executors", []))
+        existing_executors = {canonical_executor_profile(item) for item in _string_set(current.get("allowed_executors", []))}
         cycle["authority_envelope"] = build_authority_envelope(
             permission_profile="custom",
             allowed_executors=sorted(existing_executors | set(requested_executors)),
@@ -2562,7 +2563,8 @@ def build_authority_envelope(
     allowed.update(_valid_actions(allow_actions or []))
     allowed.difference_update(explicitly_forbidden)
     blocked = sorted(set(LOOP_ACTIONS) - allowed)
-    executors = _safe_list(allowed_executors or [], limit=120)
+    # A profile id an older release used is stored as the current one.
+    executors = list(dict.fromkeys(canonical_executor_profile(item) for item in _safe_list(allowed_executors or [], limit=120)))
     return {
         "permission_profile": permission_profile,
         "allowed_actions": sorted(allowed),

@@ -12,6 +12,7 @@ from omh.coding.coding_delegation import (  # noqa: E402
     _coding_status_request_applies,
     build_coding_delegation_payload,
 )
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_HOME, RUNTIME_USER_PHRASE
 
 
 class CodingStatusAgentTermTests(unittest.TestCase):
@@ -25,11 +26,11 @@ class CodingStatusAgentTermTests(unittest.TestCase):
     """
 
     POSITIVE = (
-        "how far along is senpi?",
+        f"how far along is {PI_DISTRIBUTION_HOST}?",
         "pi 진행상황?",
         "pi 세션 상태 알려줘",
         "opencode 진행상황 알려줘",
-        "omo runtime status?",
+        f"{RUNTIME_USER_PHRASE} status?",
         # The incumbent names keep working alongside the pi family.
         "how far along is codex?",
         "claude code 작업 어디까지 됐어?",
@@ -55,10 +56,10 @@ class CodingStatusAgentTermTests(unittest.TestCase):
                 self.assertFalse(_coding_status_request_applies(message.lower(), "ultrawork"))
 
     def test_status_terms_only_apply_on_the_status_workflow(self) -> None:
-        self.assertFalse(_coding_status_request_applies("how far along is senpi?", "loop"))
+        self.assertFalse(_coding_status_request_applies(f"how far along is {PI_DISTRIBUTION_HOST}?", "loop"))
 
     def test_an_agent_name_without_a_status_request_never_applies(self) -> None:
-        self.assertFalse(_coding_status_request_applies("senpi is a nice tool", "ultraprocess"))
+        self.assertFalse(_coding_status_request_applies(f"{PI_DISTRIBUTION_HOST} is a nice tool", "ultraprocess"))
 
 
 class NamedCodingAgentDelegationTests(unittest.TestCase):
@@ -75,7 +76,7 @@ class NamedCodingAgentDelegationTests(unittest.TestCase):
     names one external CLI with an imperative has already made the explicit
     owner choice, so Codex now reaches the same delegate outcome Claude Code
     always has (#1163's Directive). Naming two owners, a runtime owner such as
-    Hermes coding or the omo-runtime family (pi/senpi/opencode), or asking a
+    Hermes coding or the pi-family-runtime family (pi, its distribution host, opencode), or asking a
     status/diagnostic question about the named executor all keep the clarify
     outcome.
     """
@@ -100,15 +101,15 @@ class NamedCodingAgentDelegationTests(unittest.TestCase):
         self.assertEqual(payload["delegation"]["action"], "clarify")
 
     def test_naming_runtime_owner_still_clarifies(self) -> None:
-        # Runtime owners (Hermes coding, the omo-runtime family) are not
+        # Runtime owners (Hermes coding, the pi-family-runtime family) are not
         # external CLIs -- `EXTERNAL_CLI_PROFILES` is only `("claude-code",
         # "codex")` -- so naming one alone keeps the retained-workflow clarify
         # outcome even with an identical imperative shape to the Codex/Claude
         # Code cases above.
         hermes_payload = build_coding_delegation_payload("Hermes coding으로 구현해줘")
         self.assertEqual(hermes_payload["delegation"]["action"], "clarify")
-        omo_runtime_payload = build_coding_delegation_payload("omo runtime으로 구현해줘")
-        self.assertEqual(omo_runtime_payload["delegation"]["action"], "clarify")
+        pi_family_runtime_payload = build_coding_delegation_payload(f"{RUNTIME_USER_PHRASE}으로 구현해줘")
+        self.assertEqual(pi_family_runtime_payload["delegation"]["action"], "clarify")
 
     def test_status_question_about_named_codex_still_clarifies(self) -> None:
         # A status/diagnostic question about the named executor is not an
@@ -521,7 +522,7 @@ class DelegationContinuityBlockTests(unittest.TestCase):
         self.assertIs(block["subtask_is_not_goal"], True)
         self.assertEqual(block["durable_record"]["kind"], "goal_ledger")
         self.assertTrue(block["durable_record"]["goal_id"])
-        self.assertIn(".omo", block["write_location_policy"]["forbidden_targets"])
+        self.assertIn(RUNTIME_HOME, block["write_location_policy"]["forbidden_targets"])
         self.assertIn(".omx", block["write_location_policy"]["forbidden_targets"])
 
     def test_a_deploy_directive_attaches_a_deploy_obligation(self) -> None:

@@ -7,6 +7,7 @@ from typing import Mapping, Sequence
 
 from ..ingress import compact_source_metadata
 from ..plugin_bundle.omh import dag_core
+from .executors import canonical_executor_profile
 from .fanout_contracts import (
     FANOUT_CLAIM_BOUNDARY,
     FANOUT_CONTRACT_SCHEMA_VERSION,
@@ -447,14 +448,14 @@ def _normalized_unit(unit: Mapping[str, object], index: int) -> dict[str, object
         # '' when undeclared; `reproduction` is the only declared kind.
         "kind": kind,
         "reproduction_command": reproduction_command,
-        "owner": str(owner) if owner is not None and str(owner).strip() else None,
+        "owner": canonical_executor_profile(str(owner)) if owner is not None and str(owner).strip() else None,
         "file_scope": sorted(set(file_scope)),
         "depends_on": sorted(set(depends_on)),
         "model": str(unit.get("model", "") or "").strip(),
         "reasoning_effort": str(unit.get("reasoning_effort", "") or "").strip(),
         "role": "review" if review_role is not None else raw_role,
         "review_role": review_role or "",
-        # `category` accepts the OMO/ULW ulw-* aliases the resolver already
+        # `category` accepts the ULW ulw-* aliases the resolver already
         # normalizes; validate_fanout_units rejects unknown vocabulary so a
         # typo fails the freeze instead of silently routing by role only.
         "category": str(unit.get("category", unit.get("model_category", "")) or "").strip(),

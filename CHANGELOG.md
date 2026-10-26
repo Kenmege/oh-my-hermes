@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Setup no longer writes a second `plugins.enabled` when a column-0
+  comment sits inside `plugins:` (#2304).** Hermes' own config separates the
+  children of `plugins:` with `# ====` banners written at column 0. OMH's
+  config readers and writers ended a top-level node at the first unindented
+  line, comment included, so an `enabled:` list below such a banner was
+  never seen: the guard passed, setup inserted a second `enabled:` under
+  `plugins:`, and Hermes then refused the whole file as a duplicate key, so
+  no plugin selection was read at all. A comment now never ends a node, in
+  every line reader and writer of the config adapter (`plugins`, `skills`,
+  `memory` and `display`), so setup adds `omh` to the one existing list and
+  uninstall takes it back out. Setup also reads its composed text back
+  before returning it and refuses, with the file untouched, when it would
+  not hold exactly the earlier `plugins.enabled` names plus `omh`.
+
 - **The installers no longer run Python modules from the current directory
   or `PYTHONPATH`.** `install.sh` and `install.ps1` start venv creation, pip,
   the command-discovery probes, and the OMH CLI with `-I`, or with `-P -E` in

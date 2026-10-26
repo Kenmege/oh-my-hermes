@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from ..coding.executors import canonical_executor_profile
 from ..hermes_planning import (
     attach_plan_artifact_to_wrapper_contract,
     build_hermes_plan_payload,
@@ -328,7 +329,7 @@ def _add_hermes_commands(sub) -> None:
     plan_accept.add_argument("path", help="Path to a hermes_plan/v1 Markdown artifact.")
     plan_accept.add_argument("--summary", default="", help="Optional metadata-only acceptance summary.")
     plan_accept.add_argument("--write-context-pack", action="store_true", help="Write a handoff_context_pack/v1 pointer for the accepted plan.")
-    plan_accept.add_argument("--executor", default="codex", choices=("codex", "generic", "claude-code", "hermes", "omx-runtime", "omo-runtime", "omc-runtime"))
+    plan_accept.add_argument("--executor", type=canonical_executor_profile, default="codex", choices=("codex", "generic", "claude-code", "hermes", "omx-runtime", "pi-family-runtime", "omc-runtime"))
     plan_accept.set_defaults(func=cmd_hermes_plan_accept)
 
     plan_revise = hermes_sub.add_parser("plan-revise", help="Mark a file-backed Hermes plan as revised.")
@@ -383,6 +384,7 @@ def _add_hermes_commands(sub) -> None:
     )
     compose.add_argument(
         "--coding-owner",
+        type=canonical_executor_profile,
         default=CODING_OWNER_CHOICE_PENDING,
         choices=WORKFLOW_COMPOSITION_CODING_OWNERS,
         help=(

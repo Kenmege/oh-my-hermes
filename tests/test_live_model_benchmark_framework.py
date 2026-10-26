@@ -158,10 +158,10 @@ class OmhBenchmarkFrameworkDelegationTests(_UpstreamDelegationBase):
             "test_offline_receipt_counts_zero_paid_calls",
         )
 
-    def test_help_names_omh_and_never_omo(self) -> None:
+    def test_help_names_omh_and_no_other_runtime(self) -> None:
         self._delegate(
             "OmhBenchmarkFrameworkTests",
-            "test_help_names_omh_and_never_omo",
+            "test_help_names_omh_and_no_other_runtime",
         )
 
     def test_run_record_schema_matches_observation_summary(self) -> None:

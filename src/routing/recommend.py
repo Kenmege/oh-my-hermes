@@ -6,6 +6,7 @@ from functools import lru_cache
 import re
 
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_KOREAN_PHRASES, data_share_request_admitted
+from ..coding.pi_family_interop import PI_DISTRIBUTION_HOST, RUNTIME_SHORT_NAME, RUNTIME_USER_PHRASE, SCORING_ONLY_TRIGGERS
 from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_KOREAN_PHRASES, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
@@ -961,16 +962,16 @@ _HARNESS_SESSION_INVENTORY_INTENT_PHRASES = (
     "control pane inventory",
     "codex session inventory",
     "claude code session inventory",
-    # omo-runtime hosts; bare "pi" belongs to Raspberry-Pi routing, so pi only
+    # pi-family-runtime hosts; bare "pi" belongs to Raspberry-Pi routing, so pi only
     # appears inside longer phrases here.
-    "senpi session inventory",
+    f"{PI_DISTRIBUTION_HOST} session inventory",
     "opencode session inventory",
-    "omo runtime session inventory",
+    f"{RUNTIME_USER_PHRASE} session inventory",
     "pi session inventory",
     "find previous coding session",
     "recover coding session",
     "previous codex coding session",
-    "previous senpi coding session",
+    f"previous {PI_DISTRIBUTION_HOST} coding session",
     "previous pi coding session",
     "coding session recall",
     "세션 인벤토리",
@@ -1002,11 +1003,11 @@ _HARNESS_SESSION_INVENTORY_CONTEXT_TOKENS = frozenset(
         "codex",
         "claude",
         "hermes",
-        # omo-runtime hosts. Bare "pi" cannot appear here: routing tokens are
+        # pi-family-runtime hosts. Bare "pi" cannot appear here: routing tokens are
         # three characters or longer, so it is unreachable as a token.
-        "senpi",
+        PI_DISTRIBUTION_HOST,
         "opencode",
-        "omo",
+        RUNTIME_SHORT_NAME,
         "wrapper",
         "하네스",
         "세션",
@@ -2865,6 +2866,10 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # data-analysis clarify to a `plan` one, which is the widening this table
     # exists to prevent.
     "plan": frozenset({"make", "write"}),
+    # "pi-family" names the runtime only as a whole phrase: `family` alone is an
+    # everyday word ("is my family ready for the move?") and bare `pi` belongs
+    # to Raspberry-Pi routing.
+    "executor-runtime-readiness": frozenset({"family", "pi"}),
     # `dag-ulw` is reached through its complete phrases ("dag ulw", "ulw dag", ...) and by intent through the
     # heavy-lane redirect in `routing/chat.py`. Its words are held back: `dag` alone is data-pipelines'
     # ("airflow dag"), and `ulw` / `ultrawork` alone are `ultrawork`'s own names.
@@ -4358,10 +4363,20 @@ def _one_word_self_name(definition: SkillDefinition) -> str:
     return "" if (" " in name or "-" in name) else name
 
 
+# Triggers that score but are never written into generated skill text
+# (`SCORING_ONLY_TRIGGERS` in the interop names): the runtime's short name is
+# an external product name the repo does not ship, yet a user who types it
+# still means this skill.
+_SCORING_ONLY_TRIGGERS = SCORING_ONLY_TRIGGERS
+
+
 def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:
     triggers = definition.triggers + tuple(
         phrase
-        for phrase in _user_trigger_pack_phrases().get(definition.name, ())
+        for phrase in (
+            *_user_trigger_pack_phrases().get(definition.name, ()),
+            *_SCORING_ONLY_TRIGGERS.get(definition.name, ()),
+        )
         if phrase not in definition.triggers
     )
     trigger_phrases = tuple(normalized_phrase(trigger) for trigger in triggers)

@@ -56,10 +56,14 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
 
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
         for producer, base, cap, expected_hash, limit in (
-            # Base and hash re-derived for the model-setup row refresh (-3);
-            # no other row moved.
-            (skill_capabilities, 522304, FULL_ROW_DELTA_CAP,
-             '40a6b22feed8c08256451101236b7cef97191df5d8193dd064ebd09e69ef5d90',
+            # 522307 -> 522331 and the sibling digest re-derived: the pi-family
+            # runtime rename moved four sibling rows by +6 each, and the
+            # executor-runtime-readiness row's trigger count went +35 -> +34
+            # when its runtime names became scoring-only (same length).
+            # 522331 -> 522328 and the digest re-derived again for the
+            # model-setup row refresh (-3); no other row moved.
+            (skill_capabilities, 522328, FULL_ROW_DELTA_CAP,
+             '643e140b877a6e5b369a7c107cc9a827852a26c280bceed586ff1fdeeb6593d4',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -118,10 +122,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived from both sources: the vi rewordings above plus
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
-        # baseline-verification guidance; only dag-ulw moves versus main.
+        # baseline-verification guidance, then the pi-family runtime rename in
+        # model-setup, maestro, ultrawork, and executor-runtime-readiness.
         # Re-derived again for the model-setup body refresh (retired provider
         # and role-slot wording); only model-setup moves versus main.
-        self.assertEqual(_digest(legacy_hashes), '29e1df7f15ca6602ef52cff0d15309b284638ae5d3793650676e759249e07c76')
+        self.assertEqual(_digest(legacy_hashes), '442aec8ac07203adcdaa407ba09d9696043a7924986851a669f04efeb8e7e201')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
@@ -142,8 +147,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         expected = {
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
-            'pre_llm_call_context_chars_max': 5780,
-            'pre_llm_call_context_fallback_chars_max': 7216,
+            'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
+            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
             'awareness_primer_markdown_chars': 3520,
             'awareness_primer_context_chars': 1440,
             'awareness_workflow_context_chars_max': 1500,

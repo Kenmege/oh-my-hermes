@@ -133,6 +133,7 @@ Each handoff pins the manifest by `revision` and `digest`, attached as a
 detached copy. A later edit changes the manifest's digest while the handoff
 keeps naming the one it carried, which is what makes the divergence detectable
 rather than invisible.
+
 ## Role Context Packs
 
 Every prepared coding handoff also names one `role_context_pack/v1`: the

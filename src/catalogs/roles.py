@@ -152,7 +152,7 @@ _ROLES = (
         primary_skills=("ultrawork", "ai-slop-cleaner"),
         primary_harnesses=("goal-execution", "parallel-delivery", "coding-handling"),
         wrapper_actions=("choose_executor", "show_prompt_handoff", "show_runtime_handoff", "start_team", "start_swarm", "prepare_worktree", "send_to_executor", "show_status"),
-        evidence_boundary="A prepared coding handoff is not executor/runtime dispatch, worker start, worktree creation, result, verification, review, CI, merge readiness, or merge evidence. Hermes/OMX/OMO/OMC runtime handoffs must record separate `runtime_observation/v1` events before the status can move from prepared to observed.",
+        evidence_boundary="A prepared coding handoff is not executor/runtime dispatch, worker start, worktree creation, result, verification, review, CI, merge readiness, or merge evidence. Hermes/OMX/pi-family/OMC runtime handoffs must record separate `runtime_observation/v1` events before the status can move from prepared to observed.",
         legacy_ids=("coding-handoff", "runtime-handoff-guidance", "codex-handoff-guidance"),
     ),
     RoleDefinition(
@@ -329,7 +329,7 @@ def roles_reference_markdown() -> str:
         "| `solo-operator` | Keep the safest single-operator defaults and ask before executor dispatch. |",
         "| `small-team` | Bias chat narration toward product, technical, QA, and release ownership without installing team files. |",
         "| `research-ops` | Keep Hermes focused on research, strategy, and meeting workflows. |",
-        "| `coding-runtime-team` | Make selected Hermes/OMX/OMO/OMC runtime handoffs and observed runtime ladder status first-class. |",
+        "| `coding-runtime-team` | Make selected Hermes/OMX/pi-family/OMC runtime handoffs and observed runtime ladder status first-class. |",
         "",
         "Use `omh setup --operating-model <id>` only when a profile should start from one",
         "of these postures. Use `omh setup --profile-pack <id>` only when you also want",

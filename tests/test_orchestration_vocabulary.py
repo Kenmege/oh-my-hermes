@@ -173,7 +173,7 @@ class ExternalCliProfileSetTests(unittest.TestCase):
         self.assertTrue(set(EXTERNAL_CLI_PROFILES) < set(_EXTERNAL_PROFILES))
         self.assertEqual(
             set(_EXTERNAL_PROFILES) - set(EXTERNAL_CLI_PROFILES),
-            {"omx-runtime", "omo-runtime", "omc-runtime", "generic"},
+            {"omx-runtime", "pi-family-runtime", "omc-runtime", "generic"},
         )
 
 

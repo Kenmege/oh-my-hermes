@@ -377,7 +377,7 @@ class RepairCardContractTests(unittest.TestCase):
         return build_pre_handoff_repair_card(verdict, repair_command=_repair_command(profile))
 
     def test_every_owner_gets_the_same_closed_key_set(self) -> None:
-        for profile in ("codex", "claude-code", "hermes", "generic", "omo-runtime"):
+        for profile in ("codex", "claude-code", "hermes", "generic", "pi-family-runtime"):
             with self.subTest(profile=profile):
                 card = self._card(profile)
                 self.assertEqual(sorted(card), sorted(PRE_HANDOFF_REPAIR_CARD_KEYS))

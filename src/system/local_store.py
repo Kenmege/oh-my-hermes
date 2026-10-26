@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from ..plugin_bundle.omh.awareness_delivery import _with_windows_retry
+from ..plugin_bundle.omh.pi_family_names import canonical_runtime_record
 
 try:
     import fcntl
@@ -215,6 +216,23 @@ def read_json_object_result(
         return read_json_object(path, encoding=encoding), None
     except (OSError, JSONDecodeError, RecursionError, ValueError) as exc:
         return None, str(exc)
+
+
+def read_runtime_record(path: Path) -> dict[str, Any] | None:
+    """A stored run, session, or handoff record, read with today's profile ids.
+
+    `read_json_object` plus `canonical_runtime_record`: a record an older
+    release wrote with a since-renamed executor profile id loads as the current
+    profile, and a later write of the same record stores only the current id.
+    Not for digest-sealed records, whose stored bytes must stay as written.
+    """
+    record = read_json_object(path)
+    return None if record is None else canonical_runtime_record(record)  # type: ignore[return-value]
+
+
+def read_runtime_record_result(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    record, error = read_json_object_result(path)
+    return (None if record is None else canonical_runtime_record(record)), error  # type: ignore[return-value]
 
 
 def read_jsonl_objects(path: Path) -> tuple[list[dict[str, Any]], list[str]]:

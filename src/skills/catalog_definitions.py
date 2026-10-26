@@ -722,7 +722,7 @@ _DEFINITIONS = [
         phase="single-cycle-plan-to-pr",
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
-        handoff_policy="Keep the one-cycle process orchestration, source/codebase research, planning, review framing, docs-sync checks, PR narration, and evidence boundaries in Hermes; convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
+        handoff_policy="Keep the one-cycle process orchestration, source/codebase research, planning, review framing, docs-sync checks, PR narration, and evidence boundaries in Hermes; convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
         required_inputs=("task statement", "repo or workspace context", "executor preference or choose-at-handoff policy", "verification expectations"),
         expected_outputs=("ralplan-ready context and plan", "ultragoal or selected executor/runtime handoff", "code-review gate", "docs sync checklist", "single-cycle PR-ready summary with observed evidence and gaps"),
         artifact_expectations=("process checklist or runtime record when a wrapper can observe the stages", "prepared handoff artifact only after implementation owner selection", "docs-specialist claim check when public behavior changes"),
@@ -1183,7 +1183,7 @@ _DEFINITIONS = [
             "for each lane's label but pass the user's model and reasoning effort as explicit overrides in "
             "`omh_delegate_route` on every lane, so each dispatch runs the named model and the lane status shows "
             "it. [capability:delivery_boundary] Convert implementation into an "
-            "external executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, or another coding agent "
+            "external executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, or another coding agent "
             "only when the user accepts that owner; no external CLI is the default owner, and external handoff is "
             "a separate opt-in path, never the default recommendation."
         ),
@@ -1433,7 +1433,7 @@ _DEFINITIONS = [
         handoff_policy=(
             "Convert an explicitly chosen external coding owner into a prepared handoff: claude-code as a "
             "prompt-only `coding_prompt_handoff/v1` (never dispatchable, never described as a run), codex as a "
-            "dispatchable `coding_executor_handoff/v1`, and omx-runtime/omo-runtime/omc-runtime as "
+            "dispatchable `coding_executor_handoff/v1`, and omx-runtime/pi-family-runtime/omc-runtime as "
             "`coding_runtime_handoff/v1`. "
             f"This engine loads only after that choice is made -- {HERMES_HARNESS_DEFAULT_WORDING} -- and it "
             "never substitutes for the Hermes harness path or picks the owner itself."
@@ -1484,7 +1484,7 @@ _DEFINITIONS = [
             "the prepared handoff record is never dispatchable and never described as a run; only the "
             "fanout-dispatch bridge -- `omh coding fanout dispatch` or its `omh coding run` single-run entry -- "
             "ever spawns a CLI), codex is a dispatchable `coding_executor_handoff/v1`, and "
-            "omx-runtime/omo-runtime/omc-runtime are `coding_runtime_handoff/v1`.",
+            "omx-runtime/pi-family-runtime/omc-runtime are `coding_runtime_handoff/v1`.",
             "Compose the prompt from the selected profile's DISCOVERED skills via `omh coding executor-skills "
             "--profile <profile>`: arrange the returned skills by the unit's role recipe, one named skill per "
             "step, using each skill's own invocation string verbatim (`/name`, `/pack:name` from its manifest, "
@@ -8819,7 +8819,7 @@ _DEFINITIONS = [
         handoff_policy=(
             "Keep Hermes-native model setup in Hermes: inspect its config, provider plugins, auth presence, and aliases, "
             "then use Hermes-native config/auth flows for an approved change. Maestro coordinates prepared external coding "
-            "handoffs for Codex, Claude Code, OMO/OMC/OMX, and generic owners; it is not an executor and never owns Hermes "
+            "handoffs for Codex, Claude Code, pi-family/OMC/OMX, and generic owners; it is not an executor and never owns Hermes "
             "aliases, providers, skill execution, or Kanban model selection. Diagnosis uses local Hermes config/auth commands "
             "and reads only config plus auth/plugin presence; it never reads `.env` values, credential material, or session prose. "
             "Show the exact Hermes-native command/config preview, bind it to the inspected config digest, and apply only after "
@@ -8858,7 +8858,7 @@ _DEFINITIONS = [
         )
         + (
             "Treat each Hermes model alias, semantic category, and external owner as an independent prerequisite/diagnose/recommend/apply unit instead of one combined change.",
-            "Explain the shipped recommendations as editable editorial defaults, not benchmarks or allowlists: ultrabrain uses GPT-6 Astra; deep prefers Claude Opus 5.5, GPT-6.1 Sol, then Kimi K3.1 Pro at high; architect prefers Claude Opus 5.5, GPT-6 Astra, Claude Fable 5.1, then Kimi K3.1 Pro at xhigh; unspecified-high prefers GPT-6.1 Sol, Claude Opus 5.5, then Kimi K3.1 Pro; unspecified-low prefers GLM-5.3, DeepSeek V4.1 Flash, GPT-6.1 Sol, then Claude Sonnet 5.5 at low; quick prefers GLM-5.3 Flash, GPT-6 Luna, Claude Haiku 5.5, then Kimi K3.1 Pro at low; writing prefers Claude Opus 5.5, Claude Sonnet 5.5, Kimi K3.1 Pro, then Gemini 3.1 Pro; visual-engineering prefers Claude Opus 5.5, Claude Fable 5.1, Gemini 3.1 Pro, then Kimi K3.1 Pro; artistry prefers Gemini 3.1 Pro, Claude Opus 5.5, Claude Fable 5.1, then Kimi K3.1 Pro; capable prefers Claude Opus 5.5, GPT-6.1 Sol, Claude Fable 5.1, then Kimi K3.1 Pro at medium; simple-work prefers GPT-6 Luna, Claude Haiku 5.5, then DeepSeek V4.1 Flash at low; and deep-work prefers Claude Opus 5.5 then GPT-6.1 Sol at max. Each chain names the current generation of a model line; a superseded generation (Fable 5, Opus 5, GLM 5.2, DeepSeek V3.2, GPT-5.6 Luna, GPT-5.6 Sol, GPT-5.6 Terra, GPT-6 Sol, Claude Haiku 4.5, Kimi K3) or a retired line (Qwen3-Coder) is kept only by a machine-level chain override. Chain customization is a config edit: a category written into ~/.omh/routing/model-chains.json (mixture_chain_overrides/v1, seeded by omh setup) replaces that chain for routing, fallback, and HUD labels without touching code. The interactive omh setup also records which providers the machine holds and whether it has a Claude Code subscription in ~/.omh/routing/providers.json (provider_entitlements/v1); every chain is then reordered so served entries lead, nothing is removed, and the Claude Code subscription only seeds the Maestro lane's --model preference because Hermes cannot spend it.",
+            "Explain the shipped recommendations as editable editorial defaults, not benchmarks or allowlists: ultrabrain uses GPT-6 Astra; deep prefers Claude Opus 5.5, GPT-6.1 Sol, then Kimi K3.1 Pro at high; architect prefers Claude Opus 5.5, GPT-6 Astra, Claude Fable 5.1, then Kimi K3.1 Pro at xhigh; unspecified-high prefers GPT-6.1 Sol, Claude Opus 5.5, then Kimi K3.1 Pro; unspecified-low prefers GLM-5.3, DeepSeek V4.1 Flash, GPT-6.1 Sol, then Claude Sonnet 5.5 at low; quick prefers GLM-5.3 Flash, GPT-6 Luna, Claude Haiku 5.5, then Kimi K3.1 Pro at low; writing prefers Claude Opus 5.5, Claude Sonnet 5.5, Kimi K3.1 Pro, then Gemini 3.1 Pro; visual-engineering prefers Claude Opus 5.5, Claude Fable 5.1, Gemini 3.1 Pro, then Kimi K3.1 Pro; artistry prefers Gemini 3.1 Pro, Claude Opus 5.5, Claude Fable 5.1, then Kimi K3.1 Pro; capable prefers Claude Opus 5.5, GPT-6.1 Sol, Claude Fable 5.1, then Kimi K3.1 Pro at medium; simple-work prefers GPT-6 Luna, Claude Haiku 5.5, then DeepSeek V4.1 Flash at low; and deep-work prefers Claude Opus 5.5 then GPT-6.1 Sol at max. Each chain names the current generation of a model line; a superseded generation (Fable 5, Opus 5, GLM 5.2, DeepSeek V3.2, GPT-5.6 Luna, GPT-5.6 Sol, GPT-5.6 Terra, GPT-6 Sol, Claude Haiku 4.5, Kimi K3, Grok Code Fast) or a retired line (Qwen3-Coder) is kept only by a machine-level chain override. Chain customization is a config edit: a category written into ~/.omh/routing/model-chains.json (mixture_chain_overrides/v1, seeded by omh setup) replaces that chain for routing, fallback, and HUD labels without touching code. The interactive omh setup also records which providers the machine holds and whether it has a Claude Code subscription in ~/.omh/routing/providers.json (provider_entitlements/v1); every chain is then reordered so served entries lead, nothing is removed, and the Claude Code subscription only seeds the Maestro lane's --model preference because Hermes cannot spend it.",
             "For X/Twitter scraping or trend analysis, keep x_platform_data as a domain affinity rather than a role alias: prefer confirmed-active Grok, then Kimi K3.1 Pro, then Gemini, without removing the rest of the route or overriding an explicit model.",
             "When a recommendation head is missing, choose the first confirmed-active owner-compatible candidate in that chain. Only after every selected category, role-slot, and domain chain is exhausted, consult the shared final order Claude Opus 5.5 then GPT-6.1 Sol. If no candidate is confirmed active anywhere, keep the selector on its owner's native default model and let the rest of OMH setup finish without a model-config write.",
             "Give provider-specific native next actions without claiming provider readiness: use installed Hermes flows for OpenAI OAuth/OpenAI Codex, Anthropic or an existing Claude provider, Qwen OAuth or Alibaba, Gemini/Google/Vertex, Grok/xAI, Kimi, GLM/Z.AI, DeepSeek, or an already-working custom provider; preserve working alternatives.",

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Sequence
 
+from .pi_family_interop import PI_DISTRIBUTION_HOST
 from .dynamic_workflow_contracts import PREPARED_NOT_OBSERVED
 from .executor_capability_snapshots import KNOWN_CAPABILITY_NAMES, build_executor_capability_snapshot
 
@@ -29,13 +30,13 @@ _COST_TIERS: Final[dict[str, str]] = {
     "claude-code": "operator-selected",
     "glm": "medium",
     "codex": "operator-selected",
-    # pi-family hosts (pi, its senpi distribution, opencode) route whatever
+    # pi-family hosts (pi, its distribution host, opencode) route whatever
     # model the operator selected — same tier as gpt/claude-code/codex; the
     # host CLI itself carries no cost of its own.
     "pi": "operator-selected",
-    "senpi": "operator-selected",
+    PI_DISTRIBUTION_HOST: "operator-selected",
     "opencode": "operator-selected",
-    "omo-runtime": "runtime-variable",
+    "pi-family-runtime": "runtime-variable",
     "omx-runtime": "runtime-variable",
     "hermes": "wrapper",
 }
@@ -67,9 +68,9 @@ _TARGET_TYPES: Final[dict[str, str]] = {
     "codex": "runtime",
     "claude-code": "runtime",
     "pi": "runtime",
-    "senpi": "runtime",
+    PI_DISTRIBUTION_HOST: "runtime",
     "opencode": "runtime",
-    "omo-runtime": "runtime",
+    "pi-family-runtime": "runtime",
     "omx-runtime": "runtime",
     "generic-runtime": "runtime",
     "hermes": "wrapper",

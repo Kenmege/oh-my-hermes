@@ -6,6 +6,7 @@ import re
 import sys
 from pathlib import Path
 
+from ..coding.executors import canonical_executor_profile
 from ..codex_progress import (
     build_codex_prompt_handling_contract,
     build_codex_review_summary,
@@ -1277,6 +1278,7 @@ def _add_chat_commands(sub) -> None:
     )
     interact.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         choices=CODING_EXECUTOR_TARGETS,
         default=None,
         help="Executor target for delegate-mode handoff payloads. Defaults to setup profile or explicit choice required.",
@@ -1481,7 +1483,7 @@ def _add_chat_commands(sub) -> None:
     session_start.add_argument("--channel-ref", default="")
     session_start.add_argument("--user-ref", default="")
     _add_render_profile_option(session_start)
-    session_start.add_argument("--executor", choices=CODING_EXECUTOR_TARGETS, default=None)
+    session_start.add_argument("--executor", type=canonical_executor_profile, choices=CODING_EXECUTOR_TARGETS, default=None)
     _add_target_metadata_options(session_start)
     _add_platform_context_options(session_start)
     session_start.set_defaults(func=cmd_chat_session_start)
@@ -1507,7 +1509,7 @@ def _add_chat_commands(sub) -> None:
 
     session_select = session_sub.add_parser("select-executor")
     session_select.add_argument("session_id")
-    session_select.add_argument("executor", choices=tuple(value for value in CODING_EXECUTOR_TARGETS if value != "choose"))
+    session_select.add_argument("executor", type=canonical_executor_profile, choices=tuple(value for value in CODING_EXECUTOR_TARGETS if value != "choose"))
     add_revision_guard_arguments(session_select)
     session_select.set_defaults(func=cmd_chat_session_select_executor)
 
@@ -1521,7 +1523,7 @@ def _add_chat_commands(sub) -> None:
     session_prepare.add_argument("--source-event-id", default="")
     session_prepare.add_argument("--channel-ref", default="")
     session_prepare.add_argument("--user-ref", default="")
-    session_prepare.add_argument("--executor", choices=tuple(value for value in CODING_EXECUTOR_TARGETS if value != "choose"), default=None)
+    session_prepare.add_argument("--executor", type=canonical_executor_profile, choices=tuple(value for value in CODING_EXECUTOR_TARGETS if value != "choose"), default=None)
     session_prepare.add_argument(
         "--context-pack",
         default=None,

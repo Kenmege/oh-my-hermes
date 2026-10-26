@@ -170,13 +170,13 @@ class RunningWorkBoardReaderTests(unittest.TestCase):
             write_inflight_marker(
                 paths,
                 _FANOUT_ID,
-                "omo-core",
-                _fields(owner="omo", model="openrouter/qwen-3.5-coder", reasoning_effort="high"),
+                "pi-core",
+                _fields(owner="pi", model="openrouter/qwen-3.5-coder", reasoning_effort="high"),
             )
             board = read_running_work_board(paths.omh_home)
             self.assertEqual(board["units"][0]["model_label"], "openrouter/qwen-3.5-coder high")
             text = render_running_work_block_text(board)
-            self.assertIn(f"- {_FANOUT_ID}/omo-core: omo (openrouter/qwen-3.5-coder high) — Code · running", text)
+            self.assertIn(f"- {_FANOUT_ID}/pi-core: pi (openrouter/qwen-3.5-coder high) — Code · running", text)
             self.assertNotIn(" — (", text)
 
     def test_a_malformed_marker_is_skipped_without_raising(self) -> None:

@@ -19,7 +19,7 @@ from .fanout_executor_sessions import (
     bounded_session_probe,
 )
 
-from ..executors import EXECUTOR_PROFILES, executor_label
+from ..executors import EXECUTOR_PROFILES, canonical_executor_profile, executor_label
 from ..local_store import atomic_write_json, read_json_object_result, utc_now
 from ..paths import OmhPaths, find_project_root
 from .pre_handoff_readiness import (
@@ -161,16 +161,16 @@ _COMMANDS: dict[str, tuple[str, tuple[str, ...]]] = {
     "codex": ("codex", ("--version",)),
     "claude-code": ("claude", ("--version",)),
     "omx-runtime": ("omx", ("--version",)),
-    # omo ships as an extension of a host agent CLI, not as its own binary.
-    # This static entry is NEVER read for omo-runtime: `_resolved_command`
-    # always overrides it with the DETECTED host (`omo_runtime_host` in
-    # fanout_dispatch — pi first, then its senpi distribution, then the
-    # opencode plugin host). The entry mirrors OMO_RUNTIME_HOST_CANDIDATES[0]
+    # The pi-family runtime ships as an extension of a host agent CLI, not as its own binary.
+    # This static entry is NEVER read for pi-family-runtime: `_resolved_command`
+    # always overrides it with the DETECTED host (`pi_family_host` in
+    # fanout_dispatch — pi first, then its distribution host, then the
+    # opencode plugin host). The entry mirrors PI_FAMILY_HOST_CANDIDATES[0]
     # so a future second consumer of this table sees the same pi-first
     # default the detector promises — do not repin it to one distribution.
     # No host on PATH probes the first candidate and truthfully reads
     # `missing`; the runtime prompt-handoff path never needed a local CLI.
-    "omo-runtime": ("pi", ("--version",)),
+    "pi-family-runtime": ("pi", ("--version",)),
     "omc-runtime": ("omc", ("--version",)),
 }
 
@@ -519,11 +519,11 @@ def _resolution_report(command: str, args: list[str]) -> list[dict[str, str]]:
 
 def _resolved_command(profile: str) -> tuple[str, tuple[str, ...]] | None:
     entry = _COMMANDS.get(profile)
-    if profile == "omo-runtime":
-        from .fanout_dispatch import OMO_RUNTIME_HOST_CANDIDATES, omo_runtime_host
+    if profile == "pi-family-runtime":
+        from .fanout_dispatch import PI_FAMILY_HOST_CANDIDATES, pi_family_host
 
-        host = omo_runtime_host()
-        return ((host, ("--version",)) if host else (OMO_RUNTIME_HOST_CANDIDATES[0], ("--version",)))
+        host = pi_family_host()
+        return ((host, ("--version",)) if host else (PI_FAMILY_HOST_CANDIDATES[0], ("--version",)))
     return entry
 
 
@@ -535,13 +535,13 @@ _VERSION_TOKEN = re.compile(r"(?<![0-9A-Za-z.])v?([0-9]+(?:\.[0-9]+){1,3}(?:[-+]
 def version_probed_agent_clis() -> frozenset[str]:
     """The agent CLIs this module already runs `--version` on, and no others.
 
-    The readiness table's commands plus every omo host `_resolved_command` can
+    The readiness table's commands plus every pi-family host `_resolved_command` can
     pick. Another surface may reuse this probe for one of them; it may not
     widen the set by asking.
     """
-    from .fanout_dispatch import OMO_RUNTIME_HOST_CANDIDATES
+    from .fanout_dispatch import PI_FAMILY_HOST_CANDIDATES
 
-    return frozenset(command for command, _args in _COMMANDS.values()) | frozenset(OMO_RUNTIME_HOST_CANDIDATES)
+    return frozenset(command for command, _args in _COMMANDS.values()) | frozenset(PI_FAMILY_HOST_CANDIDATES)
 
 
 def agent_cli_version(command: str) -> tuple[str, str | None]:
@@ -669,10 +669,10 @@ def _run_probe(contract: dict[str, object]) -> dict[str, object]:
 
 
 # CLI-backed candidates for the choose-executor question: profiles with a
-# locally probeable agent CLI. omo-runtime joined when the senpi host CLI
+# locally probeable agent CLI. pi-family-runtime joined when pi's distribution host
 # gained a validated dispatch template — the choice card should offer every
 # surface the user can actually run.
-EXECUTOR_CHOICE_CONTEXT_PROFILES = ("codex", "claude-code", "omo-runtime")
+EXECUTOR_CHOICE_CONTEXT_PROFILES = ("codex", "claude-code", "pi-family-runtime")
 EXECUTOR_CHOICE_CONTEXT_CLAIM_BOUNDARY = (
     "Choice context ranks locally-installed executor candidates from cached readiness and local "
     "markers only. It is not provider quota, entitlement, or login truth, and it never removes a "
@@ -793,13 +793,13 @@ def _ready_action(profile: str) -> str:
         return "send_to_executor"
     if profile == "claude-code":
         return "show_prompt_handoff"
-    if profile in {"omx-runtime", "omo-runtime", "omc-runtime", "hermes"}:
+    if profile in {"omx-runtime", "pi-family-runtime", "omc-runtime", "hermes"}:
         return "show_runtime_handoff"
     return "show_prompt_handoff"
 
 
 def _normalize_profile(profile: str | None) -> str:
-    value = str(profile or "choose").strip()
+    value = canonical_executor_profile(str(profile or "choose").strip())
     if value == "choose":
         return value
     if value not in EXECUTOR_READINESS_PROFILES:

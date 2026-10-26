@@ -547,7 +547,7 @@ uv run python -m omh.cli docs skill-shortlist --check
 uv run python -m omh.cli docs skill-sources --check
 uv run python tools/render_skill_pack.py --check
 uv run python -m omh.cli release drift
-git diff --check
+git diff --check origin/main...HEAD
 ```
 
 ## 8. Close with measurement

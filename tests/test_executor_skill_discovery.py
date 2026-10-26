@@ -250,13 +250,13 @@ class PluginCacheLayoutTests(unittest.TestCase):
 
 
 class OmoRuntimeSourceTraceTests(unittest.TestCase):
-    def test_omo_runtime_reports_an_unsupported_source_with_reason(self) -> None:
+    def test_pi_family_runtime_reports_an_unsupported_source_with_reason(self) -> None:
         with TemporaryDirectory() as tmp:
-            payload = discovered_executor_skills("omo-runtime", Path(tmp))
+            payload = discovered_executor_skills("pi-family-runtime", Path(tmp))
         self.assertEqual(payload["skills"], [])
-        source = payload["sources"]["omo_runtime_skills"]
+        source = payload["sources"]["pi_family_runtime_skills"]
         self.assertEqual(source["status"], "unsupported")
-        self.assertIn("pi/senpi/opencode", source["reason"])
+        self.assertIn("pi-family and opencode", source["reason"])
 
     def test_unsupported_is_part_of_the_declared_status_vocabulary(self) -> None:
         from omh.coding.executor_skill_discovery import SOURCE_STATUSES
@@ -388,7 +388,7 @@ class UnitPromptIntegrationTests(unittest.TestCase):
 
     def test_empty_environment_is_byte_identical_to_no_discovery(self) -> None:
         baseline = build_unit_prompt(_unit(), _GOAL)
-        for profile in ("claude-code", "codex", "generic", "hermes", "omo-runtime"):
+        for profile in ("claude-code", "codex", "generic", "hermes", "pi-family-runtime"):
             with TemporaryDirectory() as tmp:
                 payload = discovered_executor_skills(profile, Path(tmp))
             with self.subTest(profile=profile):
@@ -663,13 +663,13 @@ class ExecutorSkillsCommandTests(unittest.TestCase):
         self.assertNotEqual(status, 0)
         self.assertIn("Hermes-native selection bypasses maestro", stderr)
 
-    def test_omo_runtime_profile_returns_the_unsupported_source_with_reason(self) -> None:
+    def test_pi_family_runtime_profile_returns_the_unsupported_source_with_reason(self) -> None:
         with TemporaryDirectory() as tmp:
-            status, stdout, _stderr = self._run_with_home(Path(tmp), ["--profile", "omo-runtime"])
+            status, stdout, _stderr = self._run_with_home(Path(tmp), ["--profile", "pi-family-runtime"])
             self.assertEqual(status, 0)
             payload = json.loads(stdout)
             self.assertEqual(payload["skills"], [])
-            source = payload["sources"]["omo_runtime_skills"]
+            source = payload["sources"]["pi_family_runtime_skills"]
             self.assertEqual(source["status"], "unsupported")
             self.assertIn("reason", source)
 

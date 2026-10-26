@@ -108,14 +108,6 @@ def documentation_page_classifications() -> tuple[PageClassification, ...]:
             "release-readiness",
         ),
         PageClassification(
-            "docs/CONTRACT_SUNSET_CANDIDATES.md",
-            "working_note",
-            "exempt",
-            "A candidate list with no decision attached; it states that each entry needs its "
-            "own goal PR. Publishing it as a contract would imply removals that were never agreed.",
-            "docs-specialist",
-        ),
-        PageClassification(
             "docs/REVIEW-SWEEP.md",
             "maintainer_procedure",
             "exempt",

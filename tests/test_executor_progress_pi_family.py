@@ -25,15 +25,16 @@ from omh.executor_progress import (
     write_progress_binding,
 )
 from omh.paths import resolve_paths
+from omh.coding.pi_family_interop import PI_DISTRIBUTION_HOST
 
 
 class OmoRuntimeProgressProfileTests(unittest.TestCase):
-    def test_every_omo_host_alias_normalizes_to_one_observable_lane(self) -> None:
-        for value in ("omo-runtime", "omo_runtime", "pi", "senpi", "opencode", "  SenPi  ", "OPENCODE"):
+    def test_every_pi_family_host_alias_normalizes_to_one_observable_lane(self) -> None:
+        for value in ("pi-family-runtime", "pi_family_runtime", "pi", PI_DISTRIBUTION_HOST, "opencode", f"  {PI_DISTRIBUTION_HOST.capitalize()}  ", "OPENCODE"):
             with self.subTest(value=value):
-                self.assertEqual(normalize_executor_profile(value), "omo_runtime")
+                self.assertEqual(normalize_executor_profile(value), "pi_family_runtime")
 
-        self.assertIn("omo_runtime", ALLOWED_EXECUTOR_PROFILES)
+        self.assertIn("pi_family_runtime", ALLOWED_EXECUTOR_PROFILES)
         with self.assertRaisesRegex(ExecutorProgressError, "unsupported executor profile for progress: gemini"):
             normalize_executor_profile("gemini")
 
@@ -48,21 +49,21 @@ class OmoRuntimeProgressProfileTests(unittest.TestCase):
         self.assertEqual(normalize_executor_profile("hermes", observed_hermes_execution=True), "hermes_local")
         self.assertEqual(normalize_executor_profile("hermes-local", observed_hermes_execution=True), "hermes_local")
 
-    def test_all_three_validators_accept_the_omo_runtime_profile(self) -> None:
+    def test_all_three_validators_accept_the_pi_family_runtime_profile(self) -> None:
         binding = build_progress_binding(
             target_type="run",
-            target_id="run-omo-1",
-            executor_profile="senpi",
+            target_id="run-pi-family-1",
+            executor_profile=PI_DISTRIBUTION_HOST,
             now="2026-06-24T00:00:00Z",
         )
-        self.assertEqual(binding["executor_profile"], "omo_runtime")
-        self.assertEqual(binding["binding_id"], "run:run-omo-1:omo_runtime")
+        self.assertEqual(binding["executor_profile"], "pi_family_runtime")
+        self.assertEqual(binding["binding_id"], "run:run-pi-family-1:pi_family_runtime")
         self.assertEqual(validate_progress_binding(binding), [])
 
         event = build_progress_event(
             binding,
             event_type="repo_exploration",
-            summary="The omo runtime is inspecting the repository.",
+            summary="The pi-family runtime is inspecting the repository.",
             observed_at="2026-06-24T00:01:00Z",
         )
         self.assertEqual(validate_progress_event(event), [])
@@ -83,7 +84,7 @@ class RoutingMetricSignalTests(unittest.TestCase):
                 paths,
                 build_progress_binding(
                     target_type="run",
-                    target_id="run-omo-1",
+                    target_id="run-pi-family-1",
                     executor_profile="pi",
                     now="2026-06-24T00:00:00Z",
                 ),
@@ -91,7 +92,7 @@ class RoutingMetricSignalTests(unittest.TestCase):
             signal = build_safe_progress_signal(
                 executor_profile="pi",
                 explicit_event_type="diff_started",
-                explicit_summary="The omo runtime changed files.",
+                explicit_summary="The pi-family runtime changed files.",
                 routed_model="anthropic/claude-opus-4",
                 routed_reasoning_effort="high",
                 tokens_total=12345,
@@ -113,7 +114,7 @@ class RoutingMetricSignalTests(unittest.TestCase):
             projection = project_active_executor_status(paths, now="2026-06-24T00:04:00Z")
 
             row = projection["active_executors"][0]
-            self.assertEqual(row["executor_profile"], "omo_runtime")
+            self.assertEqual(row["executor_profile"], "pi_family_runtime")
             self.assertEqual(row["routed_model"], "anthropic/claude-opus-4")
             self.assertEqual(row["routed_reasoning_effort"], "high")
             self.assertEqual(row["tokens_total"], 12345)
@@ -137,7 +138,7 @@ class RoutingMetricSignalTests(unittest.TestCase):
                 paths,
                 build_progress_binding(
                     target_type="run",
-                    target_id="run-omo-2",
+                    target_id="run-pi-family-2",
                     executor_profile="opencode",
                     now="2026-06-24T00:00:00Z",
                 ),
@@ -145,7 +146,7 @@ class RoutingMetricSignalTests(unittest.TestCase):
             signal = build_safe_progress_signal(
                 executor_profile="opencode",
                 explicit_event_type="repo_exploration",
-                explicit_summary="The omo runtime is inspecting the repository.",
+                explicit_summary="The pi-family runtime is inspecting the repository.",
                 routed_model="anthropic/claude-opus-4",
             )
 
@@ -163,18 +164,18 @@ class RoutingMetricSignalTests(unittest.TestCase):
 
     def test_an_explicit_zero_token_count_is_kept_as_an_observation(self) -> None:
         signal = build_safe_progress_signal(
-            executor_profile="senpi",
+            executor_profile=PI_DISTRIBUTION_HOST,
             explicit_event_type="repo_exploration",
-            explicit_summary="The omo runtime is inspecting the repository.",
+            explicit_summary="The pi-family runtime is inspecting the repository.",
             tokens_total=0,
         )
         self.assertEqual(signal["tokens_total"], 0)
 
     def test_negative_and_non_numeric_counts_are_dropped_rather_than_stored(self) -> None:
         signal = build_safe_progress_signal(
-            executor_profile="senpi",
+            executor_profile=PI_DISTRIBUTION_HOST,
             explicit_event_type="repo_exploration",
-            explicit_summary="The omo runtime is inspecting the repository.",
+            explicit_summary="The pi-family runtime is inspecting the repository.",
             tokens_total=-1,
             elapsed_seconds="not-a-number",  # type: ignore[arg-type]
         )
@@ -184,14 +185,14 @@ class RoutingMetricSignalTests(unittest.TestCase):
     def test_raw_and_hidden_signal_keys_are_still_rejected_next_to_routing_metrics(self) -> None:
         binding = build_progress_binding(
             target_type="run",
-            target_id="run-omo-3",
+            target_id="run-pi-family-3",
             executor_profile="pi",
             now="2026-06-24T00:00:00Z",
         )
         event = build_progress_event(
             binding,
             event_type="diff_started",
-            summary="The omo runtime changed files.",
+            summary="The pi-family runtime changed files.",
             observed_at="2026-06-24T00:01:00Z",
             signal=build_safe_progress_signal(
                 executor_profile="pi",

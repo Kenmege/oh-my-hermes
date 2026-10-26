@@ -1,6 +1,6 @@
-"""Parallelism policy: OMO-shaped defaults, profile overrides, clamps.
+"""Parallelism policy: pi-family-runtime-shaped defaults, profile overrides, clamps.
 
-The owner asked for OMO's execution-concurrency defaults (per-lane 5,
+The owner asked for the pi-family runtime's execution-concurrency defaults (per-lane 5,
 global 8) installed by setup and editable in the profile. These tests pin
 the defaults, the validated-override-with-disclosure read (an invalid
 stored value falls back and is named, never silently wins), and the
@@ -36,7 +36,7 @@ def _paths(tmp: str) -> OmhPaths:
 
 
 class ParallelismDefaultsTests(unittest.TestCase):
-    def test_defaults_mirror_the_omo_engine_bounds(self) -> None:
+    def test_defaults_mirror_the_pi_family_engine_bounds(self) -> None:
         self.assertEqual(PARALLELISM_DEFAULTS["default_concurrency"], 5)
         self.assertEqual(PARALLELISM_DEFAULTS["global_concurrency"], 8)
         self.assertEqual(PARALLELISM_DEFAULTS["lane_budget_default"], 5)
@@ -187,7 +187,7 @@ class SpawnGuardPolicyTests(unittest.TestCase):
         paths.setup_profile_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(paths.setup_profile_path, profile, private=True)
 
-    def test_defaults_match_the_omo_spawn_guard(self) -> None:
+    def test_defaults_match_the_pi_family_spawn_guard(self) -> None:
         self.assertEqual(FANOUT_MAX_DEPTH_DEFAULT, 1)
         self.assertEqual(FANOUT_RUN_SPAWN_CEILING_DEFAULT, 60)
         policy = build_parallelism_policy()

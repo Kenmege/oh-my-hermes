@@ -1,0 +1,314 @@
+{
+  "applied_mutations": {},
+  "authority_envelope": {
+    "allowed_actions": [
+      "executor_handoff"
+    ],
+    "allowed_executors": [
+      "<LEGACY_PROFILE_ID>"
+    ],
+    "approval_checkpoints": [
+      "ci_fix_loop",
+      "executor_dispatch",
+      "external_posting",
+      "external_posting_prep",
+      "merge",
+      "planning",
+      "pr_creation",
+      "pr_revision",
+      "release_note_work",
+      "repo_edit",
+      "research",
+      "review_fix_loop",
+      "ultragoal_creation"
+    ],
+    "approval_policy": "ask_when_exceeds_envelope",
+    "blocked_actions": [
+      "ci_fix_loop",
+      "executor_dispatch",
+      "external_posting",
+      "external_posting_prep",
+      "merge",
+      "planning",
+      "pr_creation",
+      "pr_revision",
+      "release_note_work",
+      "repo_edit",
+      "research",
+      "review_fix_loop",
+      "ultragoal_creation"
+    ],
+    "budget_limits": {
+      "external_spend": "not_allowed",
+      "time_budget": "not_set",
+      "token_budget": "checkpoint_when_exhausted"
+    },
+    "external_action_authority": "prepare_only",
+    "forbidden_actions": [],
+    "merge_authority": "disabled",
+    "permission_profile": "custom",
+    "resume_policy": "checkpoint_on_context_or_token_exhaustion"
+  },
+  "claim_boundary": "A loop cycle is orchestration state only. Goal completion still requires goal_ledger/v1 completion evidence, and prepared handoffs are not executor execution.",
+  "completion_claim_allowed": false,
+  "created_at": "2026-10-25T07:07:50Z",
+  "cycles": [],
+  "driver": {
+    "advisory_snapshot": null,
+    "capability_snapshot_digest": null,
+    "compatibility": "current",
+    "driver_id": "b4ed1d3f015be234194ad8761ae1a2b1a798f5dbf5cd2169a474a75eea7042c0",
+    "fallback_reason": "hermes_owned_or_non_coding",
+    "kind": "hermes_goal",
+    "objective_sha256": "be5e61e40d29ba7d58f87f13b72b692d95b3656b384fed0a92013d0d2f6d41af",
+    "observation_state": "prepared",
+    "observed_at": null,
+    "owner": "hermes",
+    "schema_version": "loop_driver/v1",
+    "session_ref": null
+  },
+  "executor_capability_snapshot": null,
+  "executor_goal_observations": [],
+  "feedback_gate": {
+    "clear": false,
+    "evaluated_at": "2026-10-25T07:07:50Z",
+    "external_wait": "",
+    "internal_actionable_gap": "",
+    "observed_artifacts": []
+  },
+  "goal": {
+    "current_loop_goal": "Ship the retry fix with tests",
+    "north_star": "Ship the retry fix",
+    "reframe": "Ship the retry fix with tests",
+    "reframe_hash": "be5e61e40d29ba7d58f87f13b72b692d95b3656b384fed0a92013d0d2f6d41af",
+    "summary": "Ship the retry fix",
+    "summary_hash": "05203d5c26e50a0b66b11986864d6871cf8d44aff39337430a77e59f1e492227"
+  },
+  "goal_driver_observations": [],
+  "linked_goal_id": "",
+  "loop_engineering": {
+    "building_blocks": [
+      {
+        "claim_boundary": "A tick records orchestration intent; it is not proof that downstream work happened.",
+        "id": "automation",
+        "label": "automation"
+      },
+      {
+        "claim_boundary": "A worktree plan is not worktree creation evidence.",
+        "id": "worktree",
+        "label": "worktree"
+      },
+      {
+        "claim_boundary": "Skill routing is not plan acceptance, dispatch, execution, or completion evidence.",
+        "id": "skill",
+        "label": "skill"
+      },
+      {
+        "claim_boundary": "Connector intent is not connector I/O evidence.",
+        "id": "connector",
+        "label": "connector"
+      },
+      {
+        "claim_boundary": "A subagent plan is not dispatch, execution, or result evidence.",
+        "id": "subagent",
+        "label": "subagent"
+      }
+    ],
+    "claim_boundary": "A loop runtime tick prepares local orchestration work only. It is not worktree creation, subagent dispatch, connector I/O, implementation, review, CI, merge, publication, or goal completion evidence.",
+    "context_policy": {
+      "large_output_policy": "Reference bulky subagent, connector, test, or research output by artifact path, id, hash, or evidence ref.",
+      "parent_context": "Keep the parent loop focused on decision state, summaries, evidence refs, and next actions.",
+      "read_model": "bounded_state_and_evidence_refs",
+      "subagent_return": "Subagents should return structured result objects, not replay their full working context.",
+      "summary_budget_chars": 1200
+    },
+    "cost_policy": {
+      "avoid_full_rescan": true,
+      "bounded_reads": true,
+      "default_verifier_lanes": 1,
+      "extra_verifier_policy": "Add verifier lanes only for high-risk changes, failed evidence, explicit review requests, or adversarial_verification/tournament patterns.",
+      "large_output_policy": "Keep large outputs in artifacts and pass refs, not full text.",
+      "reuse_schema_scaffold": true,
+      "summary_budget_chars": 1200,
+      "workflow_pattern": "single_step"
+    },
+    "definition": "A loop is a local system that prompts agents through task discovery, distribution, execution, verification, and the next task decision.",
+    "failure_modes": [
+      {
+        "id": "verification_gap",
+        "label": "verification gap",
+        "meaning": "The loop has prepared or observed work but still lacks enough verification evidence to advance safely."
+      },
+      {
+        "id": "comprehension_debt",
+        "label": "comprehension debt",
+        "meaning": "The loop is accumulating delegated or generated work faster than summaries, ownership, or review evidence can explain."
+      },
+      {
+        "id": "cognitive_surrender",
+        "label": "cognitive surrender",
+        "meaning": "The loop is broad enough that a human-owned judgment, acceptance signal, or stop condition should be refreshed."
+      }
+    ],
+    "pipeline": [
+      {
+        "claim_boundary": "This step describes orchestration state only until observed evidence refs are recorded.",
+        "id": "task_discovery",
+        "label": "task discovery"
+      },
+      {
+        "claim_boundary": "This step describes orchestration state only until observed evidence refs are recorded.",
+        "id": "distribution",
+        "label": "distribution"
+      },
+      {
+        "claim_boundary": "This step describes orchestration state only until observed evidence refs are recorded.",
+        "id": "execution",
+        "label": "execution"
+      },
+      {
+        "claim_boundary": "This step describes orchestration state only until observed evidence refs are recorded.",
+        "id": "verification",
+        "label": "verification"
+      },
+      {
+        "claim_boundary": "This step describes orchestration state only until observed evidence refs are recorded.",
+        "id": "next_task_decision",
+        "label": "next task decision"
+      }
+    ],
+    "schema_version": "loop_engineering/v1",
+    "small_loop_guidance": {
+      "claim_boundary": "Small-loop guidance is a Hermes-facing operating recipe, not proof that work ran.",
+      "principles": [
+        {
+          "guidance": "Name the cheapest check that decides whether this step is done before the loop starts.",
+          "id": "test_as_stop_signal",
+          "label": "test as stop signal"
+        },
+        {
+          "guidance": "Keep each cycle shaped as one planned step, one execution or handoff step, and one verification signal.",
+          "id": "plan_execute_verify",
+          "label": "plan -> execute -> verify"
+        },
+        {
+          "guidance": "Queue one concrete task per tick so failures can be traced and repaired without losing the goal.",
+          "id": "one_task_at_a_time",
+          "label": "one task at a time"
+        }
+      ],
+      "schema_version": "loop_small_loop_guidance/v1"
+    },
+    "subagent_result_contract_schema": "loop_subagent_result_contract/v1",
+    "verification_policy": {
+      "claim_boundary": "Verification policy is guidance until observed evidence refs are recorded.",
+      "inner_loop_checks": [
+        "syntax_or_parse_check",
+        "compile_or_import_check",
+        "focused_unit_test",
+        "command_smoke",
+        "schema_validation"
+      ],
+      "outer_loop_checks": [
+        "integration_test",
+        "semantic_review",
+        "adversarial_verifier",
+        "release_gate",
+        "human_review"
+      ],
+      "stop_signal": "A loop step stops only when its expected verification signal is observed, blocked, or explicitly deferred.",
+      "verifier_policy": "Keep one cheap verification lane by default. Add a verifier subagent only for high-risk changes, failed evidence, explicit review requests, or fan_out_synthesize/adversarial_verification/tournament patterns."
+    },
+    "workflow_patterns": [
+      {
+        "claim_boundary": "Pattern selection changes orchestration shape only; it is not dispatch or execution evidence.",
+        "id": "single_step",
+        "label": "single step"
+      },
+      {
+        "claim_boundary": "Pattern selection changes orchestration shape only; it is not dispatch or execution evidence.",
+        "id": "fan_out_synthesize",
+        "label": "fan out synthesize"
+      },
+      {
+        "claim_boundary": "Pattern selection changes orchestration shape only; it is not dispatch or execution evidence.",
+        "id": "adversarial_verification",
+        "label": "adversarial verification"
+      },
+      {
+        "claim_boundary": "Pattern selection changes orchestration shape only; it is not dispatch or execution evidence.",
+        "id": "tournament",
+        "label": "tournament"
+      },
+      {
+        "claim_boundary": "Pattern selection changes orchestration shape only; it is not dispatch or execution evidence.",
+        "id": "triage_batch",
+        "label": "triage batch"
+      }
+    ]
+  },
+  "loop_id": "loop-legacy",
+  "loopability_assessment": {
+    "bounded_arena": "accepted loop reframe",
+    "claim_boundary": "Loopability is deterministic routing metadata. It is not execution, verification, market response, or goal completion evidence.",
+    "classification_confidence": "medium",
+    "current_loop_goal": "Ship the retry fix with tests",
+    "goal_kind": "project",
+    "goal_summary_hash": "05203d5c26e50a0b66b11986864d6871cf8d44aff39337430a77e59f1e492227",
+    "loopability": "loopable",
+    "next_loop_goal": "Ship the retry fix with tests",
+    "next_verification": "The current loop step records a pass/fail evidence signal before the next tick.",
+    "north_star": "Ship the retry fix",
+    "observable_problem": "the accepted loop target defines the current observable gap",
+    "reason": "A bounded loop goal reframe has been accepted; preserve the north star while continuing with verification.",
+    "recommended_next_action": "continue_loop",
+    "recommended_surface": "loop_runtime",
+    "recurring_surface_comparison": {
+      "applies": false,
+      "reason": "The request is not a recurring one, so the four recurring surfaces were not compared.",
+      "recommended": "",
+      "rejected": []
+    },
+    "required_inputs": [],
+    "schema_version": "loopability_assessment/v1",
+    "stop_condition": "The accepted loop goal passes its named verification signal or records a blocker."
+  },
+  "next_action": "continue_loop",
+  "phase": "interview",
+  "phase_generation": 0,
+  "phase_transitions": [],
+  "record_revision": 1,
+  "runtime": {
+    "claim_boundary": "A loop runtime tick prepares local orchestration work only. It is not worktree creation, subagent dispatch, connector I/O, implementation, review, CI, merge, publication, or goal completion evidence.",
+    "heartbeat_count": 0,
+    "last_planned_action": "",
+    "last_queue_id": "",
+    "last_stop_at": "",
+    "last_stop_reason": "none",
+    "last_tick_at": "",
+    "last_trigger": "",
+    "ledger_entry_count": 0,
+    "no_progress_ticks": 0,
+    "queue": [],
+    "schema_version": "loop_runtime/v1"
+  },
+  "schema_version": "loop_cycle/v2",
+  "source": "omh",
+  "sticky_rule_attachment": {
+    "claim_boundary": "A sticky-rule attachment restates an already-declared rule at a bounded interval. It is not new guidance, it decides no route, and it is not execution, review, CI, merge, or goal completion evidence.",
+    "heartbeat_count": 0,
+    "rules": [],
+    "schema_version": "loop_sticky_rule_attachment/v1"
+  },
+  "sticky_rules": [],
+  "success_criteria": [
+    {
+      "evidence_refs": [],
+      "id": "LC001",
+      "status": "pending",
+      "summary": "tests pass"
+    }
+  ],
+  "updated_at": "2026-10-25T07:07:50Z",
+  "wait_reason": "none"
+}

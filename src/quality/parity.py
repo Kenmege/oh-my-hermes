@@ -93,7 +93,7 @@ PARITY_CAPABILITIES: tuple[ParityCapability, ...] = (
             "src/wrapper/sessions.py",
         ),
         missing_piece="Live worker launch and pane/session management still require the selected host runtime to act and record observations.",
-        v1_decision="Provide the team/swarm worker contract, readiness verifier, wrapper actions, and observation ledger; real worker launch stays with Hermes, Codex, Claude Code, OMX, OMO, OMC, or another selected runtime.",
+        v1_decision="Provide the team/swarm worker contract, readiness verifier, wrapper actions, and observation ledger; real worker launch stays with Hermes, Codex, Claude Code, OMX, pi-family, OMC, or another selected runtime.",
         user_value="A chat wrapper can show Start team, Attach session, Record worker result, and Review status without asking the user to type raw backend commands.",
         claim_boundary="Prepared worker lanes are not worker dispatch, result, review, CI, or merge evidence.",
     ),
@@ -172,7 +172,7 @@ def build_parity_matrix(probe_payload: dict[str, object] | None = None) -> dict[
         counts[status] = counts.get(status, 0) + 1
     return {
         "schema_version": PARITY_MATRIX_SCHEMA_VERSION,
-        "basis": "OMX/OMC/OMO common public capability patterns, translated into OMH's Hermes-native evidence model.",
+        "basis": "OMX/OMC/pi-family common public capability patterns, translated into OMH's Hermes-native evidence model.",
         "summary": {
             "capability_count": len(capabilities),
             "available": counts.get("available", 0),

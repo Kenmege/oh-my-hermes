@@ -1,0 +1,774 @@
+{
+  "applied_mutations": {},
+  "authority": {
+    "run_ledger_owns": [
+      "prepared_handoff",
+      "dispatch",
+      "executor_result",
+      "verification",
+      "review",
+      "ci",
+      "merge_readiness",
+      "merge"
+    ],
+    "session_owns": [
+      "chat_continuity",
+      "route_summary",
+      "plan_decision",
+      "linked_run_id"
+    ]
+  },
+  "created_at": "2026-10-25T06:29:10Z",
+  "current_run_id": "",
+  "decision": "plan_accepted",
+  "dispatch_policy": "prepare_only",
+  "message_length": 38,
+  "message_sha256": "a6c2872122b7c4008fc5d0b8405517cfbef037f4a737d1267be411340e87bd89",
+  "plan": {
+    "coding_delegate_available": "true",
+    "recommended_harness": "planning",
+    "recommended_workflow": "ralplan",
+    "status": "draft"
+  },
+  "prompt_handoff": {},
+  "record_provenance": {
+    "claim_boundary": "Record provenance identifies who wrote this metadata-only wrapper session. It is not executor dispatch, implementation, verification, review, CI, or merge evidence.",
+    "observed_by_host": false,
+    "producer": "wrapper_backend",
+    "producer_detail": "omh wrapper session backend",
+    "schema_version": "wrapper_session_provenance/v1"
+  },
+  "record_revision": 4,
+  "record_type": "wrapper_session",
+  "redaction_policy": "metadata_only",
+  "route": {
+    "action": "dispatch",
+    "confidence": "high",
+    "score": 32,
+    "selected_harness": "planning",
+    "selected_skill": "ralplan"
+  },
+  "runtime_handoff": {
+    "acceptance_criteria": [
+      "Implement only the requested coding change within the discovered scope.",
+      "Preserve existing behavior outside the requested change."
+    ],
+    "dispatch_contract": "wrapper_or_user_starts_runtime; omh_does_not_execute_runtime",
+    "dispatchable": false,
+    "evidence_contract": {
+      "observed_required_for": [
+        "runtime_start",
+        "worktree_creation",
+        "worker_dispatch",
+        "worker_result",
+        "verification",
+        "review",
+        "ci",
+        "merge_readiness",
+        "merge"
+      ],
+      "prepared_is_not": [
+        "runtime_start",
+        "worktree_creation",
+        "worker_dispatch",
+        "implementation",
+        "verification",
+        "review",
+        "ci",
+        "merge"
+      ]
+    },
+    "executor_capability_snapshot": {
+      "capabilities": {
+        "background_work": {
+          "status": "unknown"
+        },
+        "browser_or_computer_use": {
+          "status": "unknown"
+        },
+        "code_mode_batching": {
+          "status": "unknown"
+        },
+        "edit_format_hashline": {
+          "status": "unknown"
+        },
+        "edit_format_patch": {
+          "status": "unknown"
+        },
+        "edit_format_str_replace": {
+          "status": "unknown"
+        },
+        "input_modality_audio": {
+          "status": "unknown"
+        },
+        "input_modality_document": {
+          "status": "unknown"
+        },
+        "input_modality_image": {
+          "status": "unknown"
+        },
+        "input_modality_text": {
+          "status": "unknown"
+        },
+        "input_modality_video": {
+          "status": "unknown"
+        },
+        "long_running_continuation": {
+          "status": "unknown"
+        },
+        "parallel_agents": {
+          "status": "unknown"
+        },
+        "persistent_eval": {
+          "status": "unknown"
+        },
+        "resumable_goal": {
+          "status": "unknown"
+        },
+        "scheduled_or_recurring_work": {
+          "status": "unknown"
+        },
+        "tool_reentry": {
+          "status": "unknown"
+        },
+        "visual_qa": {
+          "status": "unknown"
+        },
+        "worktree_isolation": {
+          "status": "prepared"
+        }
+      },
+      "executor": "<LEGACY_PROFILE_ID>",
+      "recorded_at": "1970-01-01T00:00:00Z",
+      "schema_version": "executor_capability_snapshot/v3"
+    },
+    "executor_local_capability_strategy": {
+      "claim_boundary": "This strategy is prepared guidance only; it is not evidence that local executor capabilities exist, were loaded, or were executed.",
+      "examples_if_available": {
+        "claude-code": [
+          "CLAUDE.md",
+          "Claude Code slash commands",
+          "Claude skills",
+          "Everything Claude Code skill packs",
+          "user-defined Claude Code skills",
+          "custom Claude Code slash commands",
+          "Claude Code agents/subagents",
+          "subagents",
+          "MCP tools"
+        ],
+        "codex": [
+          "Codex-native skills",
+          "OMX or other oh-my workflow packs",
+          "custom Codex skills",
+          "Codex subagents",
+          "$ralph",
+          "$ralplan",
+          "$ultragoal",
+          "$ultrawork",
+          "$ultraqa",
+          "$code-review"
+        ],
+        "generic": [
+          "local agent instructions",
+          "repo scripts",
+          "documented workflow commands"
+        ],
+        "hermes": [
+          "installed Hermes skills",
+          "Hermes delegation",
+          "OMH ultrawork/team/ultraqa/code-review"
+        ],
+        "omc-runtime": [
+          "OMC/oh-my runtime templates",
+          "Claude Code-backed workflow commands",
+          "worker lanes",
+          "MCP tools"
+        ],
+        "<LEGACY_PROFILE_ID>": [
+          "<LEGACY_UPPER>/oh-my runtime templates",
+          "<LEGACY_UPPER> skills",
+          "worker lanes",
+          "MCP tools"
+        ],
+        "omx-runtime": [
+          "OMX/oh-my runtime templates",
+          "OMX skills",
+          "team or worker lanes",
+          "MCP tools"
+        ]
+      },
+      "execution_observed": false,
+      "fallback": "If no relevant local capability is available or recognized, continue as the selected executor using the OMH task, harness, acceptance criteria, verification, and evidence contract as a plain <LEGACY_UPPER> runtime task.",
+      "installation_observed": false,
+      "mode": "discover_then_use_when_helpful",
+      "preferred_sources": [
+        "project instructions such as AGENTS.md, CLAUDE.md, or executor-specific rules",
+        "executor-native skills, slash commands, workflow commands, or prompt libraries",
+        "executor-local installed skill catalogs, slash-command registries, and custom agent definitions",
+        "user-installed open-source workflow packs",
+        "available subagents, worker lanes, or task planners",
+        "MCP tools exposed to the selected executor",
+        "repo scripts, tests, task runners, and CI metadata",
+        "executor-local structural search tooling on PATH (such as ast-grep, with grep as fallback)"
+      ],
+      "profile": "<LEGACY_PROFILE_ID>",
+      "schema_version": "executor_local_capability_strategy/v1",
+      "selection_rule": "Use local capabilities only when they materially improve planning, implementation, verification, review, or coordination; otherwise keep the handoff plain and focused.",
+      "stage_guidance": {
+        "code_exploration": "Use executor-local structural search tooling when the target is a syntactic shape rather than a string; fall back to grep when it is absent.",
+        "implementation": "Use local implementation, goal, or work-management capability when it improves delivery discipline.",
+        "parallelization": "Use local subagents, workers, or worktrees only when lanes are independent and ownership is explicit.",
+        "planning": "Use local planning or reviewed-plan capability when it materially improves scope, acceptance criteria, or risk review.",
+        "qa_review": "Use local QA, code-review, or adversarial review capability when it improves verification quality."
+      }
+    },
+    "executor_local_workflow": {
+      "availability": {
+        "basis": "prepared_mapping",
+        "evidence_ref": "",
+        "observed_at": "",
+        "profile": "<LEGACY_PROFILE_ID>",
+        "recorded_at": "",
+        "scope": {},
+        "skill_id": "ai-slop-cleaner",
+        "status": "unknown"
+      },
+      "candidate": {
+        "invocation": {
+          "message_placeholder": "",
+          "mode": "skill_reference",
+          "syntax": "canonical_skill_id",
+          "template": ""
+        },
+        "kind": "<LEGACY_SKILL_REFERENCE>",
+        "rationale": "This is the final guarded workflow mapped to the selected executor profile.",
+        "selection_basis": "final_guarded_recommended_workflow",
+        "skill_id": "ai-slop-cleaner"
+      },
+      "claim_boundary": "Prepared executor-local workflow metadata is not evidence of installation, loading, invocation, dispatch, execution, verification, review, CI, merge readiness, or merge.",
+      "dispatchability": {
+        "candidate_invocation_dispatchable": false,
+        "handoff_dispatchable": false,
+        "reason": "availability_not_observed"
+      },
+      "fallback": "Keep the parent handoff prompt and dispatch mode unchanged; do not invoke the candidate.",
+      "profile": "<LEGACY_PROFILE_ID>",
+      "routed_workflow": "ai-slop-cleaner",
+      "schema_version": "executor_local_workflow/v1",
+      "status": "unknown"
+    },
+    "executor_prompting_contract": {
+      "claim_boundary": "This is prepared executor-prompt guidance only; it is not dispatch, execution, verification, review, CI, or merge evidence.",
+      "docs_consulted_policy": "Docs consulted artifact: when the task touches an SDK, framework, or external library API, read the official documentation before coding against it and record each source as an exact URL (prefer the framework's llms.txt index when one exists) plus the version consulted. The final report must contain a `Docs consulted:` block listing those URL+version entries; for SDK-touching work a report without this block is incomplete. When no SDK or framework is touched, the block must state `Docs consulted: none (no SDK/framework surface touched)`.",
+      "history_foveation_policy": "History foveation: when the history does not fit the budget of a summary, prepared-handoff brief, or continuation re-brief, keep both temporal edges verbatim -- the oldest turns that set the goal, constraints, and decisions, and the newest turns that hold current working state -- and compress the middle instead. When the compressed middle still exceeds the budget, drop the oldest part of the middle first and state what was dropped, naming the dropped span and how much of it was dropped. Re-plan every summary from the original source, never from an earlier summary, so successive re-briefs do not stack lossy layers. An unstated drop is missing evidence, not a shorter summary.",
+      "intent": "cleanup",
+      "profile": "<LEGACY_PROFILE_ID>",
+      "reporting_policy": "Report progress, changed files, tests, blockers, evidence refs, local_capabilities_used, local_capability_evidence_refs, and local_capability_fallback_reason; distinguish prepared guidance from observed executor results.",
+      "repository_first_policy": "Inspect the repository, project instructions, and current diff before editing; reconcile the request with observed code facts.",
+      "required_sections": [
+        "Goal",
+        "Do",
+        "Don't",
+        "Known context",
+        "Unknowns and decision rule",
+        "Expected result",
+        "Test",
+        "Progress and blockers",
+        "Evidence boundary",
+        "Task"
+      ],
+      "schema_version": "executor_prompting_contract/v1",
+      "session_summary_policy": "Session summary shape: when producing a session summary, prepared-handoff brief, or continuation re-brief, structure it as Goal / Constraints and Preferences / Progress (Done, In Progress, Blocked) / Key Decisions / Next Steps / Critical Context, plus explicit read-files and modified-files lists. Carry both file lists forward cumulatively across successive summaries. A summary in this shape remains a report; it is never execution, verification, review, CI, or merge evidence.",
+      "status": "prepared_not_observed",
+      "steering_delta_contract": {
+        "action_rule": "Send only changed constraints, new evidence, required action, and changed verification target to an active executor turn. When a full re-brief is needed instead of a delta \u2014 a fresh session, a replaced executor, or a compacted context \u2014 send a session summary in the recommended structured summary shape rather than an oversized delta.",
+        "claim_boundary": "A prepared steering delta is not dispatch, execution, verification, review, CI, or merge evidence.",
+        "required_fields": [
+          "changed_constraint",
+          "new_evidence",
+          "required_action",
+          "verification_target_changed"
+        ],
+        "schema_version": "executor_steering_delta/v1",
+        "status": "prepared_not_observed"
+      },
+      "steering_delta_template": "Active-turn steering delta\n\nChanged constraint:\n{changed_constraint}\n\nNew evidence:\n{new_evidence}\n\nRequired action:\n{required_action}\n\nVerification target changed:\n{verification_target_changed}\n\nApply only this delta. Do not replay the full task or claim progress that has not been observed.",
+      "strategy": "risk_aware_change",
+      "structural_search_discipline": {
+        "claim_boundary": "This is prepared search-discipline guidance only; it is not dispatch, execution, verification, review, CI, or merge evidence.",
+        "guidance": "Capped structural search: bound code exploration to a few targeted queries \u2014 structural search when available, grep otherwise \u2014 before reading a full file; start with the narrowest query that names the shape or symbol you need. Escalate to a wider query or a full-file read only when a bounded pass returns nothing or stays genuinely ambiguous after a second try. Stop searching the moment the target is found; a further query for something already located spends tokens without adding information.",
+        "schema_version": "structural_search_discipline/v1",
+        "status": "prepared_not_observed"
+      },
+      "task_source": "original_message_at_dispatch_time",
+      "throughput_overlay": {
+        "claim_boundary": "This overlay is prepared execution guidance only; it is not proof of parallel work, dispatch, verification, or completion.",
+        "mode": "parallel_handoff",
+        "model_family": "unknown",
+        "rules": [
+          "Parallel independent tool calls, repository reads, searches, and reasoning lanes in one batch whenever their inputs do not depend on each other.",
+          "Keep dependency-bound work sequential; collect the upstream result before starting work that consumes it."
+        ],
+        "schema_version": "executor_throughput_overlay/v1",
+        "status": "enabled"
+      },
+      "uncertainty_policy": "When a missing fact changes scope, safety, or verification, ask one focused question or state the smallest reversible assumption before editing.",
+      "verification_policy": "Name focused verification before edits, run the smallest relevant checks after edits, and report commands with outcomes instead of inferred success."
+    },
+    "executor_readiness": {
+      "cache_key": "executor_readiness:<LEGACY_PROFILE_ID>",
+      "claim_boundary": "Readiness is not dispatch, execution, verification, review, CI, or merge evidence; it only checks whether the selected executor path appears available.",
+      "fallback_policy": {
+        "retry_after_state_change": true,
+        "retry_limit": 1,
+        "suggested_actions": [
+          "choose_executor",
+          "show_prompt_handoff",
+          "show_runtime_handoff",
+          "continue_in_hermes"
+        ],
+        "when_missing": "ask_user_to_choose_executor_or_configure_one"
+      },
+      "first_use_only": true,
+      "label": "<LEGACY_UPPER> runtime",
+      "not_evidence": [
+        "executor dispatch",
+        "executor result",
+        "execution",
+        "implementation",
+        "verification",
+        "review",
+        "CI",
+        "merge"
+      ],
+      "probe": {
+        "args": [
+          "--version"
+        ],
+        "captures": [
+          "available",
+          "exit_code",
+          "summary"
+        ],
+        "command": "pi",
+        "kind": "local_command",
+        "timeout_seconds": 3
+      },
+      "profile": "<LEGACY_PROFILE_ID>",
+      "ready_action": "show_runtime_handoff",
+      "schema_version": "executor_readiness/v1",
+      "status": "not_observed"
+    },
+    "harness_quality": {
+      "evidence_ladder": [
+        "coding_delegation_prepared",
+        "executor_dispatch_observed",
+        "executor_result_observed",
+        "verification_recorded",
+        "review_ci_merge_recorded_when_required"
+      ],
+      "harness": "coding-handling",
+      "overclaim_guards": [
+        "A prepared coding_delegation.json is not implementation evidence.",
+        "A host_observed capability snapshot proves only bounded host capability evidence, not dispatch, execution, review, CI, or merge evidence.",
+        "Governance and product-family attachments are prepared expectations, not compliance, execution, review, CI, or merge evidence.",
+        "Executor completion is not review, CI, merge-readiness, or merge evidence."
+      ],
+      "quality_bar": [
+        "Clarify scope before edits when target behavior, files, or verification are missing.",
+        "Attach acceptance criteria, verification expectations, and review expectations to the prepared handoff.",
+        "Carry executor_capability_snapshot/v3 only as metadata-only context (v1/v2 remain readable with resumable_goal unknown; v1 input-modality rows remain unknown); host_observed requires bounded scope and evidence.",
+        "When an explicit project root is supplied, attach only conflict-free project_governance_profile/v1 metadata; existing project rules override advisory defaults and a declined default stays non-blocking.",
+        "Use product_family_template/v1 for prepared web, mobile, desktop, or API quality guidance without implying installed tools, execution, or observed QA.",
+        "Report coding progress from lifecycle evidence, not from the existence of a prepared prompt.",
+        "Name every delegated or parallel lane's model and, when the host exposes it, its reasoning effort inline as `(model effort)` in status and briefing lines \u2014 including runtime-native subagents; when no effort is exposed, show the model alone as `(model)` rather than writing a placeholder like `unknown` beside a known model, and never emit empty parentheses. Carry token and elapsed figures the same way in these narration lines: report observed figures and omit unobserved ones \u2014 when the user asks for a figure directly, say it was not observed instead of omitting it; a rendered status-board column keeps its own `unknown` cell.",
+        "When the user asks mid-run which models are working or how many tokens are spent, answer immediately with one line per lane in that same format plus a one-line total; a steering question never waits for lane completion.",
+        "When delegating, show the composed delegate prompt in a fenced code block in the status message; truncate a long prompt to a bounded preview ending with `... [truncated, N chars total]` \u2014 the user must see WHAT was asked, not just that something was.",
+        "Capture a resumable session or thread id at dispatch and report it in the status message: for non-interactive Claude Code pass `--output-format json` and read `session_id` from the result (resume with `claude -p --resume <session-id>`); for Codex pass `--json` and read `thread_id` (resume with `codex exec resume <thread-id>`, repeating `--skip-git-repo-check` outside a git repo). Never leave a delegate run with no recorded way to resume or steer it \u2014 a plain-text one-shot that hides its session id strands the work when the run stalls or times out.",
+        "Before dispatch, grant the executor session every permission the task will need \u2014 file write/edit, command/test execution, and the working directory \u2014 on the dispatch command itself, not through settings-file guesses: for non-interactive Claude Code pass `--permission-mode acceptEdits` or an explicit `--allowedTools` list (`--dangerously-skip-permissions` only inside an isolated worktree or sandbox), and the equivalent sandbox/approval flags for other CLIs. `acceptEdits: true` is not a settings key and `~/.claude/settings.local.json` is not a file Claude Code reads \u2014 user scope is `~/.claude/settings.json` and project scope is the dispatch cwd's `.claude/settings.local.json` with rules under `permissions.allow`. Prove the grant with a bounded scratch-edit probe run before the real dispatch: a permission denial in a non-interactive run recurs identically on retry, so never redispatch until a changed grant is proven, and surface an ungrantable permission as a blocker before dispatch, not after minutes of silence.",
+        "Choose the wait strategy before starting long-running work and bind it to a completion signal the host exposes, never to a status loop: a command that fits one tool call runs once in the foreground with a duration-sized timeout; a longer terminal command runs in the background with completion notification armed and no process-status polling; a delegated lane relies on its delivered result while the parent continues independent work or ends the turn; a CI, PR, deploy, file, port, log-line, or external-session condition uses the host's monitor when observed, else exactly ONE bounded watcher or adaptive backoff outside model turns. Record the handle and observation mode at dispatch; every armed wait needs a hard deadline, a cancellation path, and a fallback naming the missing capability. Each wait closes in one terminal state with bounded evidence; an unbounded idle or busy-wait is a defect and a lost notification times out. One decision-changing midpoint peek and any user-requested status check stay allowed; neither is the wait mechanism. Ladder and terminal states: shared rail.",
+        "EVERY delegated or reviewer prompt carries the delegation protocol (omh coding composition-guide): goal echo-back before tool use, numbered pre-declared done criteria, exactly one mandatory verification pass with a two fix-and-verify cycle cap when the task changes files or other state, and a two-round re-review cap. On Hermes `delegate_task` the OMH plugin puts the protocol in each child's system prompt, so do not paste it into the goal; still write the numbered done criteria there. For Codex, Claude Code, and other runtime-native spawns, embed it in the prompt yourself. After two review rounds, stop and report the criterion-cited blockers instead of starting another reviewer."
+      ],
+      "quality_tier": "handoff-gated",
+      "schema_version": "harness_quality/v1",
+      "wrapper_actions": [
+        "show_runtime_handoff",
+        "start_runtime",
+        "prepare_worktree",
+        "start_team",
+        "start_swarm",
+        "choose_executor",
+        "show_status"
+      ]
+    },
+    "invocation": {
+      "dispatch_text_template": "{message}",
+      "message_placeholder": "{message}",
+      "mode": "descriptor_only",
+      "tool_label": "<LEGACY_UPPER>",
+      "wrapper_note": "Start this runtime only after the user or wrapper chooses it; OMH records the prepared runtime contract, not execution evidence."
+    },
+    "isolation_plan": {
+      "claim_boundary": "This isolation plan is prepared guidance. It is not proof that a worktree, branch, executor session, worker, implementation, verification, review, CI, or merge exists.",
+      "not_observed_by_omh": [
+        "git worktree creation",
+        "branch creation",
+        "executor process launch",
+        "worker or subagent launch",
+        "implementation, verification, review, CI, merge-readiness, or merge"
+      ],
+      "observation_events": [
+        "executor_session/v1 open or attach records dispatch/open only",
+        "runtime_observation/v1 worktree_creation records observed worktree creation when a runtime or wrapper sees it",
+        "runtime_observation/v1 worker_dispatch records observed worker/team fanout when applicable"
+      ],
+      "reason_codes": [
+        "high_risk_terms",
+        "intent:cleanup",
+        "workflow:ai-slop-cleaner",
+        "runtime_handoff"
+      ],
+      "recommended_when": [
+        "multiple coding agents may edit the repository",
+        "the change touches broad architecture, generated files, security, or migrations",
+        "the wrapper will open a separate Codex, Claude Code, Hermes, or oh-my runtime session"
+      ],
+      "required_before": [
+        "parallel_implementation",
+        "risky_refactor",
+        "team_or_swarm_coding"
+      ],
+      "risk_level": "high",
+      "schema_version": "worktree_session_isolation/v1",
+      "session_binding": "bind executor session to the current wrapper thread and selected workspace until observed otherwise",
+      "status": "prepared_not_observed",
+      "strategy": "worktree_recommended",
+      "workspace_policy": "prefer an isolated worktree; reuse the current workspace only when the operator accepts the risk",
+      "wrapper_actions": [
+        "prepare_worktree",
+        "open_executor_session",
+        "attach_executor_session",
+        "show_status",
+        "record_runtime_observation"
+      ]
+    },
+    "local_capability_report_contract": {
+      "allowed_capability_kinds": [
+        "skill",
+        "workflow",
+        "slash_command",
+        "subagent",
+        "agent",
+        "mcp_tool",
+        "repo_script",
+        "test_harness",
+        "ci_metadata",
+        "runtime_template",
+        "worker_lane",
+        "worktree"
+      ],
+      "capability_item_fields": [
+        "name",
+        "kind",
+        "source",
+        "purpose",
+        "evidence_ref"
+      ],
+      "claim_boundary": "This is a prepared report-shape contract, not evidence that OMH observed local capability availability, dispatch, execution, review, CI, merge readiness, or merge.",
+      "empty_report_policy": "If no relevant local capability was used, report local_capabilities_used=[] and set local_capability_fallback_reason to the plain-executor fallback reason.",
+      "evidence_rule": "Each local_capabilities_used item must include an evidence_ref that points to actual executor output, a command, a log, or a generated artifact; do not report guessed or merely available capabilities as used.",
+      "profile": "<LEGACY_PROFILE_ID>",
+      "required_fields": [
+        "local_capabilities_used",
+        "local_capability_evidence_refs",
+        "local_capability_fallback_reason"
+      ],
+      "schema_version": "executor_local_capability_report_contract/v1",
+      "status": "prepared_not_observed"
+    },
+    "non_goals": [
+      "Do not claim OMH started the runtime.",
+      "Do not claim worktrees, workers, subagents, or tmux panes exist until observed.",
+      "Do not claim implementation, review, CI, or merge status from this prepared runtime handoff."
+    ],
+    "observation_contract": {
+      "allowed_events": [
+        "runtime_start",
+        "worktree_creation",
+        "worker_dispatch",
+        "worker_result",
+        "verification",
+        "review",
+        "ci",
+        "merge_readiness",
+        "merge"
+      ],
+      "claim_boundary": "Runtime templates are prepared guidance. Runtime status changes only when a wrapper or operator records runtime_observation/v1 evidence.",
+      "record_schema": "runtime_observation/v1",
+      "record_with": "omh runtime observe --session <wrapper-session-id> --runtime-profile <LEGACY_PROFILE_ID> --event <runtime_start|worktree_creation|worker_dispatch|worker_result|verification|review|ci|merge_readiness|merge> --status <observed|blocked|cancelled|failed|not_observed> --summary <observed metadata>",
+      "status_ladder": [
+        "runtime_start",
+        "worktree_creation",
+        "worker_dispatch",
+        "worker_result",
+        "verification",
+        "review",
+        "ci",
+        "merge_readiness",
+        "merge"
+      ]
+    },
+    "prompt_template": "You are <LEGACY_UPPER> runtime, receiving a Hermes-orchestrated runtime handoff.\n\nRuntime profile: `<LEGACY_PROFILE_ID>`\nRecommended OMH workflow: `ai-slop-cleaner`\nRecommended harness: `coding-handling`\nIntent: `cleanup`\nPrepared status: `prepared_not_observed`\n\nRuntime capability discovery:\n- Before acting, inspect runtime-local capabilities: runtime-native workflow templates, skills, worker lanes, subagents, MCP tools, repo scripts, tests, CI metadata, and project instructions.\n- For <LEGACY_UPPER> runtime, examples include OMX/<LEGACY_UPPER>/OMC templates when actually available. These are examples, not proof of availability.\n- If a relevant runtime-local skill, workflow template, worker lane, subagent, or MCP tool materially improves planning, implementation, verification, review, or coordination, use that runtime-native capability before falling back to solo runtime execution.\n- If no relevant local capability is available, continue with solo runtime execution as a plain <LEGACY_UPPER> runtime task using this task, harness, and evidence contract.\n- Structural code search: if a structural search tool such as ast-grep is on PATH, prefer a structural query over line-based grep when the target is a syntactic shape rather than a string; fall back to grep when it is absent. OMH did not check - verify PATH yourself.\n- Do not claim OMH observed runtime capability availability, dispatch, implementation, review, CI, or merge.\n\nTask prompt shape:\n- Shape executor-facing work as: Goal / Do / Don't / Expected result / Test.\n- Extend that base with required executor sections: Goal / Do / Don't / Known context / Unknowns and decision rule / Expected result / Test / Progress and blockers / Evidence boundary / Task.\n- Keep dispatch prompts in English unless preserving identifiers, paths, errors, quotes, or target-language output.\n- If steering an active turn, send only the corrective delta instead of replaying the full prompt.\n\nRuntime rules:\n- Treat this as a runtime contract prepared by Hermes/OMH, not as observed execution.\n- Use solo execution unless lanes are independent; use team/swarm only with explicit lane ownership.\n- Use tmux-style workers, panes, or equivalent runtime lanes when parallel coding is selected.\n- Use a worktree or equivalent isolation before risky or parallel coding.\n- Workers must ACK, claim scope/files, report results, and escalate blockers to the leader.\n- Do not claim Hermes, OMH, or this runtime completed implementation, review, CI, or merge work without observed evidence.\n\nGoal\n- Reduce change risk first, then make the smallest safe implementation with explicit rollback and verification thinking.\n\nDo\n- Inspect the repository, project instructions, and current diff before editing; reconcile the request with observed code facts.\n- Docs consulted artifact: when the task touches an SDK, framework, or external library API, read the official documentation before coding against it and record each source as an exact URL (prefer the framework's llms.txt index when one exists) plus the version consulted. The final report must contain a `Docs consulted:` block listing those URL+version entries; for SDK-touching work a report without this block is incomplete. When no SDK or framework is touched, the block must state `Docs consulted: none (no SDK/framework surface touched)`.\n- Capped structural search: bound code exploration to a few targeted queries \u2014 structural search when available, grep otherwise \u2014 before reading a full file; start with the narrowest query that names the shape or symbol you need. Escalate to a wider query or a full-file read only when a bounded pass returns nothing or stays genuinely ambiguous after a second try. Stop searching the moment the target is found; a further query for something already located spends tokens without adding information.\n- Identify the affected boundary, preserve rollback options, and verify the highest-risk behavior before reporting success.\n- Implement only the requested scope after repository facts confirm it.\n- Parallel independent tool calls, repository reads, searches, and reasoning lanes in one batch whenever their inputs do not depend on each other.\n- Keep dependency-bound work sequential; collect the upstream result before starting work that consumes it.\n- Treat review findings as a separate gate and report unresolved risks explicitly.\n\nDon't\n- Do not modify unrelated files or overwrite user changes.\n- Do not claim tests, review, CI, or merge passed without observed evidence.\n- Do not replace an active task with a broad refactor unless the request or plan requires it.\n\nKnown context\n- Recommended workflow: `ai-slop-cleaner`.\n- Recommended harness: `coding-handling`.\n- Intent: `cleanup`.\n- Use the original request only at dispatch time; OMH stores metadata, not the raw task, in durable artifacts.\n\nUnknowns and decision rule\n- When a missing fact changes scope, safety, or verification, ask one focused question or state the smallest reversible assumption before editing.\n\nExpected result\n- Implement only the requested coding change within the discovered scope.\n- Preserve existing behavior outside the requested change.\n- A concise report with changed files, verification outcomes, blockers, and evidence refs.\n- A `Docs consulted:` block with exact URL+version entries for any SDK/framework touched, or its explicit none line; SDK-touching work without it is incomplete.\n- Review status and any remaining review risk are explicit.\n\nTest\n- Name focused verification before edits, run the smallest relevant checks after edits, and report commands with outcomes instead of inferred success.\n- Run targeted tests for the changed behavior.\n- Run static or compile checks when available.\n\nProgress and blockers\n- Report progress, changed files, tests, blockers, evidence refs, local_capabilities_used, local_capability_evidence_refs, and local_capability_fallback_reason; distinguish prepared guidance from observed executor results.\n- Session summary shape: when producing a session summary, prepared-handoff brief, or continuation re-brief, structure it as Goal / Constraints and Preferences / Progress (Done, In Progress, Blocked) / Key Decisions / Next Steps / Critical Context, plus explicit read-files and modified-files lists. Carry both file lists forward cumulatively across successive summaries. A summary in this shape remains a report; it is never execution, verification, review, CI, or merge evidence.\n- History foveation: when the history does not fit the budget of a summary, prepared-handoff brief, or continuation re-brief, keep both temporal edges verbatim -- the oldest turns that set the goal, constraints, and decisions, and the newest turns that hold current working state -- and compress the middle instead. When the compressed middle still exceeds the budget, drop the oldest part of the middle first and state what was dropped, naming the dropped span and how much of it was dropped. Re-plan every summary from the original source, never from an earlier summary, so successive re-briefs do not stack lossy layers. An unstated drop is missing evidence, not a shorter summary.\n\nEvidence boundary\n- This is prepared executor-prompt guidance only; it is not dispatch, execution, verification, review, CI, or merge evidence.\n\nTask:\n{message}",
+    "recording_contract": "runtime_prepared_not_started",
+    "review": {
+      "evidence_required": "Runtime review evidence must be reported after real runtime work occurs.",
+      "required": true,
+      "workflow": "code-review"
+    },
+    "role_context_pack": {
+      "claim_boundary": "Role context packs name reviewed OMH guidance by content hash; they are prepared context, not execution, review, CI, merge, or Hermes internal-memory evidence.",
+      "pack_hash": "27921471463376e179f933b059ed170c78a6db530bcdab44840604c056b7f521",
+      "record_count": 0,
+      "records": [],
+      "redaction_policy": "metadata_only",
+      "schema_version": "role_context_pack/v1",
+      "scope": {
+        "kind": "project",
+        "ref": "default"
+      }
+    },
+    "role_context_pack_hash": "27921471463376e179f933b059ed170c78a6db530bcdab44840604c056b7f521",
+    "runtime_brief": {
+      "hermes_owns": [
+        "chat intake",
+        "runtime selection narration",
+        "prepared versus observed evidence boundaries",
+        "status narration from observed runtime artifacts"
+      ],
+      "intent": "cleanup",
+      "recommended_harness": "coding-handling",
+      "recommended_workflow": "ai-slop-cleaner",
+      "runtime_owns": [
+        "repository inspection when coding is selected",
+        "team or swarm lane creation when the task is safely splittable",
+        "tmux-style worker or pane coordination when the chosen runtime supports it",
+        "worker ACK/claim/result discipline",
+        "worktree isolation when parallel, risky, or multi-file coding starts",
+        "verification evidence reporting"
+      ],
+      "task_source": "original_message_at_dispatch_time"
+    },
+    "runtime_profile": {
+      "label": "<LEGACY_UPPER> runtime",
+      "profile": "<LEGACY_PROFILE_ID>",
+      "requires_operator_runtime": true,
+      "runtime_family": "<LEGACY_SHORT>",
+      "supports_hermes_coding_team_path": false,
+      "supports_team_swarm": true,
+      "supports_tmux_workers": true,
+      "supports_worker_protocol": true,
+      "supports_worktree_guidance": true,
+      "underlying_agent": "<LEGACY_AGENT>"
+    },
+    "runtime_templates": [],
+    "schema_version": "coding_runtime_handoff/v1",
+    "scope": [
+      "Use the original task message as the runtime request.",
+      "Run <LEGACY_UPPER> runtime with the recommended OMH workflow unless local runtime routing has stronger evidence.",
+      "For Hermes-owned coding, use OMH coding skills directly instead of pretending a separate executor ran.",
+      "For OMX/<LEGACY_UPPER>/OMC, treat the runtime as the chosen oh-my execution layer, not a plain prompt.",
+      "Keep prepared runtime state separate from observed runtime evidence."
+    ],
+    "selected_executor_profile": "<LEGACY_PROFILE_ID>",
+    "status": "prepared_not_observed",
+    "task_authority_envelope": {
+      "allowed_actions": [
+        "executor_handoff",
+        "planning",
+        "research"
+      ],
+      "allowed_executors": [
+        "<LEGACY_PROFILE_ID>"
+      ],
+      "allowed_targets": [],
+      "blocked_actions": [
+        "ci_fix_loop",
+        "executor_dispatch",
+        "external_posting",
+        "external_posting_prep",
+        "merge",
+        "pr_creation",
+        "pr_revision",
+        "release_note_work",
+        "repo_edit",
+        "review_fix_loop",
+        "ultragoal_creation"
+      ],
+      "claim_boundary": "This authority envelope is prepared scope only. It is not dispatch, implementation, review, CI, merge-readiness, or merge evidence, and it does not prove any action ran.",
+      "exclusions": [
+        {
+          "action": "ci_fix_loop",
+          "explanation": "`ci_fix_loop` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "executor_dispatch",
+          "explanation": "`executor_dispatch` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "external_posting",
+          "explanation": "`external_posting` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "external_posting_prep",
+          "explanation": "`external_posting_prep` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "merge",
+          "explanation": "`merge` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "pr_creation",
+          "explanation": "`pr_creation` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "pr_revision",
+          "explanation": "`pr_revision` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "release_note_work",
+          "explanation": "`release_note_work` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        },
+        {
+          "action": "repo_edit",
+          "explanation": "`repo_edit` is not granted by the `handoff_only` permission profile, so it stays an approval checkpoint.",
+          "reason_code": "outside_permission_profile"
+        },
+        {
+          "action": "review_fix_loop",
+          "explanation": "`review_fix_loop` is not granted by the `handoff_only` permission profile, so it stays an approval checkpoint.",
+          "reason_code": "outside_permission_profile"
+        },
+        {
+          "action": "ultragoal_creation",
+          "explanation": "`ultragoal_creation` is outside the task scope derived from the request, so the handoff never carries it.",
+          "reason_code": "not_required_by_task"
+        }
+      ],
+      "expansion_policy": {
+        "authority_sources": [
+          "user_intent",
+          "workspace_policy"
+        ],
+        "confirmation_action": "choose_permission_profile",
+        "self_expansion_allowed": false,
+        "widening_route": "confirmation_required"
+      },
+      "external_action_authority": "prepare_only",
+      "merge_authority": "disabled",
+      "mutation_rights": [],
+      "permission_profile": "handoff_only",
+      "safety_profile_revision": "fbb79a3dde9a1abdbff2a6893e48b88e8fd68a37abd5860dfdf9d5d2108559f1",
+      "schema_version": "task_authority_envelope/v1",
+      "status": "prepared_not_observed",
+      "untrusted_input_policy": {
+        "classifiers": [
+          "plugin_bundle.omh._governance_safety.classify_memory_admission",
+          "workflows.domain_intelligence_admission.ensure_safe_opaque_ref_content"
+        ],
+        "effect_on_authority": "none",
+        "flagged_surfaces": [],
+        "inspected_surfaces": [
+          "context_pack",
+          "memory_recall_pack",
+          "message"
+        ],
+        "policy": "Authority comes from user intent and workspace policy only. Authority-shaped requests inside message text, a context pack, or a recall pack are inert.",
+        "text_cannot_expand_authority": true
+      }
+    },
+    "task_prompt_contract": {
+      "claim_boundary": "This contract describes prepared prompt shape only; it is not dispatch, execution, verification, review, CI, or merge evidence.",
+      "language_policy": "Use English for executor-facing dispatch prompts unless preserving identifiers, paths, error text, quoted user-facing copy, or target-language output.",
+      "profile": "<LEGACY_PROFILE_ID>",
+      "required_sections": [
+        "Goal",
+        "Do",
+        "Don't",
+        "Expected result",
+        "Test"
+      ],
+      "schema_version": "executor_task_prompt_contract/v1",
+      "status": "prepared_not_observed",
+      "steering_policy": "When steering an active executor turn, send only the changed constraint, result, or blocker; do not replay the full prepared prompt unless the executor explicitly needs a restart."
+    },
+    "team_contract": {
+      "do_not_fanout_when": [
+        "requirements are still ambiguous",
+        "lanes would edit the same files without a merge plan",
+        "review or verification ownership is unclear"
+      ],
+      "fanout_when": [
+        "lanes are independent",
+        "verification can be integrated by one leader",
+        "parallel worktree or file ownership is explicit"
+      ],
+      "leader_owns": [
+        "scope split",
+        "worker assignment",
+        "shared-file conflict control",
+        "verification integration",
+        "final status report"
+      ],
+      "modes": [
+        "solo",
+        "team",
+        "swarm"
+      ],
+      "worker_protocol": [
+        "ACK assigned lane before editing",
+        "use tmux-style worker labels or equivalent runtime lane IDs for parallel work",
+        "claim files or worktree before shared changes",
+        "report changed files, tests, blockers, and evidence refs",
+        "escalate scope expansion to the leader"
+      ]
+    },
+    "verification": [
+      "Run targeted tests for the changed behavior.",
+      "Run static or compile checks when available."
+    ],
+    "work_owner_mode": "runtime_handoff",
+    "worktree_contract": {
+      "isolation": "use one branch/worktree per worker lane when more than one coding agent may edit the repository",
+      "not_observed_by_omh": [
+        "worktree creation",
+        "branch creation",
+        "worker process launch",
+        "merge back to main worktree"
+      ],
+      "policy": "recommended_for_parallel_or_risky_coding",
+      "required_before": [
+        "parallel implementation",
+        "risky refactor",
+        "large generated changes",
+        "team or swarm coding"
+      ]
+    }
+  },
+  "schema_version": "wrapper_session/v1",
+  "selected_executor_profile": "<LEGACY_PROFILE_ID>",
+  "session_id": "ws-8c518d924fdfbd440e9c457f",
+  "source": "discord",
+  "source_metadata": {},
+  "status": "runtime_handoff_prepared",
+  "thread_key": "discord:channel:a6c2872122b7",
+  "updated_at": "2026-10-25T06:29:10Z",
+  "work_owner_mode": "runtime_handoff"
+}

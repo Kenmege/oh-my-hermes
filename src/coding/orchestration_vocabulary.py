@@ -124,7 +124,7 @@ _TERMS: Final[tuple[dict[str, object], ...]] = (
     {
         "term": "external_runtime_handoff",
         "meaning": (
-            "A prepared handoff to exactly the omx-runtime, omo-runtime, or "
+            "A prepared handoff to exactly the omx-runtime, pi-family-runtime, or "
             "omc-runtime profiles; it shares the handoff builder with Maestro "
             "but is not Maestro."
         ),

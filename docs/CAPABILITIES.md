@@ -50,7 +50,7 @@ Use `action=summary` when Hermes needs to answer "what can OMH do?" or render a
 small workflow picker/card without asking the user to approve a shell catalog
 command. `summary` is also what the tool returns when no `action` is given;
 a call that names only a `section` gets that `export` section instead.
-`action=export` returns the full capability manifest, over 800k characters
+`action=export` returns the full capability manifest, close to a megabyte,
 without a `section`. Hermes writes a tool result that large to a file and shows
 the model only a short preview, so export stays an explicit choice and is best
 narrowed with `section`.
@@ -150,6 +150,8 @@ for byte the same payload.
 | `playbooks` | Situation-level workflow maps such as request-to-handoff, feedback triage, research department, materials processing, and idea-to-deploy, including owner/action hints for the first wrapper card. |
 | `tool_requirements` | Tool/MCP requirements when derivable, plus setup guidance for the optional allowlisted OMH MCP bridge. |
 | `evidence_boundaries` | The shared prepared-vs-observed claim rule. |
+| `omh_awareness` | The session-stable awareness primer the plugin registers as a system prompt section. |
+| `achievement_evidence` | Evidence contracts for claims about Hermes achievement badges, read only from local plugin artifacts. |
 
 ## Claim Boundary
 
@@ -177,13 +179,12 @@ wrapper to keep the same workspace, recommend a worktree, or require a worktree
 before opening a coding agent. It is still prepared guidance until a wrapper or
 operator invokes or observes the workspace action. Worktree creation is deferred
 to native tooling — upstream Hermes manages worktrees (Kanban worktree-per-task
-since v0.15.0, Desktop Projects since v0.18.0) or you can run `git worktree add`
-— and OMH records `omh_worktree_observation/v1` for the resulting worktree.
-`omh worktree bind` can then return
-`worktree_executor_binding/v1` so a wrapper can show open/attach/record actions
-for the selected coding agent. Those records prove workspace isolation and
-session-start guidance only, not executor dispatch, implementation, review, CI,
-or merge.
+and Desktop Projects) or you can run `git worktree add` — and OMH records
+`omh_worktree_observation/v1` for the resulting worktree. `omh worktree bind`
+can then return `worktree_executor_binding/v1` so a wrapper can show
+open/attach/record actions for the selected coding agent. Those records prove
+workspace isolation and session-start guidance only, not executor dispatch,
+implementation, review, CI, or merge.
 
 The optional MCP bridge uses `omh mcp serve` and exposes only `omh_status`,
 `omh_recommend`, and `omh_probe`. `omh_probe` can include the parity matrix and

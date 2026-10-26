@@ -6,9 +6,9 @@ pin the fix: the always-loaded skill bodies carry a NAMED bar and pointers,
 and the on-demand references carry the material — the DESIGN.md contract
 gate, the taste directions with their anti-slop checklist, the
 reference-token extraction contract, and the critique rubric. The wording is
-OMH's own; the concept lineage (oh-my-openagent's frontend architecture and
-its permissively licensed design upstreams) is credited inside each
-reference with a pinned commit and an explicit no-text-reproduced statement,
+OMH's own; the concept lineage (an upstream frontend architecture and its
+permissively licensed design upstreams) is credited inside each reference
+with a pinned commit and an explicit no-text-reproduced statement,
 because the nearest upstream is Sustainable-Use-licensed and OMH is MIT.
 """
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from ..coding.executors import canonical_executor_profile
 from ..coding_delegation import CODING_EXECUTOR_TARGETS
 from ..demo import DEFAULT_ORCHESTRATION_MESSAGE, build_orchestration_demo
 from ..grounded_score import build_grounded_score_demo, format_grounded_score_summary
@@ -247,6 +248,7 @@ def _add_demo_commands(sub) -> None:
     orchestration.add_argument("--limit", type=int, default=3)
     orchestration.add_argument(
         "--executor",
+        type=canonical_executor_profile,
         choices=CODING_EXECUTOR_TARGETS,
         default="choose",
         help="Executor/runtime profile to demonstrate. Defaults to an explicit choice-required handoff.",

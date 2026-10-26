@@ -50,4 +50,4 @@ When delegating, show the composed delegate prompt in a fenced code block in the
 
 ## Evidence Boundary
 
-A prepared coding handoff is not executor/runtime dispatch, worker start, worktree creation, result, verification, review, CI, merge readiness, or merge evidence. Hermes/OMX/OMO/OMC runtime handoffs must record separate `runtime_observation/v1` events before the status can move from prepared to observed.
+A prepared coding handoff is not executor/runtime dispatch, worker start, worktree creation, result, verification, review, CI, merge readiness, or merge evidence. Hermes/OMX/pi-family/OMC runtime handoffs must record separate `runtime_observation/v1` events before the status can move from prepared to observed.
