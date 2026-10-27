@@ -2864,8 +2864,23 @@ OMH-managed directories are retired; a directory you registered yourself
 stays where it is. A command that is not the installer-managed one (a
 checkout, a pip or uv tool install) registers its own `~/.omh/skills` and
 never retires the pointer, so it cannot move a machine backwards.
+
+A generation's own pack, `<managed root>/generations/<id>/skills`, is never
+registered: only the `current/skills` pointer is. An entry naming one (an
+older `omh setup` wrote the running generation's pack after the pointer) is
+the same files as the pointer on the day it is written and a second copy of
+every OMH skill once the next update moves the pointer, at which point
+Hermes lists no OMH skill at all. The installer-managed command's setup and
+update retire every such entry, from the primary home and every bot
+profile, whether the generation is still on disk or already collected, and
+a home naming only one is migrated to the pointer rather than read as the
+opt-out; `omh uninstall --registration-only` removes them too. Only
+absolute entries under the pointer's own managed root match: a `skills`
+directory under some other `generations/` directory, and any relative
+entry (Hermes anchors those at its own home), stay.
 `omh doctor` reports a home that still names two managed directories on
-disk as `external_dir_ambiguity` (one row per affected profile) and
+disk, an older generation's pack beside the pointer included, as
+`external_dir_ambiguity` (one row per affected profile) and
 promotes the row's `run \`omh update\`` to its headline next action; the
 update's own post-check re-reads every home after the write and warns in
 the same words, as a warning line only -- the update's exit code does not

@@ -3152,6 +3152,92 @@ class HermesProfileSyncTests(unittest.TestCase):
             # The post-check re-reads every home and finds nothing to name.
             self.assertNotIn("OMH-managed skills directories", stdout)
 
+    def test_chat_target_auto_apply_registers_the_pointer_too(self) -> None:
+        # The second writer of the same registration: `omh chat ...
+        # --auto-apply-target-change` registers the skills directory in the
+        # Hermes home the event names, and used `paths.skills_dir` as well.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, first, _second, _gone = self._generation_layout(root)
+            other_home = root / ".hermes-b"
+            event = root / "event.json"
+            event.write_text(
+                json.dumps(
+                    {
+                        "message": {"id": "m1", "content": "status", "channel": "c1"},
+                        "agent": {"id": "agent-b"},
+                        "runtime": {"hermes_home": str(other_home), "agent_count": 2},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self._managed_install(pointer, pack=first):
+                status, stdout, stderr = run_cli(
+                    self._base(root)
+                    + ["chat", "interact", "--source", "discord", "--event-json", str(event), "--auto-apply-target-change"]
+                )
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertEqual(json.loads(stdout)["target_notice"]["action"], "target_change_applied")
+            self.assertEqual(
+                external_dirs((other_home / "config.yaml").read_text(encoding="utf-8")), [pointer.as_posix()]
+            )
+
+    def test_a_primary_home_naming_only_an_older_generation_is_registered_not_opted_out(self) -> None:
+        # The primary twin of the profile case below: both homes read one
+        # predicate, so a primary left on an older generation's pack is moved
+        # to the pointer instead of being read as the deliberate opt-out --
+        # which kept the pack until it was garbage-collected and Hermes then
+        # listed no OMH skill at all.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, first, second, _gone = self._generation_layout(root)
+            with self._managed_install(pointer, pack=first):
+                status, _, stderr = run_cli(self._base(root) + ["setup"], output_json=False)
+            self.assertEqual(status, 0, stderr)
+            config = root / ".hermes" / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(pointer.as_posix(), first.as_posix()),
+                encoding="utf-8",
+                newline="",
+            )
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [first.as_posix()])
+
+            with self._managed_install(pointer, pack=second):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix()])
+            self.assertIn(f"Hermes registration migrated from {first.as_posix()} to {pointer.as_posix()}.", stdout)
+
+    def test_an_unmanaged_command_leaves_a_profile_on_an_older_generation_alone(self) -> None:
+        # Only the command that retires a generation's pack counts it as a
+        # registration. An unmanaged command would add its own path beside
+        # the pack, so the profile keeps its one loadable directory instead.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "kami")
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            pointer, first, _second, _gone = self._generation_layout(root)
+            own_path = (root / ".omh" / "skills").resolve().as_posix()
+            config = profile / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(own_path, first.as_posix()),
+                encoding="utf-8",
+                newline="",
+            )
+            before = config.read_text(encoding="utf-8")
+            self.assertEqual(external_dirs(before), [first.as_posix()])
+
+            with mock.patch.object(_setup_module, "managed_current_workflow_pack_dir", return_value=pointer):
+                self.assertFalse(_setup_module._managed_command_runtime()["managed"])
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("Bot profiles: kami (left unregistered)", stdout)
+            self.assertEqual(config.read_text(encoding="utf-8"), before)
+
     def test_a_profile_naming_only_an_older_generation_is_registered_not_opted_out(self) -> None:
         # A generation's pack is an OMH-managed directory like the other
         # two: a profile left on one is moved to the pointer, not frozen as

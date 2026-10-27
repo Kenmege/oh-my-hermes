@@ -175,13 +175,29 @@ class GenerationPackEntriesTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             pointer, older, gone = self._layout(root)
-            foreign = [root / "mine", root / "generations" / "20261025" / "other", root / "elsewhere" / "x" / "skills"]
+            # A `skills` directory under another root's `generations/` is the
+            # person's: only the pointer's own root matches, never the name.
+            foreign = [
+                root / "mine",
+                root / "generations" / "20261025" / "other",
+                root / "elsewhere" / "x" / "skills",
+                root / "elsewhere" / "generations" / "20261025" / "skills",
+            ]
+            relative = "generations/20261025/skills"
             with mock.patch.dict(os.environ, {"HOME": str(root), "USERPROFILE": str(root)}):
-                text = _config_naming(*foreign, pointer, gone) + f"    - {older.as_posix()}/\n    - ~/generations/x/skills\n"
-                self.assertEqual(
-                    generation_pack_entries(text, pointer),
-                    [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"],
+                text = (
+                    _config_naming(*foreign, pointer, gone)
+                    + f"    - {older.as_posix()}/\n    - ~/generations/x/skills\n    - {relative}\n"
                 )
+                # Run from the managed root: Hermes anchors a relative entry
+                # at its own home, so it is never a generation's pack.
+                cwd = os.getcwd()
+                os.chdir(root)
+                try:
+                    entries = generation_pack_entries(text, pointer)
+                finally:
+                    os.chdir(cwd)
+                self.assertEqual(entries, [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"])
             self.assertEqual(generation_pack_entries(text, None), [])
 
     def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:
@@ -213,6 +229,29 @@ class GenerationPackEntriesTests(unittest.TestCase):
             self.assertEqual(
                 registered_managed_entries(text, candidates, current=pointer), [pointer.as_posix(), older.as_posix()]
             )
+
+    @requires_symlinks
+    def test_on_the_live_layout_the_older_pack_is_named_and_both_packs_are_retired(self) -> None:
+        # `current` links to the running generation and the previous one is
+        # kept for rollback. The running pack is one directory with the
+        # pointer, so it is not the ambiguity; it is still retired, since the
+        # next update makes it one.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            older, running = (root / "generations" / name / "skills" for name in ("older", "running"))
+            older.mkdir(parents=True)
+            running.mkdir(parents=True)
+            (root / "current").symlink_to(running.parent, target_is_directory=True)
+            pointer = root / "current" / "skills"
+            candidates = managed_skill_dir_candidates(_managed_paths(root, running), current=pointer)
+            text = _config_naming(pointer, older, running)
+
+            self.assertEqual(
+                registered_managed_entries(text, candidates, current=pointer), [pointer.as_posix(), older.as_posix()]
+            )
+            migration = migrate_managed_registration(text, pointer, candidates, current=pointer)
+            self.assertEqual(external_dirs(migration.text), [pointer.as_posix()])
+            self.assertEqual(migration.retired, [older.as_posix(), running.as_posix()])
 
     def test_doctor_and_the_update_post_check_name_the_older_pack(self) -> None:
         with TemporaryDirectory() as tmp:
