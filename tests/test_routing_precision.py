@@ -68,7 +68,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Three science vocabulary controls remain direct answers.
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
-        self.assertEqual(payload["summary"]["case_count"], 1114)
+        # sprite-forge adds CSS pixel, soda brand and spreadsheet-sheet controls.
+        self.assertEqual(payload["summary"]["case_count"], 1117)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -138,7 +139,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A stop with a declarative reason is answered directly (+1).
         # The three science vocabulary controls also answer directly.
         # The two quoted employer controls are answered directly.
-        self.assertEqual(payload["summary"]["direct_answer_count"], 349)
+        # The three sprite-forge vocabulary controls answer directly (+3).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 352)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -192,7 +194,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # two negatives that hold broad wording out (a red-team hiring
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1130)
+        # sprite-forge adds one game character sprite sheet request.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1131)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

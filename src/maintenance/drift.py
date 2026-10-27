@@ -877,7 +877,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Three domain-science vocabulary controls (+3).
             # Career actor repair adds five employer requests and two references.
             # Normalized actor/objective follow-up adds seven employer contrasts.
-            expected=1114,
+            # sprite-forge adds CSS pixel, soda brand and spreadsheet-sheet controls (+3).
+            expected=1117,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1380,7 +1381,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install drift, and /omh-doctor status runs doctor (+1).
             # Career actor repair retains five personal/target/quoted controls.
             # Actor/objective follow-up adds two third-person candidate controls.
-            expected=1130,
+            # sprite-forge adds one game character sprite sheet request (+1).
+            expected=1131,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1394,7 +1396,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # `market-research` adds one.
             # show-reel adds one installable motion-production method.
             # Three optional executable science methods (+3).
-            expected=151,
+            # sprite-forge adds one QC-gated game sprite frame method.
+            expected=152,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

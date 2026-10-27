@@ -247,6 +247,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-geospatial-analysis': PORTABILITY_PORTABLE,
     'omh-biomedical-evidence': PORTABILITY_PORTABLE,
     'omh-molecular-docking': PORTABILITY_PORTABLE,
+    # Optional standalone Pillow frame helper; materialization never executes it.
+    'omh-sprite-forge': PORTABILITY_PORTABLE,
     # Offline stdlib state helper; research and drafting belong to the host.
     'omh-ai-job-search': PORTABILITY_PORTABLE,
     # required_inputs: user request; expected_outputs: github-event-ops/v1 card or guidance; final_checklist requires evidence/approval, not a native runtime.
@@ -391,6 +393,10 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'geospatial-analysis/references/full-contract.md',
     'geospatial-analysis/references/procedure.md',
     'geospatial-analysis/references/execution-and-qa.md',
+    'sprite-forge/references/full-contract.md',
+    'sprite-forge/references/procedure.md',
+    'sprite-forge/references/execution-and-qa.md',
+    'sprite-forge/references/character-art-direction.md',
     'biomedical-evidence/references/full-contract.md',
     'biomedical-evidence/references/procedure.md',
     'biomedical-evidence/references/execution-and-qa.md',
@@ -507,6 +513,11 @@ PORTABLE_SUPPORT_PATHS = frozenset({
     'geospatial-analysis/toolkit/examples/input.json',
     'geospatial-analysis/toolkit/examples/overlay.json',
     'geospatial-analysis/toolkit/upstream-manifest.json',
+    'sprite-forge/toolkit/README.md',
+    'sprite-forge/toolkit/LICENSE.upstream',
+    'sprite-forge/toolkit/scripts/forge.py',
+    'sprite-forge/toolkit/examples/layout.json',
+    'sprite-forge/toolkit/upstream-manifest.json',
     'biomedical-evidence/toolkit/README.md',
     'biomedical-evidence/toolkit/scripts/reconcile.py',
     'biomedical-evidence/toolkit/upstream-manifest.json',

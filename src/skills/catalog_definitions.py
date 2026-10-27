@@ -64,6 +64,7 @@ from .product_discovery_skill import DEFINITION as PRODUCT_DISCOVERY_DEFINITION
 from .sales_pipeline_skill import DEFINITION as SALES_PIPELINE_DEFINITION
 from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
 from .geospatial_analysis_skill import DEFINITION as GEOSPATIAL_ANALYSIS_DEFINITION
+from .sprite_forge_skill import DEFINITION as SPRITE_FORGE_DEFINITION
 from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINITION
 from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
 from .ai_job_search_skill import DEFINITION as AI_JOB_SEARCH_DEFINITION
@@ -11792,6 +11793,7 @@ _DEFINITIONS.extend(
         SALES_PIPELINE_DEFINITION,
         SHOW_REEL_DEFINITION,
         GEOSPATIAL_ANALYSIS_DEFINITION,
+        SPRITE_FORGE_DEFINITION,
         BIOMEDICAL_EVIDENCE_DEFINITION,
         MOLECULAR_DOCKING_DEFINITION,
         AI_JOB_SEARCH_DEFINITION,

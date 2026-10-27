@@ -181,7 +181,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # plus its newline (+86), measured against clean 85673e100. This exposes the
 # complete career workflow; no eager toolkit text or standing padding is added.
 # test_ai_job_search_context_budget pins the legacy index and marginal cost.
-SKILL_INDEX_CHAR_LIMIT = 13243
+# 13243 -> 13328: one index line for the new `sprite-forge` skill; its name
+# and visible description window (+85). Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 13328
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -830,7 +832,12 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # (+3072) for career discovery/drafting/interviews/evidenced outcomes. Retire
 # the old 22 unused characters, not carry them forward. Existing rows are
 # byte-stable and test_ai_job_search_context_budget pins them and this delta.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525379
+# 525379 -> 528553: only the new `sprite-forge` capability row (3172) plus its
+# separator (+3174); no eager toolkit bytes or headroom. Re-derived from the producer.
+# 528553 -> 528574: the `deliverable-package` row description adds the
+# `archived` and `published` states ("attached, archived, and published" over
+# "and attached", +21). Measured by release drift; no headroom.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 528574
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -934,7 +941,9 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # separator (+935), measured against clean 85673e100; the complete method and
 # offline companion stay on demand. No sibling row or per-item limit moves;
 # test_ai_job_search_context_budget pins existing rows and the feature delta.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 142635
+# 142635 -> 143595: one 958-character standalone `sprite-forge` summary +
+# separator (+960); the method and Pillow companion stay on demand.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 143595
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

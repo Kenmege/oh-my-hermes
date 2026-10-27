@@ -1321,6 +1321,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "accessibility-audit": "materials_and_visuals",
     "visual-qa": "materials_and_visuals",
     "show-reel": "materials_and_visuals",
+    "sprite-forge": "materials_and_visuals",
     "content-operator": "materials_and_visuals",
     "media-input-operator": "materials_and_visuals",
     "localization-review": "materials_and_visuals",
@@ -7193,6 +7194,7 @@ def awareness_primer_payload() -> dict[str, object]:
             "label": "Materials and visual summaries",
             "skills": [
                 "show-reel",
+                "sprite-forge",
                 "design-orchestration",
                 "apple-design",
                 "design-quality-gate",
@@ -7696,6 +7698,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "show-reel": "prepare_show_reel",
+    "sprite-forge": "prepare_sprite_forge",
     "workspace-file-operator": "prepare_workspace_file_operator_card",
     "workspace-audit": "prepare_workspace_audit",
     "production-audit": "prepare_production_audit",

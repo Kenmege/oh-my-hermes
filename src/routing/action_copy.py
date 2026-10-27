@@ -5,6 +5,7 @@ from ..coding.orchestration_vocabulary import CHOOSE_EXECUTOR_REASON
 
 NEXT_ACTION_LABELS: dict[str, str] = {
     "prepare_show_reel": "prepare a show reel",
+    "prepare_sprite_forge": "prepare QC-gated sprite frames",
     "prepare_geospatial_analysis": "prepare CRS-safe polygon computation",
     "prepare_biomedical_evidence": "prepare public evidence reconciliation",
     "prepare_molecular_docking": "prepare bounded standalone docking",
