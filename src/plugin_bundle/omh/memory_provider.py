@@ -68,7 +68,7 @@ from .hermes_memory import (
     read_hermes_memory,
 )
 from .memory_admission import demotion_refusal_reason
-from .memory_store_io import read_project_memory_candidates
+from .memory_store_io import guard_store_write, read_project_memory_candidates
 from .memory_block_replay import MemoryBlockSelection
 from .memory_blocks import (
     DEFAULT_SYSTEM_RENDER_BUDGET_CHARS,
@@ -1764,6 +1764,8 @@ def _askable_record_ids(pack: dict[str, Any]) -> set[str]:
 
 
 def _write_text(path: Path, text: str) -> None:
+    # Every caller writes under `<omh_home>/memory`; a link on the way is refused.
+    guard_store_write(path)
     write_text_locked(path, text)
 
 
@@ -1773,7 +1775,7 @@ def _append_bounded_json_line(path: Path, entry: dict[str, object]) -> None:
     The read and the replace share one lock, so two sessions appending at
     once both keep their line instead of the later replace dropping the other.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    guard_store_write(path)
     with state_file_lock(path):
         lines = _metadata_journal_lines(path)
         lines.append(json.dumps(entry, ensure_ascii=False, sort_keys=True))

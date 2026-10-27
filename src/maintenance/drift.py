@@ -887,6 +887,20 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # skill, overlapping or apart, summed to a dispatch: reports to the
             # bosses already handed in, a secretary's weekly report, a vague
             # geometry problem (+3).
+            # repro-audit adds one vocabulary control (+1). Its review replaces
+            # that control, which no trigger reached, with 19 that each say a
+            # phrase the skill once dispatched on or a HellaSwag phrase in
+            # another sense, one per clause of its admission rule (+18). The
+            # #2324 review adds ten more: execution by stem anywhere in the
+            # request (hyphen, -ing, retrain, keep training, fine-tune, again,
+            # a later sentence) and the record-to-relation shape (an upload
+            # state, a citing appendix, a table before sending) (+10). The delta
+            # review makes the whole request an allow-listed shape and adds one
+            # control per position: trailing clauses, a second sentence, a tail
+            # word, a word before the owner, the record slot, the relation, the
+            # owner and the target (+10). A quoted, code-span, curly-quoted or
+            # single-quoted trailing clause is masked before the predicate
+            # reads it, so shielded messages never admit the skill (+4).
             # show-reel promo/demo/launch/trailer names: the same words as a
             # playback fault, an edit, an upload, a conversion, a chained post,
             # a towed trailer, a video call and a renderer install (+8).
@@ -905,7 +919,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # file and line, a bare-domain link or a script the router strips
             # (4), under a reply pointer or an attachment note (2), with an
             # emoji (1), and a with-adjunct naming people (2) (+9).
-            expected=1192,
+            expected=1235,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1432,11 +1446,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # purpose (chart styling, an architecture diagram with the code
             # structure, model serving with a serving benchmark) still
             # dispatch (+3).
+            # repro-audit adds one HellaSwag log versus paper request (+1), and
+            # its review three more: own results, a score against a reported
+            # metric, a courtesy opener (+3), and its delta review a request
+            # that closes on the compared metric (+1).
             # show-reel promo/demo/launch/trailer names, a two-word duration
             # and a renderer-led brief, each of which dispatched another lane
             # or asked on main (+8).
             # A with-adjunct closes a promo video brief (+1).
-            expected=1163,
+            expected=1168,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -39,6 +39,7 @@ from typing import Any, Callable
 from . import runtime_paths
 from .group_activity_status import profile_slot
 from .memory_state_files import state_file_lock, write_text_atomic, write_text_locked
+from .memory_store_io import guard_store_write
 
 DREAMING_STATE_SCHEMA_VERSION = "omh_memory_dreaming_state/v1"
 DREAMING_HANDOFF_SCHEMA_VERSION = "omh_memory_consolidation_handoff/v1"
@@ -196,7 +197,11 @@ def adopt_legacy_dreaming_files(omh_home: str | Path, hermes_home: str | Path) -
     if not any(path.is_file() and not path.is_symlink() for path in legacy_files):
         return []
     target_dir = profile_dreaming_dir(omh_home, hermes_home)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    # The lock sidecar and the moved files stay inside the store: a linked
+    # directory or target on the way is refused (OSError), never followed.
+    guard_store_write(memory_dir / "consolidation.json", omh_home=Path(omh_home).expanduser())
+    for name in LEGACY_STATE_FILENAMES:
+        guard_store_write(target_dir / name, omh_home=Path(omh_home).expanduser())
     moved: list[str] = []
     with state_file_lock(memory_dir / "consolidation.json"):
         for legacy in legacy_files:
@@ -254,6 +259,7 @@ def read_dreaming_state(omh_home: str | Path, hermes_home: str | Path) -> dict[s
 def write_dreaming_state(omh_home: str | Path, hermes_home: str | Path, state: dict[str, Any]) -> Path:
     """Replace this profile's counters whole, under the state lock. Raises ``OSError``."""
     path = dreaming_state_path(omh_home, hermes_home)
+    guard_store_write(path, omh_home=Path(omh_home).expanduser())
     write_text_locked(path, json.dumps(state, ensure_ascii=False, sort_keys=True))
     return path
 
@@ -272,7 +278,7 @@ def update_dreaming_state(
     Raises ``OSError`` (a lock timeout is one).
     """
     path = dreaming_state_path(omh_home, hermes_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    guard_store_write(path, omh_home=Path(omh_home).expanduser())
     with state_file_lock(path):
         updated = mutate(read_dreaming_state(omh_home, hermes_home))
         write_text_atomic(path, json.dumps(updated, ensure_ascii=False, sort_keys=True))

@@ -954,7 +954,7 @@ HERMES_INTERPRETER_SCRIPTS: dict[str, HermesScriptPolicy] = {
             }),
             "base64": frozenset({"b64encode"}),
             "json": frozenset({"dumps", "loads"}),
-            "os": frozenset({"environ", "getcwd"}),
+            "os": frozenset({"environ", "getcwd", "read"}),  # read: the TUI's stdin by descriptor (#2327)
             "signal": frozenset({"SIGTERM"}),
             "sys": frozenset({"exit", "stderr", "stdin", "stdout"}),
             "threading": frozenset({"Thread"}),

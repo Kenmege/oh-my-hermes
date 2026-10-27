@@ -52,7 +52,27 @@ class SkillContextCostTests(unittest.TestCase):
         # expanding to the roughly 3% headroom prior entries permitted.
         # The feature-cost regression pins legacy body bytes, bounds these
         # two sections and also enforces (current - 1,943) < 126,000.
-        self.assertLess(profile["repeated"]["bytes"], 127_943)
+        # 127,943 -> 129,886: main measures 126,593; repro-audit's mandatory
+        # Workflow Lane and Runtime Evidence rails measure +1,943 (128,536).
+        # The old allowance (1,350 bytes) is preserved, not widened; the
+        # increment and body caps below bound the audit itself.
+        self.assertLess(profile["repeated"]["bytes"], 129_886)
+
+    def test_repro_audit_context_increment_stays_bounded(self) -> None:
+        from omh.skills.context_cost import _skill_context_cost_profile
+        from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
+
+        templates = builtin_skill_templates()
+        references = builtin_skill_reference_templates()
+        full = _skill_context_cost_profile("full", templates, references)
+        without = _skill_context_cost_profile(
+            "full", [template for template in templates if template.name != "repro-audit"], references
+        )
+        audit = next(template for template in templates if template.name == "repro-audit")
+        increment = full["repeated"]["bytes"] - without["repeated"]["bytes"]
+        self.assertGreaterEqual(increment, 0)
+        self.assertLessEqual(increment, 2_000)
+        self.assertLessEqual(len(audit.content.encode("utf-8")), 8_000)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()
@@ -77,7 +97,8 @@ class SkillContextCostTests(unittest.TestCase):
 
         # Pre-feature producer measurements, not token/latency estimates. This
         # feature changes opening actions only, never indexed descriptions.
-        self.assertEqual(skill_index_chars(), 13_243)  # Career adds its bounded 86-character entry.
+        # Career adds its bounded 86-character entry; repro-audit its 84-character one.
+        self.assertEqual(skill_index_chars(), 13_327)
         # research and web-research add the shipped `ru` trigger pack's routing
         # signals (+446 and +316 bytes, after its review dropped the everyday
         # and nested phrases) to their pre-feature bodies; the search guidance
