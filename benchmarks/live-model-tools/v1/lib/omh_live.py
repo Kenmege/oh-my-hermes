@@ -46,6 +46,7 @@ def _failed_current_session_trial(
     exit_code: int | None = None,
     classification: str | None = None,
     prompt_sent: bool = True,
+    edit_surface: str = "patch",
 ) -> dict[str, object]:
     receipt: dict[str, object] = {"classification": classification or _failure_classification(detail), "kind": kind}
     if exit_code is not None:
@@ -54,6 +55,7 @@ def _failed_current_session_trial(
         "schema_version": "omh_live_model_trial/v1",
         "execution_path": "hermes_current_session",
         "condition": condition,
+        "edit_surface": edit_surface,
         "task_digest": task_digest(prompt),
         # A route failure ends the trial before the condition prompt exists.
         "prompt_digest": prompt_digest(prompt) if prompt_sent else None,
@@ -135,6 +137,7 @@ def current_session_argv(
     usage_file: Path,
     prompt: str,
     workspace: Path,
+    edit_surface: str = "patch",
 ) -> list[str]:
     """Use the caller's authenticated Hermes config, never the isolated child.
 
@@ -143,7 +146,21 @@ def current_session_argv(
     `--in <workspace>` pins the working directory: process cwd alone is not
     sufficient because Hermes restores the invoking user's home directory
     otherwise.
+
+    `edit_surface="patch"` (default) keeps the argv byte-identical to the
+    original `--toolsets file,terminal` invocation. `edit_surface="hashline"`
+    exposes the plugin toolset `omh-hashline` (tools `hashline_read` /
+    `hashline_edit`, gated by env `OMH_HASHLINE_TOOLS=1`) instead of the
+    builtin `file` toolset, so the builtin `patch` tool (toolsets.py "file":
+    ["read_file", "write_file", "patch", "search_files"]) is not exposed while
+    `terminal` is kept.
     """
+    if edit_surface == "patch":
+        toolsets = "file,terminal"
+    elif edit_surface == "hashline":
+        toolsets = "omh-hashline,terminal"
+    else:
+        raise ValueError("edit_surface must be 'patch' or 'hashline'")
     return [
         hermes_executable,
         "--oneshot",
@@ -157,10 +174,25 @@ def current_session_argv(
         "--reasoning",
         str(route["selected_reasoning_effort"]),
         "--toolsets",
-        "file,terminal",
+        toolsets,
         "--usage-file",
         str(usage_file),
     ]
+
+
+# Same sentence for both surfaces; only the tool names differ. Without it a model with `terminal`
+# rewrites files through the shell and neither edit surface is measured (2026-10-27 smoke: 0 patch
+# and 0 hashline_edit calls, 7 terminal calls).
+_EDIT_TOOLS = {"patch": ("read_file", "patch"), "hashline": ("hashline_read", "hashline_edit")}
+
+
+def edit_directive(edit_surface: str) -> str:
+    if edit_surface not in _EDIT_TOOLS:
+        raise ValueError("edit_surface must be 'patch' or 'hashline'")
+    read, edit = _EDIT_TOOLS[edit_surface]
+    return (f"EDIT TOOL RULE: read source files with `{read}` and change existing files only with `{edit}`. "
+            "Do not modify files through terminal commands (sed, perl, python, shell redirection); "
+            "use terminal only to search, run tests, and write the answer file.")
 
 
 def prompt_pair(task: str, route: Mapping[str, Any]) -> tuple[str, str]:
@@ -377,6 +409,8 @@ def run_current_session_trial(
     run_id: str,
     timeout: int,
     confirmed: bool = False,
+    edit_surface: str = "patch",
+    directive: bool = False,
 ) -> dict[str, object]:
     """Execute via the active Hermes profile and retain only observed metrics."""
     if not confirmed:
@@ -407,6 +441,7 @@ def run_current_session_trial(
             detail="",
             kind="route_timeout" if isinstance(exc, subprocess.TimeoutExpired) else "route_launch",
             classification="timeout" if isinstance(exc, subprocess.TimeoutExpired) else "process_crash",
+            edit_surface=edit_surface,
         )
     if route_completed.returncode:
         return _failed_current_session_trial(
@@ -414,6 +449,7 @@ def run_current_session_trial(
             condition=condition,
             prompt=prompt_pair(task, fallback_route)[0],
             prompt_sent=False,
+            edit_surface=edit_surface,
             detail=route_completed.stderr,
             kind="route_exit",
             exit_code=route_completed.returncode,
@@ -428,24 +464,27 @@ def run_current_session_trial(
             condition=condition,
             prompt=prompt_pair(task, fallback_route)[0],
             prompt_sent=False,
+            edit_surface=edit_surface,
             detail="",
             kind="route_protocol",
             classification="adapter_protocol_error",
         )
     prompt = prompt_for_condition(task, route, condition)
+    if directive:
+        prompt = f"{edit_directive(edit_surface)}\n\n{prompt}"
     with TemporaryDirectory(prefix="omh-current-session-usage-") as usage_root:
         usage_file = Path(usage_root) / "usage.json"
         try:
             completed = subprocess.run(
                 _platform_argv(current_session_argv(
                     hermes_executable, route=route, provider=provider, usage_file=usage_file,
-                    prompt=prompt, workspace=workspace,
+                    prompt=prompt, workspace=workspace, edit_surface=edit_surface,
                 )),
                 check=False,
                 capture_output=True,
                 text=True,
                 cwd=workspace,
-                env=_current_session_environment(workspace),
+                env=_current_session_environment(workspace, edit_surface),
                 timeout=timeout + 30,
             )
         except subprocess.TimeoutExpired:
@@ -456,6 +495,7 @@ def run_current_session_trial(
                 detail="",
                 kind="timeout",
                 classification="timeout",
+                edit_surface=edit_surface,
             )
         if completed.returncode:
             return _failed_current_session_trial(
@@ -465,6 +505,7 @@ def run_current_session_trial(
                 detail=completed.stderr,
                 kind="process_exit",
                 exit_code=completed.returncode,
+                edit_surface=edit_surface,
             )
         try:
             usage = _load_usage(usage_file)
@@ -476,6 +517,7 @@ def run_current_session_trial(
                 detail="",
                 kind="usage_telemetry",
                 classification="usage_unavailable",
+                edit_surface=edit_surface,
             )
     observation = _current_session_observation(
         route=route, usage=usage, parent_run_id=parent_run_id, run_id=run_id,
@@ -484,6 +526,8 @@ def run_current_session_trial(
         "schema_version": "omh_live_model_trial/v1",
         "execution_path": "hermes_current_session",
         "condition": condition,
+        "edit_surface": edit_surface,
+        "edit_directive": directive,
         "task_digest": task_digest(prompt),
         "prompt_digest": prompt_digest(prompt),
         "route": {
@@ -540,14 +584,20 @@ def _environment(omh_home: Path) -> dict[str, str]:
     return environment
 
 
-def _current_session_environment(workspace: Path) -> dict[str, str]:
+def _current_session_environment(workspace: Path, edit_surface: str = "patch") -> dict[str, str]:
     """Pin the terminal/file tool anchor to the benchmark workspace.
 
     The caller's shell exports TERMINAL_CWD (for example the user's home
     directory); without an override the live model would read and mutate
     files there instead of the isolated benchmark workspace, even though
     the subprocess cwd is set to the workspace.
+
+    When `edit_surface="hashline"`, `OMH_HASHLINE_TOOLS=1` is set for this run
+    only, so the plugin tools `hashline_read`/`hashline_edit` (toolset
+    `omh-hashline`) become available.
     """
     environment = dict(os.environ)
     environment["TERMINAL_CWD"] = str(workspace)
+    if edit_surface == "hashline":
+        environment["OMH_HASHLINE_TOOLS"] = "1"
     return environment

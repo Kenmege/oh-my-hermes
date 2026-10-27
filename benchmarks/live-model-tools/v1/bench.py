@@ -42,6 +42,28 @@ def main(argv: list[str] | None = None) -> int:
             "--current-session-provider",
             help="Registered provider ID to use only with --harness hermes_current_session.",
         )
+        command.add_argument(
+            "--edit-surface",
+            choices=("patch", "hashline"),
+            default="patch",
+            help="Edit surface for hermes_current_session harness: 'patch' (default, builtin file toolset) or 'hashline' (plugin toolset omh-hashline with OMH_HASHLINE_TOOLS=1).",
+        )
+        command.add_argument(
+            "--edit-directive",
+            action="store_true",
+            help="Prepend the same edit-tool rule to both surfaces (names the surface's read/edit tools).",
+        )
+        command.add_argument(
+            "--extra-model",
+            action="append",
+            default=None,
+            help="Additional live model to schedule without editing manifest.json. Format: id=...,provider=...,effort=...,family=... (repeatable).",
+        )
+        command.add_argument(
+            "--templates",
+            default=None,
+            help="Comma-separated template IDs to include (e.g. E-RENAME,E-BUGFIX). Applies to the 'run' command.",
+        )
         command.add_argument("--allow-paid-live", action="store_true")
         command.add_argument("--max-paid-calls", type=int, default=0)
     args = parser.parse_args(argv)
@@ -52,16 +74,39 @@ def main(argv: list[str] | None = None) -> int:
     else:
         if args.current_session_provider and args.harness != "hermes_current_session":
             parser.error("--current-session-provider requires --harness hermes_current_session")
+        if args.edit_surface and args.edit_surface != "patch" and args.harness != "hermes_current_session":
+            parser.error("--edit-surface hashline requires --harness hermes_current_session")
         if args.harness in {"omh", "hermes_current_session"} and not args.allow_paid_live:
             parser.error("live Hermes harness requires --allow-paid-live")
         if args.harness in {"omh", "hermes_current_session"} and args.max_paid_calls < 1:
             parser.error("live Hermes harness requires --max-paid-calls")
         manifest = load_object(args.manifest)
         live_models = [item for item in manifest["models"] if item.get("live")]
+        if args.extra_model:
+            for spec in args.extra_model:
+                kv = {}
+                for pair in spec.split(","):
+                    if "=" not in pair:
+                        parser.error(f"--extra-model must use key=value pairs: {spec}")
+                    k, v = pair.split("=", 1)
+                    kv[k.strip()] = v.strip()
+                missing = {"id", "provider", "effort", "family"} - kv.keys()
+                if missing:
+                    parser.error(f"--extra-model is missing required keys: {', '.join(sorted(missing))}")
+                if any(item["id"] == kv["id"] for item in live_models):
+                    parser.error(f"duplicate model id in --extra-model: {kv['id']}")
+                live_models.append({
+                    "id": kv["id"],
+                    "provider": kv["provider"],
+                    "effort": kv["effort"],
+                    "family": kv["family"],
+                    "live": True,
+                })
         if args.model:
+            # Filter after --extra-model merges, so an extra model can be selected by id.
             live_models = [item for item in live_models if item["id"] in set(args.model)]
             if not live_models:
-                parser.error("no manifest model matched --model")
+                parser.error("no manifest or --extra-model model matched --model")
         output = args.output or BASE / "artifacts" / args.condition / f"{args.split}-runs.jsonl"
         if args.command == "smoke":
             template_id, task_class, seed = ("D-RENAME", "edit", 7919)
@@ -80,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
                 omh_executable=args.omh_executable,
                 hermes_executable=args.hermes_executable,
                 current_session_provider=args.current_session_provider,
+                edit_surface=args.edit_surface,
+                edit_directive=args.edit_directive,
             )
         else:
             result = run_matrix(
@@ -93,7 +140,10 @@ def main(argv: list[str] | None = None) -> int:
                 omh_executable=args.omh_executable,
                 hermes_executable=args.hermes_executable,
                 current_session_provider=args.current_session_provider,
+                edit_surface=args.edit_surface,
+                edit_directive=args.edit_directive,
                 max_paid_calls=args.max_paid_calls,
+                templates=args.templates.split(",") if args.templates else None,
             )
     emit(result)
     return 0 if result.get("ok", True) else 1

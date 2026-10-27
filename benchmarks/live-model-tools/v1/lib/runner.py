@@ -85,6 +85,8 @@ def execute_one(
     omh_executable: str = "omh",
     hermes_executable: str = "hermes",
     current_session_provider: str | None = None,
+    edit_surface: str = "patch",
+    edit_directive: bool = False,
 ) -> dict[str, Any]:
     if condition not in CONDITIONS:
         raise ValueError(f"condition must be one of: {', '.join(CONDITIONS)}")
@@ -176,6 +178,8 @@ def execute_one(
                     run_id=f"bench-child-{uuid.uuid4().hex}",
                     timeout=int(manifest["timeouts_seconds"].get(task_class, 300)),
                     confirmed=True,
+                    edit_surface=edit_surface,
+                    directive=edit_directive,
                 )
             else:
                 trial = run_trial(
@@ -219,6 +223,8 @@ def execute_one(
             "split": split,
             "condition": condition,
             "harness": harness,
+            "edit_surface": edit_surface if harness == "hermes_current_session" else None,
+            "edit_directive": edit_directive if harness == "hermes_current_session" else None,
             "execution_path": harness,
             "model": model,
             "task_digest": trial_task_digest,
@@ -249,17 +255,24 @@ def run_matrix(
     omh_executable: str = "omh",
     hermes_executable: str = "hermes",
     current_session_provider: str | None = None,
+    edit_surface: str = "patch",
+    edit_directive: bool = False,
     max_paid_calls: int = 0,
+    templates: list[str] | None = None,
 ) -> dict[str, Any]:
     selected = models or [None]
-    scheduled = len(selected) * len(all_specs(split))
+    specs = all_specs(split)
+    if templates:
+        wanted = set(templates)
+        specs = [spec for spec in specs if spec[0] in wanted]
+    scheduled = len(selected) * len(specs)
     if harness in {"omh", "hermes_current_session"} and (max_paid_calls < 1 or scheduled > max_paid_calls):
         raise ValueError(
             f"scheduled paid calls ({scheduled}) exceed explicit budget ({max_paid_calls})"
         )
     records: list[dict[str, Any]] = []
     for model in selected:
-        for template_id, task_class, seed in all_specs(split):
+        for template_id, task_class, seed in specs:
             records.append(
                 execute_one(
                     base,
@@ -275,12 +288,15 @@ def run_matrix(
                     omh_executable=omh_executable,
                     hermes_executable=hermes_executable,
                     current_session_provider=current_session_provider,
+                    edit_surface=edit_surface,
+                    edit_directive=edit_directive,
                 )
             )
     return {
         "schema_version": "omh_live_model_tool_run_receipt/v1",
         "split": split,
         "condition": condition,
+        "edit_surface": edit_surface,
         "harness": harness,
         "scheduled": len(records),
         "graded": len(records),

@@ -53,6 +53,13 @@ All notable changes will be documented here.
   `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` and
   `/config`, through the gateway call Hermes' own TUI uses. `/topup` goes to
   Hermes, and the commands only Hermes' classic CLI runs leave completion.
+- **The OMH TUI no longer shows a blank screen when you switch to its
+  terminal and back.** A resize signal (a tab shown again, a split laid out
+  again) redraws the session from memory, and the erase that starts that
+  redraw was written on its own before the session was printed again, so
+  the screen went blank for a moment. The erase now goes out in the same
+  synchronized update as the frame drawn after it, so a terminal that holds
+  the update (DEC 2026) swaps the old screen for the new one in one step.
 - **A long `/compress` is waited for, and side answers are not lost
   silently.** The TUI waits 660 s for `/compress`, Hermes' own budget,
   instead of 120 s, and past that says the compression may still land
