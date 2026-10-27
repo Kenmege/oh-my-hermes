@@ -46,6 +46,15 @@ All notable changes will be documented here.
   collected; only the installer-managed command, which retires the pack in
   the same write, counts it as a registration. A relative entry, which
   Hermes anchors at its own home, never matches.
+- **The OMH TUI no longer flickers when you switch to its terminal and
+  back.** A resize signal whose size ended where the session was printed
+  (a switch back to the terminal, a multiplexer's shrink and restore) erased
+  the screen and the scrollback, wrote that erase on its own, and then
+  printed the session again, so the screen went blank for a moment. Such a
+  signal now repaints the live region in place and erases nothing, and so
+  does leaving the pager after one. A real size change still redraws the
+  session, and its erase now goes out in the same synchronized update as the
+  frame drawn after it, so no blank screen shows between the two.
 
 ## 4.0.3 - 2026-10-27
 

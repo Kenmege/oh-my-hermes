@@ -1348,6 +1348,7 @@ class App(ModesMixin, AgentViewMixin):
         self.region = LiveRegion(terminal.write)
         self.decoder = KeyDecoder(clock)
         self.size = terminal.size()
+        self.drawn_size = self.size  # the size the session on screen was printed at; a full redraw moves it
         self.sid = ""
         self.stored_id = ""
         self.opened_ids: list[str] = []  # the sessions this launch had open before `stored_id`, oldest first
@@ -4822,7 +4823,8 @@ class App(ModesMixin, AgentViewMixin):
         self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
         if self.resized_while_paging:
             self.resized_while_paging = False
-            self._full_redraw()
+            if self.size != self.drawn_size:  # the main screen came back as it was left unless the size moved
+                self._full_redraw()
 
     # ── drawing ──
 
@@ -4846,9 +4848,16 @@ class App(ModesMixin, AgentViewMixin):
         self.redraw_at = self.clock() + RESIZE_SETTLE_SECONDS
 
     def _redraw_when_settled(self) -> None:
+        """The settled size redraws the session; a size back where it was printed (a resize signal on a switch back to
+        the terminal, a multiplexer's shrink and restore) reflowed nothing, so the region is repainted in place and
+        nothing is erased."""
         if self.redraw_at is not None and self.clock() >= self.redraw_at:
             self.redraw_at = None
-            self._full_redraw()
+            if self.size != self.drawn_size:
+                self._full_redraw()
+            else:
+                self.region.invalidate()
+                self.dirty = True
 
     def _full_redraw(self) -> None:
         """Erase screen and scrollback, then print the session again at the current width.
@@ -4860,11 +4869,15 @@ class App(ModesMixin, AgentViewMixin):
         no more than that. Scrollback from before the TUI started is erased
         with it.
         """
-        self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
-        # The clear homes the cursor, so the next first frame starts on the screen's top row: unless a
-        # pager is open, when it cleared the alternate screen and the main screen's cursor is where it was.
-        self.region = LiveRegion(self.terminal.write, at_top=self.pager is None)
-        if self.pager is not None:
+        self.drawn_size = self.size
+        # The clear homes the cursor, so the next first frame starts on the screen's top row; it goes out in that
+        # frame's synchronized update, so the blank screen never shows. Unless a pager is open, when it clears the
+        # alternate screen now and the main screen's cursor is where it was.
+        if self.pager is None:
+            self.region = LiveRegion(self.terminal.write, at_top=True, lead=CLEAR_SCREEN_AND_SCROLLBACK)
+        else:
+            self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
+            self.region = LiveRegion(self.terminal.write)
             self.pager.invalidate()  # the clear took its rows too
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
         if self.banner_record is not None:

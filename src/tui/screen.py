@@ -51,7 +51,9 @@ supports it shows the frame whole instead of row by row, and a blinking or
 animated row never flickers; a terminal that does not ignores the mode. A
 frame that only parks the cursor is not wrapped. `render(..., flush=lines)`
 writes the flushed lines and then the frame under them as one write and one
-update, so no screen between the two shows.
+update, so no screen between the two shows. A region made with a `lead` (a
+full redraw's erase) starts its first write with it, inside the same update,
+so the erased screen never shows on its own either.
 
 Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
@@ -172,8 +174,11 @@ def paint_line(line: Line, width: int) -> str:
 
 
 class LiveRegion:
-    def __init__(self, write: Callable[[str], None], at_top: bool = False, start_row: int | None = None) -> None:
+    def __init__(
+        self, write: Callable[[str], None], at_top: bool = False, start_row: int | None = None, lead: str = "",
+    ) -> None:
         self._write = write
+        self._lead = lead  # written first, in the first write's synchronized update
         self._rows: list[str] = []  # painted bytes of each row the region holds
         self._row = 0  # hardware cursor row, relative to the region's top
         self._parked: tuple[int, int] | None = (0, 0)
@@ -333,9 +338,14 @@ class LiveRegion:
         return "".join([HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, *shown]), True
 
     def _send(self, written: str, painted: bool) -> None:
-        """Write `written`, as one synchronized update when it paints rows."""
+        """Write `written` behind the lead not yet written, as one synchronized update when either paints."""
         if written:
+            written, painted, self._lead = self._lead + written, painted or bool(self._lead), ""
             self._write(f"{SYNC_BEGIN}{written}{SYNC_END}" if painted else written)
+
+    def invalidate(self) -> None:
+        """Paint every row again on the next frame, in place: nothing is erased first and the region keeps its place."""
+        self._width = None
 
     def render(
         self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, flush: Sequence[Line] = (),
@@ -386,6 +396,9 @@ class LiveRegion:
 
     def clear(self) -> None:
         """Erase the region and leave the cursor at column 0 of its top row (resize, exit)."""
+        lead, self._lead = self._lead, ""
+        if lead:
+            self._write(lead)
         if not self._rows and self._parked == (0, 0):
             return
         ops: list[str] = []
