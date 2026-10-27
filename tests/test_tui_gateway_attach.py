@@ -855,6 +855,27 @@ class SlashVerbTests(AdapterCase):
         result = self.answered(adapter, stop, {"killed": 1, "delegations": 2})
         self.assertEqual(result["output"], "Stopped 1 background process.\nInterrupted 2 background delegations.")
 
+    def test_a_stop_whose_interrupt_found_the_turn_settled_says_it_interrupted_nothing(self) -> None:
+        for reply, said in (({"execution_state": "idle", "execution_generation": 5}, False),
+                            ({"execution_state": "running", "execution_generation": 6}, False),
+                            ({"execution_state": "running", "execution_generation": 5}, True)):
+            with self.subTest(reply=reply):
+                adapter = self.adapter()
+                interrupt = self.read(adapter, self.refused(adapter, "stop"), [], running=True)
+                self.assertEqual((interrupt["method"], interrupt["params"]),
+                                 ("session.interrupt", {"session_id": SID, "execution_generation": 5}))
+                [(_, stop)] = adapter.from_owner(_answer(interrupt["id"], reply))
+                output = self.answered(adapter, stop, {"killed": 0, "delegations": 0})["output"]
+                self.assertEqual(output.startswith("Interrupted the running turn."), said)
+
+    def test_a_stop_whose_read_failed_still_stops_the_sessions_processes(self) -> None:
+        adapter = self.adapter()
+        read = self.refused(adapter, "stop")
+        [(target, stop)] = adapter.from_owner({"jsonrpc": "2.0", "id": read["id"],
+                                               "error": {"code": 4001, "message": "not_found"}})
+        self.assertEqual((target, stop["method"], stop["params"]), (TO_OWNER, "process.stop", {"session_id": SID}))
+        self.assertEqual(self.answered(adapter, stop, {"killed": 2})["output"], "Stopped 2 background processes.")
+
     def test_bg_and_btw_start_a_side_agent_and_bare_say_how(self) -> None:
         for command, method in (("background run the tests", "prompt.background"), ("btw why?", "prompt.btw")):
             with self.subTest(command=command):
@@ -871,6 +892,8 @@ class SlashVerbTests(AdapterCase):
     def test_rollback_restore_takes_a_file_or_all_and_reports_what_it_kept(self) -> None:
         for command, params in (("rollback 2 src/app.py", {"hash": "2", "file_path": "src/app.py"}),
                                 ("rollback 2 --all", {"hash": "2", "all": True}),
+                                # Ink and Hermes: `--all` only widens a whole-tree restore; with a file it is no path.
+                                ("rollback 2 src/app.py --all", {"hash": "2", "file_path": "src/app.py"}),
                                 ("rollback abc123", {"hash": "abc123"})):
             with self.subTest(command=command):
                 adapter = self.adapter()

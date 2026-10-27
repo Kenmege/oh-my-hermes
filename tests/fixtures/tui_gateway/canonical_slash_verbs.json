@@ -747,7 +747,8 @@
    "answer": {
     "result": {
      "type": "exec",
-     "output": "Running in the background as bg_b7cdab; its answer appears here."
+     "output": "Running in the background as bg_b7cdab; its answer appears here.",
+     "task_id": "bg_b7cdab"
     }
    }
   },
@@ -786,7 +787,8 @@
    "answer": {
     "result": {
      "type": "exec",
-     "output": "Asking on the side as btw_2173c8; the answer appears here."
+     "output": "Asking on the side as btw_2173c8; the answer appears here.",
+     "task_id": "btw_2173c8"
     }
    }
   },

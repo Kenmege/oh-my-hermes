@@ -53,6 +53,15 @@ All notable changes will be documented here.
   `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` and
   `/config`, through the gateway call Hermes' own TUI uses. `/topup` goes to
   Hermes, and the commands only Hermes' classic CLI runs leave completion.
+- **A long `/compress` is waited for, and side answers are not lost
+  silently.** The TUI waits 660 s for `/compress`, Hermes' own budget,
+  instead of 120 s, and past that says the compression may still land
+  rather than inviting a second one. A command Hermes refuses while it
+  compresses says so. `/stop` reports an interrupt only when it stopped a
+  turn, and stops the session's processes even when its read fails. A `/bg`
+  or `/btw` answer for a session left meanwhile names that session, and
+  leaving a session with one still running says it will not show.
+  `/topup` goes to Hermes only on a shared gateway.
 
 ## 4.0.3 - 2026-10-27
 
