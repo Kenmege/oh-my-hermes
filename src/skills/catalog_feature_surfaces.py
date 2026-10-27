@@ -408,7 +408,7 @@ _FEATURE_SURFACE_SKILLS = (
     ),
     _feature_surface_skill(
         "deliverable-package",
-        "Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.",
+        "Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, attached, archived, and published states.",
         (
             "deliverable-package",
             "deliverable mode",
@@ -430,6 +430,10 @@ _FEATURE_SURFACE_SKILLS = (
             DOCUMENT_PRODUCER_QA_RULE,
             DOCUMENT_PRODUCER_RUNGS_RULE,
             "A file is `generated` only from the producer's read-back of the written file, `approved` only from the person's answer, and `attached` only from the destination's own read-back, never from a reply that names the file.",
+            "`archived` only after the archive entry records the content sha256, the version, a poster frame or thumbnail for media, and a catalog row read back from the archive.",
+            "`published` only from the destination's own read-back - a URL resolving to the same content hash - never from an upload command's exit code.",
+            "Never pick the final file by modification time: the person's approval names it.",
+            "One work keeps one stable id, and each revision is a new version under it - never a new id and never an overwrite.",
         ),
         situations=(
             "was the pdf attached",
