@@ -17,9 +17,11 @@ from test_tui_modes import SID, drawn, make_app
 from omh.tui.app import goal_done_text, goal_line
 from omh.tui.gateway import Event
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.transcript import NOTICE_OK, NoticeBlock, ThinkingBlock, Transcript, block_rows
+from omh.tui.transcript import NOTICE_OK, NoticeBlock, ThinkingBlock, Transcript, block_rows, review_line
+from omh.tui.width import line_width
 
 REVIEW = "💾 Self-improvement review: saved 1 memory (the user prefers tabs)"
+SAID = "💾 saved 1 memory (the user prefers tabs)"  # REVIEW as the transcript shows it
 
 
 def goal(**fields: object) -> dict:
@@ -35,8 +37,9 @@ class ReviewSummaryTests(unittest.TestCase):
     def test_what_the_background_review_saved_is_a_transcript_line_and_nothing_is_sent(self) -> None:
         app, client = make_app()
         app._on_event(Event("review.summary", SID, {"text": f"  {REVIEW}\n"}))
-        self.assertEqual([block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)], [REVIEW])
-        self.assertIn(f"· {REVIEW}", drawn(app))
+        # One dim row without Hermes' label (`review_line`), cut at the width rather than wrapped.
+        self.assertEqual([block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)], [SAID])
+        self.assertIn(SAID, drawn(app))
         self.assertEqual(client.calls, [])
 
     def test_one_that_comes_during_a_turn_closes_nothing_that_runs(self) -> None:
@@ -52,8 +55,29 @@ class ReviewSummaryTests(unittest.TestCase):
         self.assertEqual(kinds.count("ToolGroup"), 1)  # the running tool's group was not closed under it
         self.assertNotIn("NoticeBlock", kinds[: kinds.index("ToolGroup") + 1])
         app._on_event(Event("message.complete", SID, {"text": "Hello world"}))
-        self.assertIn(REVIEW, [block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)])
+        self.assertIn(SAID, [block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)])
         self.assertEqual(client.calls, [])
+
+    def test_a_skill_s_review_is_one_row_naming_the_skill_once(self) -> None:
+        # The owner's screenshot of 2026-10-28: the same skill named three times over three wrapped rows.
+        text = ("💾 Self-improvement review: Skill 'oh-my-hermes-development' created · Skill 'oh-my-hermes-development' "
+                "written (references/plugin-load-smoke.md) · Skill 'oh-my-hermes-development' patched · Memory updated")
+        self.assertEqual(review_line(text), "💾 skill oh-my-hermes-development · created · wrote "
+                                            "references/plugin-load-smoke.md · patched · Memory updated")
+        app, _client = make_app(cols=60)
+        app._on_event(Event("review.summary", SID, {"text": text}))
+        (block,) = [block for block in app.transcript.blocks if isinstance(block, NoticeBlock)]
+        (row,) = block_rows(block, 60, app.theme)
+        self.assertTrue(line_text(row).endswith("…") and line_width(row) <= 60, line_text(row))
+        self.assertEqual({span.style for span in row}, {app.theme.faint})
+
+    def test_a_summary_of_separators_says_nothing_and_text_without_the_label_is_kept_whole(self) -> None:
+        # #2349 review, LOW: `review: · · ·` read `💾 ·`, and text before any `: ` was taken for Hermes' label.
+        self.assertEqual(review_line("💾 Self-improvement review: · · ·"), "")
+        self.assertEqual(review_line("💾 A: b: c"), "💾 A: b: c")
+        app, _client = make_app()
+        app._on_event(Event("review.summary", SID, {"text": "💾 Self-improvement review: · ·"}))
+        self.assertEqual([block for block in app.transcript.blocks if isinstance(block, NoticeBlock)], [])
 
     def test_an_empty_summary_or_another_sessions_says_nothing(self) -> None:
         app, _client = make_app()

@@ -60,7 +60,7 @@ from ..version import __version__
 from .escapes import strip_escapes
 from .style import NO_COLOR, TRUECOLOR, Line, Span, Style
 from .theme import Theme
-from .width import cell_width, clusters, truncate, truncate_line
+from .width import cell_width, clusters, line_width, truncate, truncate_line
 from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 
 HUD_POLL_MIN_SECONDS = 2.0
@@ -599,10 +599,13 @@ def _initial_window(plan: _Plan) -> tuple[int, int]:
 
 
 def _shrink_window(plan: _Plan, start: int, end: int) -> tuple[int, int]:
-    """One item fewer, taken from the side farther from the item the panel exists to show."""
+    """One item fewer: a done item ahead of the one the panel exists to show first (it joins the `✓ N done` row),
+    then from the side farther from that item."""
     active = next((index for index, item in enumerate(plan.items) if item.get("state") == "active"), -1)
     focus = active if active >= 0 else max(_first_remaining(plan), 0)
     focus = min(max(focus, start), end - 1)
+    if start < focus and plan.items[start].get("state") == "done":
+        return start + 1, end
     if end - 1 - focus >= focus - start:
         return start, end - 1
     return start + 1, end
@@ -687,8 +690,10 @@ def _plan_item(
     state = item.get("state")
     marker = PLAN_MARKERS.get(str(state), "[ ]")
     waiting = Span(f" ({'skipped' if state == 'done' else 'waiting'}: {reason})", theme.warn) if reason else None
+    if state == "done":  # done is quiet: its words muted, only the check in the done hue
+        return _line(Span(f"{indent}[", theme.muted), Span("✓", theme.ok), Span(f"] {text}", theme.muted), waiting)
     if state != "active":
-        return _line(Span(f"{indent}{marker} {text}", theme.muted if state == "done" else theme.text), waiting)
+        return _line(Span(f"{indent}{marker} {text}", theme.text), waiting)
     style = _bold(theme.ok if plan.live else theme.warn)
     if plan.live and motion:
         return _line(Span(f"{indent}{marker} ", style), *_shimmer(text, frame, theme), waiting)
@@ -700,6 +705,31 @@ def _plan_item(
 
 def _fold(count: int, side: str, theme: Theme) -> Line:
     return _line(Span(f"... ({count} {side} task{'' if count == 1 else 's'})", theme.muted))
+
+
+def _done_fold(count: int, theme: Theme) -> Line:
+    """The done items above the window, folded into one quiet row."""
+    return _line(Span("✓", theme.ok), Span(f" {count} done", theme.muted))
+
+
+def _current_item(plan: _Plan) -> Mapping[str, Any] | None:
+    """The item the plan is on: the active one, else the first not done."""
+    active = next((item for item in plan.items if item.get("state") == "active"), None)
+    return active or next((item for item in plan.items if item.get("state") != "done"), None)
+
+
+def _with_hint(head: Line, tail: Line, hint: str, columns: int, theme: Theme) -> Line:
+    """`head`, then `tail` cut to what is left, then `hint` dim on the right edge; the hint goes first when the
+    row is narrow, then `tail`."""
+    hint_cells = cell_width(hint) + 2 if hint else 0
+    room = columns - line_width(head) - hint_cells
+    if hint and room < min(line_width(tail), 12):
+        hint_cells, room = 0, columns - line_width(head)
+    kept = truncate_line(tail, room) if room > 0 and tail else ()
+    row = (*head, *kept)
+    if not hint_cells:
+        return row
+    return (*row, Span(" " * max(columns - line_width(row) - cell_width(hint), 2)), Span(hint, theme.faint))
 
 
 def plan_state(payload: Any) -> str:
@@ -737,14 +767,26 @@ def plan_text(payload: Any) -> str:
 
 
 def _plan_lines(
-    plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True
+    plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True,
+    fold_key: str = "", folded: bool = False,
 ) -> list[Line]:
-    lines = [_plan_header(plan, now, theme)]
-    if plan.status == "all_done" or collapsed:
-        return lines
+    """The plan: its header, then its items in the window. Collapsed (`folded` by the person, or shed for room) it is
+    the header alone, naming the item it is on. With `fold_key` the header says on its right edge what that key
+    does now: `fold` while expanded, `expand` while the person folded it, and nothing while it is collapsed for
+    room, where the key could not expand it."""
+    header = _plan_header(plan, now, theme)
+    if plan.status == "all_done":
+        return [header]
+    if collapsed:
+        current = _current_item(plan)
+        tail: Line = (Span(" ▸ ", theme.dim), Span(_safe_text(current.get("text")), theme.text)) if current else ()
+        return [_with_hint(header, tail, f"{fold_key} expand" if fold_key and folded else "", columns, theme)]
+    lines = [_with_hint(header, (), f"{fold_key} fold" if fold_key else "", columns, theme)]
     frame = _frame(now)
     budget = max(16, columns - 10)
-    if start > 0:
+    if start > 0 and all(item.get("state") == "done" for item in plan.items[:start]):
+        lines.append(_done_fold(start, theme))
+    elif start > 0:
         lines.append(_fold(start, "earlier", theme))
     for phase, items in _groups(plan.items[start:end]):
         if phase:
@@ -1483,6 +1525,8 @@ def panel_lines(
     agents_inset: int = 0,
     motion: bool = True,
     color_depth: str = TRUECOLOR,
+    plan_folded: bool = False,
+    fold_key: str = "",
 ) -> list[Line]:
     """The panel rows for one HUD payload: never more than `max_rows`, none wider than `width` cells.
 
@@ -1499,7 +1543,9 @@ def panel_lines(
     as the delegation tree's `DAG_INDENT` does). Without `motion` (reduced
     motion) the spinner holds its first frame and the plan does not wave.
     `color_depth` is the depth the delegation graph is painted at
-    (`style.color_depth`).
+    (`style.color_depth`). `plan_folded` draws the plan as its header alone
+    (the person folded it), and `fold_key` names the key that folds and
+    expands it on the header's right edge.
     """
     if max_rows <= 0 or width <= 0 or not isinstance(payload, Mapping):
         return []
@@ -1518,7 +1564,7 @@ def panel_lines(
         plan_on=plan is not None,
         plan_start=start,
         plan_end=end,
-        plan_collapsed=False,
+        plan_collapsed=plan_folded,
         agents_on=agents is not None,
         rows_shown=agents.wanted if agents is not None else 0,
         dag_on=dag is not None and natural > 0,
@@ -1536,6 +1582,7 @@ def panel_lines(
         lines += _dag_lines(dag, layout.dag_budget, columns, theme, color_depth)
     if plan is not None and layout.plan_on:
         lines += _plan_lines(
-            plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme, motion
+            plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme, motion, fold_key,
+            plan_folded,
         )
     return [truncate_line(line, width) for line in lines[:max_rows]]

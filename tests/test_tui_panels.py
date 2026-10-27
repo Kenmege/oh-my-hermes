@@ -14,6 +14,7 @@ from collections.abc import Callable
 import copy
 from datetime import datetime, timezone
 import json
+import re
 import os
 from pathlib import Path
 import sqlite3
@@ -154,6 +155,8 @@ def folded(rows: list[str]) -> tuple[int, int]:
                 earlier = count
             elif "later" in row:
                 later = count
+        elif re.fullmatch(r"✓ \d+ done", row):  # done items above the window fold into one row
+            earlier = int(row.split()[1])
     return earlier, later
 
 
@@ -1106,6 +1109,9 @@ class PanelRowsTests(unittest.TestCase):
                 # which read as a stray dot (audit D7); the TUI draws none, so it
                 # comes off the recorded header and nothing else.
                 header, *items = rows["plan_rows"]
+                # The widget folded the done items above the window as `... (N earlier tasks)`; since the owner's
+                # pass of 2026-10-28 the panel says `✓ N done` for them, and nothing else on the rows moved.
+                items = [re.sub(r"^\.\.\. \((\d+) earlier tasks?\)$", r"✓ \1 done", item) for item in items]
                 self.assertEqual(mine[plan_at:], [header.removesuffix(" ."), *items])
                 # The widget opened the agents block with its fanout graph (`  [global] DAG ·` and one
                 # `  [R]/[+]/[!]` row per unit). The panel draws the delegation block from

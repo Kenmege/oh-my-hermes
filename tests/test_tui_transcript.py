@@ -187,7 +187,7 @@ class SpacingTests(LoopTestCase):
         self.step(ev("message.delta", text="done\n"))
         self.step(ev("message.complete", text="done", status="complete"))
         self.user("second")
-        expected = ["┃ ❯ first", "", "▸ thought for 0.0s", "", "┃ ● terminal(ls)  0.5s", "", "┃ ● done", "", "┃ ❯ second"]
+        expected = ["┃ ❯ first", "", "▸ thought for 0.0s", "", "┃ ● terminal(ls)  0.5s", "", "┃ ⚚ Hermes", "┃   done", "", "┃ ❯ second"]
         self.assertEqual(lines_text(self.taken), expected)
         self.assertEqual(self.history(details=False), expected)
 
@@ -195,7 +195,7 @@ class SpacingTests(LoopTestCase):
         self.user("hi")
         self.transcript.add_assistant("**hello** there\n\n```sh\nls\n```")
         self.transcript.add_assistant("   ")
-        self.assertEqual(self.step(), ["", "┃ ● hello there", "┃", "┃   sh", "┃   ls"])
+        self.assertEqual(self.step(), ["", "┃ ⚚ Hermes", "┃   hello there", "┃", "┃   sh", "┃   ls"])
         self.assertEqual(len(self.transcript.blocks), 2)
 
 
@@ -247,12 +247,13 @@ class RetakeTailTests(LoopTestCase):
             self.step(ev("message.complete", text=f"answer {turn}, line one\nline two", status="complete"))
 
     def test_only_the_last_blocks_that_fit_are_taken_again_under_a_row_naming_the_rest(self) -> None:
-        self.session(20)  # 40 blocks: a prompt is 2 rows with the blank row above it, a reply 3
+        # 40 blocks: a prompt is 2 rows with the blank row above it, a reply 4 (its `⚚ Hermes` header too).
+        self.session(20)
         self.transcript.retake_tail(WIDTH, THEME, max_rows=10)
         again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
-        self.assertEqual(again[0], "⋯ 36 earlier messages · /history shows all")
-        self.assertEqual(again[1:], self.history(details=False)[-10:])  # the last two turns: 2 + 3 + 2 + 3 rows
-        self.assertEqual(again[2], "┃ ❯ question 18")
+        self.assertEqual(again[0], "⋯ 37 earlier messages · /history shows all")
+        self.assertEqual(again[1:], self.history(details=False)[-10:])  # reply 18, prompt 19, reply 19: 4 + 2 + 4
+        self.assertEqual(again[2], "┃ ⚚ Hermes")
         self.assertEqual(lines_text(self.transcript.take_stable_lines(WIDTH, THEME)), [])
 
     def test_a_session_that_fits_is_taken_again_whole_with_no_row_above_it(self) -> None:
@@ -269,7 +270,7 @@ class RetakeTailTests(LoopTestCase):
         self.transcript.retake_tail(WIDTH, THEME, max_rows=5)
         again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
         self.assertEqual(again[0], "⋯ 1 earlier message · /history shows all")
-        self.assertEqual(len(again), 32)  # the row, a spacer, all 30 rows of the reply
+        self.assertEqual(len(again), 33)  # the row, a spacer, the reply's header and all 30 of its rows
 
     def test_the_live_block_stays_live_and_is_never_counted_as_left_out(self) -> None:
         self.session(3)
@@ -279,7 +280,7 @@ class RetakeTailTests(LoopTestCase):
         self.transcript.retake_tail(WIDTH, THEME, max_rows=3)
         again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
         self.assertEqual(again, ["⋯ 6 earlier messages · /history shows all", "", "┃ ❯ again"])
-        self.assertEqual(self.live(), ["", "┃ ● still streaming"])
+        self.assertEqual(self.live(), ["", "┃ ⚚ Hermes", "┃   still streaming"])
 
 
 class BlockCapTests(LoopTestCase):
@@ -445,7 +446,7 @@ class PlainTurnTests(LoopTestCase):
         self.assertEqual(self.transcript.activity, "ヽ(>∀<☆)☆ formulating...")
         self.step(ev("thinking.delta", text=""))
         self.assertEqual(self.transcript.activity, "")
-        self.assertEqual(self.step(ev("message.delta", text="ok\n\n")), ["", "┃ ● ok"])
+        self.assertEqual(self.step(ev("message.delta", text="ok\n\n")), ["", "┃ ⚚ Hermes", "┃   ok"])
         self.assertEqual(self.step(ev("message.delta", text="I")), [])
         self.step(ev("message.delta", text="'m Hermes,"))
         self.step(ev("message.delta", text=" your agent — `/help` lists the commands."))
@@ -461,7 +462,8 @@ class PlainTurnTests(LoopTestCase):
             [
                 "┃ ❯ Reply with exactly the word: ok",
                 "",
-                "┃ ● ok",
+                "┃ ⚚ Hermes",
+                "┃   ok",
                 "┃",
                 "┃   I'm Hermes, your agent — /help lists the commands.",
             ],
@@ -470,15 +472,15 @@ class PlainTurnTests(LoopTestCase):
     def test_live_lines_shrink_as_lines_flush(self) -> None:
         self.transcript.apply(ev("message.start"))
         self.transcript.apply(ev("message.delta", text="line one\nline two\npartial"))
-        self.assertEqual(self.live(), ["┃ ● line one", "┃   line two", "┃   partial"])
-        self.assertEqual(self.step(), ["┃ ● line one", "┃   line two"])
+        self.assertEqual(self.live(), ["┃ ⚚ Hermes", "┃   line one", "┃   line two", "┃   partial"])
+        self.assertEqual(self.step(), ["┃ ⚚ Hermes", "┃   line one", "┃   line two"])
         self.assertEqual(self.live(), ["┃   partial"])
-        # What it said: a bold mark in the text colour on the reply's rail, apart from a call's state colours.
-        self.assertEqual(self.taken[0][:3], (Span("┃", THEME.brand), Span(" "), Span("● ", replace(THEME.text, bold=True))))
+        # Who said it: `⚚ Hermes` bold in the rail's hue on a header row of its own, apart from a call's state colours.
+        self.assertEqual(self.taken[0][:3], (Span("┃", THEME.brand), Span(" "), Span("⚚ Hermes", replace(THEME.brand, bold=True))))
 
     def test_a_trailing_blank_line_waits_for_the_text_after_it(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.delta", text="1\n\n")), ["┃ ● 1"])
+        self.assertEqual(self.step(ev("message.delta", text="1\n\n")), ["┃ ⚚ Hermes", "┃   1"])
         self.assertEqual(self.step(ev("message.delta", text="\n")), [])
         self.assertEqual(self.step(ev("message.delta", text="2\n")), ["┃", "┃", "┃   2"])
         self.assertEqual(self.step(ev("message.complete", text="1\n\n\n2", status="complete")), [])
@@ -498,14 +500,14 @@ class PlainTurnTests(LoopTestCase):
                 self.assertEqual(lines_text(self.taken), expected)
         self.assertEqual(
             expected,
-            ["┃ ● Plan", "┃", "┃   • step one", "┃   • step two", "┃", "┃   python", "┃   x = 1",
+            ["┃ ⚚ Hermes", "┃   Plan", "┃", "┃   • step one", "┃   • step two", "┃", "┃   python", "┃   x = 1",
              "┃   Done, see docs (https://x.y)."],
         )
 
     def test_an_open_fence_stays_code_across_the_flush_boundary(self) -> None:
         self.step(ev("message.start"))
         flushed = self.step(ev("message.delta", text="Here:\n```python\nx = None  # one\n"))
-        self.assertEqual(flushed, ["┃ ● Here:", "┃   python", "┃   x = None  # one"])
+        self.assertEqual(flushed, ["┃ ⚚ Hermes", "┃   Here:", "┃   python", "┃   x = None  # one"])
         self.assertEqual(
             self.taken[-1],
             (*REPLY_RAIL, Span("  "), Span("x = ", THEME.text), Span("None", THEME.syntax_keyword), Span("  ", THEME.text),
@@ -530,14 +532,16 @@ class PlainTurnTests(LoopTestCase):
                 self.step(ev("message.complete", text=answer, status="complete"))
                 expected = expected or list(self.taken)
                 self.assertEqual(self.taken, expected)
-        self.assertEqual(expected[5], (*REPLY_RAIL, Span("  "), Span("    # not a comment", THEME.syntax_string)))
-        self.assertEqual(expected[6], (*REPLY_RAIL, Span("  "), Span('    """', THEME.syntax_string)))
-        self.assertEqual(expected[7][-1], Span("# one", THEME.syntax_comment))
+        # Row 0 is the reply's `⚚ Hermes` header.
+        self.assertEqual(expected[6], (*REPLY_RAIL, Span("  "), Span("    # not a comment", THEME.syntax_string)))
+        self.assertEqual(expected[7], (*REPLY_RAIL, Span("  "), Span('    """', THEME.syntax_string)))
+        self.assertEqual(expected[8][-1], Span("# one", THEME.syntax_comment))
 
     def test_a_resize_changes_only_lines_not_yet_taken(self) -> None:
         self.step(ev("message.start"))
         long_line = "alpha beta gamma delta epsilon zeta eta theta"
-        self.assertEqual(self.step(ev("message.delta", text=long_line + "\n" + long_line), width=80), ["┃ ● " + long_line])
+        self.assertEqual(self.step(ev("message.delta", text=long_line + "\n" + long_line), width=80),
+                         ["┃ ⚚ Hermes", "┃   " + long_line])
         narrow = self.live(width=20)
         self.assertEqual(narrow, ["┃   alpha beta gamma", "┃   delta epsilon", "┃   zeta eta theta"])
         self.transcript.apply(ev("message.complete", text="", status="complete"))
@@ -549,22 +553,22 @@ class PlainTurnTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="Hello wrld"))
         self.step(ev("message.complete", text="Hello world", status="complete"))
-        self.assertEqual(self.history(), ["┃ ● Hello world"])
+        self.assertEqual(self.history(), ["┃ ⚚ Hermes", "┃   Hello world"])
         self.setUp()
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="first\nsecond"))
         self.step(ev("message.complete", text="FIRST\nsecond", status="complete"))
-        self.assertEqual(self.history(), ["┃ ● first", "┃   second"])
+        self.assertEqual(self.history(), ["┃ ⚚ Hermes", "┃   first", "┃   second"])
 
     def test_text_that_never_streamed_arrives_with_complete(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.complete", text="blue", status="complete")), ["┃ ● blue"])
+        self.assertEqual(self.step(ev("message.complete", text="blue", status="complete")), ["┃ ⚚ Hermes", "┃   blue"])
 
     def test_control_characters_never_reach_a_line(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="\x1b[2Jboom\x07\n"))
         self.step(ev("message.complete", text="", status="complete"))
-        self.assertEqual(lines_text(self.taken), ["┃ ● boom"])
+        self.assertEqual(lines_text(self.taken), ["┃ ⚚ Hermes", "┃   boom"])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
 
     def test_user_text_is_plain_wrapped_and_composed(self) -> None:
@@ -629,7 +633,7 @@ class ReasoningAndToolTests(LoopTestCase):
         flushed = self.step(
             ev("message.complete", text="Ran it — exit code 0.", status="complete", reasoning="The user asks ...")
         )
-        self.assertEqual(flushed, ["", "┃ ● Ran it — exit code 0."])
+        self.assertEqual(flushed, ["", "┃ ⚚ Hermes", "┃   Ran it — exit code 0."])
         self.assertEqual(self.history(details=False), lines_text(self.taken))
         self.assertEqual(
             self.history(),
@@ -643,7 +647,8 @@ class ReasoningAndToolTests(LoopTestCase):
                 "",
                 "┃ ● terminal(rm -rf ./omh-m0-probe-dir)  1.9s",
                 "",
-                "┃ ● Ran it — exit code 0.",
+                "┃ ⚚ Hermes",
+                "┃   Ran it — exit code 0.",
             ],
         )
 
@@ -653,7 +658,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("message.delta", text="Answer."), at=101.0)
         self.transcript.toggle_details()
         self.assertEqual(lines_text(self.taken), ["▸ thought for 1.0s"])
-        self.assertEqual(self.live(), ["", "┃ ● Answer."])
+        self.assertEqual(self.live(), ["", "┃ ⚚ Hermes", "┃   Answer."])
 
     def test_each_call_is_its_own_row_with_what_it_printed_under_it_and_no_group_header(self) -> None:
         self.step(ev("message.start"))
@@ -758,19 +763,19 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="Let me check the file."))
         flushed = self.step(ev("message.interim", text="Let me check the file.", already_streamed=True))
-        self.assertEqual(flushed, ["┃ ● Let me check the file."])
+        self.assertEqual(flushed, ["┃ ⚚ Hermes", "┃   Let me check the file."])
         self.step(ev("tool.start", tool_id="a", name="read_file", context="a.py"))
         self.step(ev("tool.complete", tool_id="a", name="read_file", duration_s=0.1, result={"content": "ok"}))
         self.step(ev("message.delta", text="\n\nIt is fine."))
         self.step(ev("message.complete", text="It is fine.", status="complete"))
         self.assertEqual(
             self.history(details=False),
-            ["┃ ● Let me check the file.", "", "┃ ● read_file(a.py)  0.1s", "┃   ⎿  Read 1 line", "", "┃ ● It is fine."],
+            ["┃ ⚚ Hermes", "┃   Let me check the file.", "", "┃ ● read_file(a.py)  0.1s", "┃   ⎿  Read 1 line", "", "┃ ⚚ Hermes", "┃   It is fine."],
         )
 
     def test_interim_text_that_never_streamed_becomes_its_own_block_once(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.interim", text="Checking.", already_streamed=False)), ["┃ ● Checking."])
+        self.assertEqual(self.step(ev("message.interim", text="Checking.", already_streamed=False)), ["┃ ⚚ Hermes", "┃   Checking."])
         self.step(ev("message.complete", text="Checking.", status="complete"))
         self.assertEqual(sum(isinstance(block, AssistantBlock) for block in self.transcript.blocks), 1)
 
@@ -889,7 +894,7 @@ class TurnEndTests(LoopTestCase):
         )
         flushed = self.step(ev("message.delta", text="\n\n1\n2\n"))
         self.assertEqual(
-            flushed, ["", "┃ ● terminal(seq 1 300)  0.1s", "┃   ⎿  1", "┃      2", "┃      3", "┃      … +3 lines · ctrl+o shows all", "", "┃ ● 1", "┃   2"]
+            flushed, ["", "┃ ● terminal(seq 1 300)  0.1s", "┃   ⎿  1", "┃      2", "┃      3", "┃      … +3 lines · ctrl+o shows all", "", "┃ ⚚ Hermes", "┃   1", "┃   2"]
         )
         flushed = self.step(ev("message.complete", text="1\n2", status="interrupted", partial=True))
         self.assertEqual(flushed, ["", "⚠ Interrupted."])
@@ -916,7 +921,7 @@ class TurnEndTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="Partial answer\nsecond"))
         self.step(ev("message.complete", text="Partial answer\nsecond", status="error", error="stream cut", partial=True))
-        self.assertEqual(self.history(), ["┃ ● Partial answer", "┃   second", "", "✗ stream cut"])
+        self.assertEqual(self.history(), ["┃ ⚚ Hermes", "┃   Partial answer", "┃   second", "", "✗ stream cut"])
 
     def test_an_error_without_error_text_still_says_the_turn_failed(self) -> None:
         self.step(ev("message.start"))
@@ -930,7 +935,7 @@ class TurnEndTests(LoopTestCase):
         self.assertEqual(self.transcript.status, "Compacting context…")
         self.step(ev("message.complete", text="done", status="complete", warning="Context is 90% full."))
         self.assertEqual(self.transcript.status, "")
-        self.assertEqual(self.history(), ["┃ ● done", "", "⚠ Context is 90% full."])
+        self.assertEqual(self.history(), ["┃ ⚚ Hermes", "┃   done", "", "⚠ Context is 90% full."])
 
     def test_notices_flush_at_once_in_their_level_style(self) -> None:
         self.transcript.add_notice("Ctrl+C again to exit")
@@ -1007,7 +1012,8 @@ class EscapeHygieneTests(LoopTestCase):
                 "┃ ● terminal(ls -la)  0.5s",
                 "┃   ⎿  listed 3 files",
                 "",
-                "┃ ● answer line",
+                "┃ ⚚ Hermes",
+                "┃   answer line",
                 "",
                 "⚠ context is 90% full",
                 "",
@@ -1074,7 +1080,7 @@ class InlineDiffTests(LoopTestCase):
         self.assertEqual([line_width(row) for row in diff[-2:]], [WIDTH, WIDTH])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
         self.assertEqual(self.history(details=False), lines_text(self.taken))
-        self.assertEqual(self.history()[-1], "┃ ● Done — it prints 안녕 now.")
+        self.assertEqual(self.history()[-2:], ["┃ ⚚ Hermes", "┃   Done — it prints 안녕 now."])
 
     def test_a_long_diff_is_capped_until_history_shows_it_all(self) -> None:
         self.step(ev("message.start"))

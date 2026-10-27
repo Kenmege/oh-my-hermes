@@ -272,6 +272,7 @@ from .transcript import (
     as_text,
     block_rows,
     compact_count,
+    review_line,
 )
 from .width import cell_width, clusters, line_width, truncate, truncate_left, truncate_line
 from ..version import __version__
@@ -309,7 +310,9 @@ TIPS = (
     "esc esc between turns rewinds to an earlier prompt",
     "start a line with ! to run it in the shell",
     "ctrl+r searches your input history",
+    "ctrl+p folds the plan to one row",
 )
+PLAN_FOLD_KEY = "ctrl+p"  # named on the plan's header; Ctrl+P is free in the composer and every mode
 TIP_MIN_ROWS = 16
 # Nothing due, nothing held: the loop still wakes this often. Gateway news and a new HUD snapshot wake it sooner.
 IDLE_READ_SECONDS = 1.0
@@ -1142,6 +1145,13 @@ def working_verb(text: str) -> str:
     return verb[:1].upper() + verb[1:]
 
 
+def spinner_shaped(text: str) -> bool:
+    """Whether `text` is Hermes' own spinner text, `"{face} {verb}..."`: words that are a verb, behind a face, or a
+    notice of what the turn is doing now (a wait or a stall); a status that reports what happened is not."""
+    stripped = text.strip()
+    return bool(working_verb(stripped)) and stripped.endswith((SPINNER_DOTS, "…"))
+
+
 def working_spans(text: str, frame: int, theme: Theme) -> list[Span]:
     """What Hermes is doing, muted, with a bright highlight `SWEEP_CLUSTERS` wide at `frame`'s place; it sweeps
     across and starts over after a pause as long as itself. Frame 0 falls in that pause, so the first frame,
@@ -1472,6 +1482,7 @@ class App(ModesMixin, AgentViewMixin):
         self.menu_below: bool | None = None
         self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.panel_shown = False  # the plan panel was in the slot `_slot_lines` last made: it gets its blank rows
+        self.plan_folded = False  # Ctrl+P: the plan is its header alone, for the rest of the session
         self.tail_spacer = False  # `_tail` put a blank row above the working row, the first row to give way
         self.badge_cache: tuple[object, Line] = (None, ())  # `_badge_line`'s last row and what it was drawn from
         self.pager: Pager | None = None
@@ -1555,6 +1566,7 @@ class App(ModesMixin, AgentViewMixin):
         self.usage_restarts = False
         self.turn_streamed = 0.0  # what the turn streamed since the counter last moved, in tokens (`streamed_tokens`)
         self.turn_shown = 0  # the most tokens the working row has said this turn: it never goes back
+        self.spinner_verb = ""  # Hermes' last spinner verb this turn: it stays in the verb slot while a status says more
         self.session_title = ""  # Hermes' auto-title for the session (`session.title`)
         self.shown_title: str | None = None  # the terminal title last written
         self.title_words = ""  # what that title was cut from: the same words need no new cut
@@ -1858,6 +1870,16 @@ class App(ModesMixin, AgentViewMixin):
         """
         if row is not None and 1 <= row <= self.size[1] and not self.region.height:
             self.region = LiveRegion(self.terminal.write, start_row=row - 1)
+
+    @property
+    def model(self) -> str:
+        return self.model_name
+
+    @model.setter
+    def model(self, value: str) -> None:
+        """The session's model; the transcript names it on each reply begun under it."""
+        self.model_name = value
+        self.transcript.model = value
 
     def _painted(self, theme: Theme) -> Theme:
         """`theme` as this terminal paints it: without colour at the `NO_COLOR` depth (`style.color_depth`)."""
@@ -2431,9 +2453,9 @@ class App(ModesMixin, AgentViewMixin):
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
         elif event.type == "review.summary":
-            text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
-            if text:
-                self.transcript.add_aside(NoticeBlock(text))  # it can come during the next turn: it closes nothing
+            line = review_line(clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))))
+            if line:  # one dim row, whenever it comes (it can come during the next turn): it closes nothing
+                self.transcript.add_aside(NoticeBlock(line, one_line=True))
         elif event.type in contract.SIDE_ANSWER_EVENTS:
             self._side_answer(event.type, payload)
         elif event.type == "session.control.update":
@@ -2669,6 +2691,7 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_output_base = 0 if self.usage_restarts else self.usage_output
         self.turn_calls_base = 0 if self.usage_restarts else self.usage_calls
         self.turn_streamed, self.turn_shown = 0.0, 0
+        self.spinner_verb = ""
 
     def _count_streamed(self, event_type: str, payload: object) -> None:
         """What the model wrote, as it reaches the TUI during a turn: the reply and the reasoning as they stream,
@@ -2895,7 +2918,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self.slot is None and (
             self._mode_key(event) or self._effort_key(event) or self._guide_key(event) or self._search_open_key(event)
-            or self._sessions_key(event) or self._board_key(event)
+            or self._sessions_key(event) or self._board_key(event) or self._plan_fold_key(event)
         ):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
@@ -2929,6 +2952,18 @@ class App(ModesMixin, AgentViewMixin):
         if not isinstance(event, Key) or event != Key(CHAR, "x", ctrl=True):
             return False
         self._sessions("")
+        return True
+
+    def _plan_fold_key(self, event: Key | Paste) -> bool:
+        """Ctrl+P folds the plan to its header or expands it, for the rest of the session (a new plan keeps the
+        choice); a key that does nothing is the composer's while no plan shows."""
+        if not isinstance(event, Key) or event != Key(CHAR, "p", ctrl=True):
+            return False
+        payload = self.hud.payload if self.hud is not None else None
+        if plan_state(payload) != "open" or not self.panel_shown:  # a menu over the plan: nothing to fold where seen
+            return False
+        self.plan_folded = not self.plan_folded
+        self.dirty = True
         return True
 
     def _board_key(self, event: Key | Paste) -> bool:
@@ -5461,7 +5496,12 @@ class App(ModesMixin, AgentViewMixin):
                    Span(f" ({elapsed}{written})", self.theme.muted))
             lines.append(truncate_line(row, cols))
         elif self._busy():
-            verb = working_verb(self.transcript.activity) or working_verb(self.transcript.status) or WORKING_VERB
+            # The verb slot keeps Hermes' spinner verb (the last one this turn while a status says more); a status it
+            # reports (`🧠 OMH — recalled 4 memories`) goes after the facts, dim, and is the first to give way.
+            spun = working_verb(self.transcript.activity) if spinner_shaped(self.transcript.activity) else ""
+            self.spinner_verb = spun or self.spinner_verb
+            verb = self.spinner_verb or WORKING_VERB
+            said = working_verb(self.transcript.status) or ("" if spun else working_verb(self.transcript.activity))
             text = f"{verb}…"
             if self.transcript.moa:
                 text = f"{text} · {self.transcript.moa}"
@@ -5477,10 +5517,11 @@ class App(ModesMixin, AgentViewMixin):
             # A narrow row drops whole facts, the effort first (the info line says it where it has room), then the
             # tokens, the time, and the interrupt last; only a verb too long for the row alone is cut at the edge.
             row: Line = lead
-            for facts in ((elapsed, written, effort, interrupt), (elapsed, written, interrupt), (elapsed, interrupt),
-                          (interrupt,)):
-                said = " · ".join(fact for fact in facts if fact)
-                candidate = (*lead, Span(f" ({said})", self.theme.muted)) if said else lead
+            status = (Span(f" · {said}", self.theme.faint),) if said else ()
+            for facts, tail in (((elapsed, written, effort, interrupt), status), ((elapsed, written, effort, interrupt), ()),
+                                ((elapsed, written, interrupt), ()), ((elapsed, interrupt), ()), ((interrupt,), ())):
+                joined = " · ".join(fact for fact in facts if fact)
+                candidate = (*lead, *((Span(f" ({joined})", self.theme.muted),) if joined else ()), *tail)
                 if line_width(candidate) <= cols:
                     row = candidate
                     break
@@ -5571,6 +5612,8 @@ class App(ModesMixin, AgentViewMixin):
             show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
             color_depth=self.color_depth,
+            plan_folded=self.plan_folded,
+            fold_key=PLAN_FOLD_KEY,
         )
         self.panel_shown = bool(lines)
         return lines

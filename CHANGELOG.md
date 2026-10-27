@@ -80,6 +80,14 @@ All notable changes will be documented here.
   or `/btw` answer for a session left meanwhile names that session, and
   leaving a session with one still running says it will not show.
   `/topup` goes to Hermes only on a shared gateway.
+- **The live region reads more calmly while a turn runs.** A mid-turn
+  `↳ you:` row and a steer run on your sent prompt's band, with a blank row
+  over the sticky prompt. Hermes' background review is one dim row naming
+  each skill once. The plan's done rows are quiet and fold into `✓ N done`
+  before a row still to do is cut, and Ctrl+P folds the plan to its header
+  and current item (the header names the key). The working row keeps
+  Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
+  memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
 
 ## 4.0.3 - 2026-10-27
 

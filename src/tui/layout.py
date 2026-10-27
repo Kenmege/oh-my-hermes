@@ -100,6 +100,7 @@ class Budget:
     below: int = 0  # the menu below: between the bottom rule and the info line
     agents: int = 0  # the agent view: under the info line, the region's last rows
     gaps: tuple[int, int] = (0, 0)  # blank rows above the slot and under it
+    sticky_gap: int = 0  # a blank row above the sticky prompt, so it never reads as the reply's last line
     badge: int = 0  # the region's last row: the git branch on its left, the OMH Native badge on its right
 
     @property
@@ -116,13 +117,14 @@ class Budget:
             + self.info
             + self.agents
             + sum(self.gaps)
+            + self.sticky_gap
             + self.badge
         )
 
     @property
     def slot_top(self) -> int:
         """Region row of the slot's first row."""
-        return self.pad + self.sticky + self.tail + self.gaps[0]
+        return self.sticky_gap + self.pad + self.sticky + self.tail + self.gaps[0]
 
     @property
     def composer_top(self) -> int:
@@ -203,6 +205,7 @@ def allocate(
     agents_rows: int = 0,
     tail_floor: int = 0,
     gaps: tuple[bool, bool] = (False, False),
+    sticky_gap: bool = False,
     gap_reserve: int = 0,
     badge_rows: int = 0,
 ) -> Budget:
@@ -219,6 +222,7 @@ def allocate(
     left = room - composer - info - bottom_rule - badge
     rule = slot = sticky_rows = tail = below = agents = 0
     spaced = (0, 0)
+    over_sticky = 0
     if composer_hidden:
         slot = min(max(slot_rows, 0), choice_cap(rows, cols), left)
         left -= slot
@@ -244,12 +248,14 @@ def allocate(
         # `gap_reserve` is the working rows' room whether or not a turn runs, so a gap never appears as a turn ends
         # and moves the slot.
         floor = max(min(max(tail_floor, 0), tail_rows), gap_reserve, max(tail_rows, 0))
-        spare = max(left - floor, 0) if slot > 0 else 0
-        above = int(gaps[0] and spare > 0)
-        spaced = (above, int(gaps[1] and spare > above))
-        left -= sum(spaced)
+        spare = max(left - floor, 0)
+        above = int(gaps[0] and slot > 0 and spare > 0)
+        spaced = (above, int(gaps[1] and slot > 0 and spare > above))
+        over_sticky = int(sticky_gap and sticky_rows > 0 and spare > sum(spaced))  # the same rule, last
+        left -= sum(spaced) + over_sticky
         tail = min(max(tail_rows, 0), left)
-    content = sticky_rows + tail + slot + rule + composer + bottom_rule + below + info + badge + agents + sum(spaced)
+    content = (sticky_rows + tail + slot + rule + composer + bottom_rule + below + info + badge + agents + sum(spaced)
+               + over_sticky)
     return Budget(
         pad=min(max(min_height - content, 0), room - content),
         floor=min(max(tail_floor, 0), tail),
@@ -263,6 +269,7 @@ def allocate(
         below=below,
         agents=agents,
         gaps=spaced,
+        sticky_gap=over_sticky,
         badge=badge,
     )
 
@@ -300,7 +307,7 @@ def compose(
     rows (their producers size them to `slot_cap`, `composer_cap` and
     `agent_view_cap`).
     """
-    region: list[Line] = []
+    region: list[Line] = [BLANK] * budget.sticky_gap
     if budget.sticky:
         region.append(sticky if sticky is not None else BLANK)
     shown = _last(tail, budget.tail)

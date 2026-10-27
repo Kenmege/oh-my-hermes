@@ -1859,17 +1859,19 @@ class OpeningTests(AppTestCase):
         self.assertTrue(history[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
         self.assertEqual(run.calls("session.list"), [])  # a resumed session needs no pointer to the last one
         self.assertEqual(
-            history[LOGO_ROWS + 2 : LOGO_ROWS + 13],
+            history[LOGO_ROWS + 2 : LOGO_ROWS + 15],
             [  # each block on its rail, and a blank row between two calls, as for a live turn
                 "┃ ❯ What is in this repo?",
                 "",
-                "┃ ● Let me look.",
+                "┃ ⚚ Hermes",  # who wrote it; the record does not say which model, so none is named
+                "┃   Let me look.",
                 "",
                 "┃ ● terminal(ls -la)",
                 "",
                 "┃ ● read_file(README.md)",
                 "",
-                "┃ ● It is oh-my-hermes.",
+                "┃ ⚚ Hermes",
+                "┃   It is oh-my-hermes.",
                 "",
                 "┃ ❯ Thanks",
             ],
@@ -2579,7 +2581,7 @@ class KeyTests(AppTestCase):
         self.assert_clean_run(run)
         details = "\n".join(terminal.captures["details"])
         self.assertIn("❯ Reply with exactly the word: ok", details)
-        self.assertIn("┃ ● ok", details)
+        self.assertIn("┃ ⚚ Hermes · deepseek-v4.1-flash-ultrafast\n┃   ok", details)
         self.assertIn("history · ", details)
 
     def test_ctrl_l_redraws_the_session_from_memory(self) -> None:

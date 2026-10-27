@@ -37,6 +37,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+X", "Opens the /sessions picker"),
     ("Ctrl+S", "Opens the bot board, as /bots does: this machine's Hermes profiles, their gateways and sessions, "
                "read-only"),
+    ("Ctrl+P", "Folds the plan above the composer to its header and the item it is on, or expands it again, while "
+               "a turn runs or between turns; the header says which on its right"),
     ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
     ("↓", "On an empty composer while the agent view under the info line shows subagents, gives its rows the keys "
           "as the agent list; in a DAG run, to its folding tree"),

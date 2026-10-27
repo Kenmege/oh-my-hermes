@@ -420,8 +420,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   then on that row says how many `/history` still shows.
 - That region holds, from the top: the prompt you just sent (while the
   turn runs, once the prompt itself has scrolled off, as `↳ you: …`, the
-  `↳ you:` in the running blue and your words dim, with no band behind them and a
-  dim `…` where they are cut), the tail of the reply that is still streaming, one slot for the
+  `↳ you:` in the running blue and your words dim, on your sent prompt's band
+  with a blank row above it, and a dim `…` where they are cut; a steer you
+  sent runs on the same band), the tail of the reply that is still streaming, one slot for the
   OMH plan (or a question Hermes asked, or the slash-command
   menu when it does not open under the composer), the prompts queued behind
   the running turn (`⧗`, up to three named and the rest counted), the
@@ -588,7 +589,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   under a command's echo, Hermes' own reason (`/undo` on an empty session:
   `No user messages to undo.`); otherwise what did not happen and why.
 - What Hermes' background review saved to memory or skills after a turn
-  (`💾 Self-improvement review: …`) is a line in the transcript. While a
+  is one dim row in the transcript, each skill named once with what it went
+  through (`💾 skill <name> · created · wrote references/a.md · patched`),
+  cut with `…` at the width rather than wrapped. While a
   `/goal` stands, the row above that notice says so as Hermes' own terminal
   does (`⊙ goal · 3/20 turns · <title>`, `⏳ goal parked · until 14:05 · …`,
   `⏸ goal paused · …`), until the goal is done or cleared. A mixture-of-agents
@@ -906,7 +909,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
   - Each block hangs on a continuous `┃` rail with no fill behind it: grey
     for your prompt, the theme's accent for what Hermes said (which opens
-    with a bold `●` in the text colour), and a tool call's state colour for
+    with a header row, `⚚ Hermes · <model>`, bold in the rail's colour and
+    the model the reply was written under muted), and a tool call's state colour for
     the call. The accent is left on the banner's title and that rail only;
     the rest of the chrome (rules, marks, hints, a call's arguments and what
     it printed) is neutral grey, and words are the brightest text.
@@ -1060,6 +1064,7 @@ Esc closes it):
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | Ctrl+X | Opens the `/sessions` picker |
 | Ctrl+S | Opens the bot board, as `/bots` does: this machine's Hermes profiles, their gateways and sessions, read-only |
+| Ctrl+P | Folds the plan above the composer to its header and the item it is on, or expands it again, while a turn runs or between turns; the header says which on its right |
 | ↑ | On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own |
 | ↓ | On an empty composer while the agent view under the info line shows subagents, gives its rows the keys as the agent list; in a DAG run, to its folding tree |
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
@@ -3105,7 +3110,12 @@ plan `todo_list` holds the Desktop pane does not repeat its items: it shows a
 compact "in todo_list" plan summary only when OMH knows something Hermes
 does not show — an item waiting on a recorded reason, or a checklist
 unchanged past the stall threshold. The OMH TUI's plan panel draws the items
-whichever tool holds them.
+whichever tool holds them: the done ones quiet (a `✓` in the done colour,
+their words muted) and, when they do not all fit, folded into one `✓ N done`
+row before any item still to do is cut. Ctrl+P folds the plan to its header
+and the item it is on (`[Plan] │ 6/7 ▸ <item>`), or expands it again, for the
+rest of the session; the header says `ctrl+p fold` or `ctrl+p expand` on its
+right where there is room.
 
 A plan may be declared from a named phase template instead of from phases the
 model writes out itself. `omh_todo` with `action=set` and
