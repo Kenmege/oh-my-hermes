@@ -163,6 +163,12 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("repro-audit-no-relation", "Results a paper reported are not compared with it", "Check my HellaSwag results the paper reported", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-no-owner", "The benchmark's results are not the person's record", "Compare the HellaSwag results with the published numbers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-leaderboard", "A leaderboard is not the paper's report", "Compare my HellaSwag score with the leaderboard results", "answer_clarification", "", "repro-audit"),
+    # Quoted, code and link text is masked before the predicate reads the
+    # message, so a shielded message never admits repro-audit.
+    RoutingPrecisionCase("repro-audit-double-quoted-tail", "A quoted trailing clause is unread, not absent", 'Compare my HellaSwag log against the paper "and then retrain it overnight"', "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-backticked-tail", "A code-span trailing clause is unread, not absent", "Check our HellaSwag results against the paper `then kick off a fresh eval`", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-curly-quoted-tail", "A curly-quoted trailing clause is unread, not absent", "Verify my HellaSwag score with the paper \u201cand redo the sweep\u201d", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-single-quoted-tail", "A single-quoted trailing clause is unread, not absent", "Compare this HellaSwag log to the paper 'then score the bigger model'", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-score-table", "A table checked before sending a paper is writing work", "Check our HellaSwag score table before sending the paper to reviewers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),

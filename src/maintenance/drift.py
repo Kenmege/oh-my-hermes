@@ -884,8 +884,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # review makes the whole request an allow-listed shape and adds one
             # control per position: trailing clauses, a second sentence, a tail
             # word, a word before the owner, the record slot, the relation, the
-            # owner and the target (+10).
-            expected=1154,
+            # owner and the target (+10). A quoted, code-span, curly-quoted or
+            # single-quoted trailing clause is masked before the predicate
+            # reads it, so shielded messages never admit the skill (+4).
+            expected=1158,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

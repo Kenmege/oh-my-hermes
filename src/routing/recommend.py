@@ -6132,6 +6132,11 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
 # (`awareness._rule_suppressed_by_context`).
 _SHIELDED_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     "data-share-review": lambda normalized_query, query_tokens: data_share_request_admitted(normalized_query, shielded=True),
+    # `repro-audit` admits a whole request only when every word is in its
+    # shape; a masked quote, code span or link is words the predicate cannot
+    # read, such as a trailing "then rerun it". It never admits a shielded
+    # message, at the cost of a quoted paper title or an arXiv link (#2324).
+    "repro-audit": lambda normalized_query, query_tokens: False,
 }
 
 
