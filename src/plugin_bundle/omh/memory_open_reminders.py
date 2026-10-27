@@ -38,6 +38,7 @@ from .memory_recall_support import (
 )
 from .memory_records import RECORD_SUMMARY_LIMIT_CHARS
 from .memory_state_files import write_text_atomic
+from .memory_store_io import guard_store_write
 
 MEMORY_OPEN_REMINDERS_SCHEMA_VERSION = "omh_memory_open_reminders/v1"
 OPEN_REMINDERS_FILENAME = "open_reminders.json"
@@ -83,7 +84,7 @@ def mark_open_reminder_asked(omh_home: str | Path, record_id: str, *, asked_at: 
     out loud, never dropped silently.
     """
     path = open_reminders_path(omh_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    guard_store_write(path, omh_home=Path(omh_home).expanduser())
     with _ledger_lock(path):
         ledger = _read_ledger(path)
         previous = ledger.get(str(record_id), {})

@@ -17,16 +17,20 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import errno
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import stat
 from typing import Any, Callable, Iterator
 
 from .awareness_delivery import _awareness_delivery_lock, _with_windows_retry
 from .memory_governance import PRINCIPAL_PROJECT_MEMORY_RECORD_SCHEMA_VERSION, contains_credential_like_material
-from .memory_principals import memory_identity_errors
+# From the validation module, not `memory_principals`: that module guards the
+# principal key with `guard_store_write`, so it imports this one.
+from ._memory_principal_validation import memory_identity_errors
 from .memory_recall_support import (
     LEGACY_PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
     MEMORY_SUBJECT_PATTERN,
@@ -107,19 +111,116 @@ def memory_store_lock(path: Path) -> Iterator[str]:
     Not re-entrant: an flock is per open file description, so the capture
     lock and the index lock are different files and admission holds the
     first across a call that takes the second.
+
+    The delivery lock creates and chmods the sidecar's directory by path, so
+    the store chain and ``path`` are checked first (``guard_store_write``).
     """
+    guard_store_write(path)
     with _awareness_delivery_lock(path, timeout_seconds=STORE_LOCK_TIMEOUT_SECONDS) as mechanism:
         yield mechanism
 
 
-def ensure_private_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-    _with_windows_retry(lambda: path.chmod(0o700))
+def _is_link_stat(info: os.stat_result) -> bool:
+    """A symlink, or a Windows junction (``lstat`` reports its reparse tag)."""
+    if stat.S_ISLNK(info.st_mode):
+        return True
+    junction = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)
+    return junction is not None and getattr(info, "st_reparse_tag", None) == junction
+
+
+def _store_refusal(path: Path, what: str, code: int = errno.ELOOP) -> OSError:
+    return OSError(code, f"memory store refuses {what}", str(path))
+
+
+def _store_root_for(directory: Path, omh_home: Path | None) -> Path:
+    if omh_home is not None:
+        return Path(os.path.abspath(memory_dir(Path(omh_home).expanduser())))
+    # Every store path is composed as `<omh_home>/memory/...`; the nearest
+    # `memory` component is that root.
+    for candidate in (directory, *directory.parents):
+        if candidate.name == "memory":
+            return candidate
+    raise _store_refusal(directory, "a path outside any memory store", errno.EINVAL)
+
+
+def _ensure_store_component(path: Path) -> None:
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        try:
+            os.mkdir(path, 0o700)
+        except FileExistsError:
+            pass
+        info = os.lstat(path)
+    if _is_link_stat(info):
+        raise _store_refusal(path, "a symlinked or junctioned directory")
+    if not stat.S_ISDIR(info.st_mode):
+        raise _store_refusal(path, "a non-directory on the store path", errno.ENOTDIR)
+
+
+def _chmod_private_dir(path: Path) -> None:
+    nofollow, directory_flag = getattr(os, "O_NOFOLLOW", 0), getattr(os, "O_DIRECTORY", 0)
+    if not (nofollow and directory_flag and hasattr(os, "fchmod")):
+        # Windows: the component was just lstat-checked as a real directory.
+        _with_windows_retry(lambda: path.chmod(0o700))
+        return
+    descriptor = os.open(path, os.O_RDONLY | nofollow | directory_flag)
+    try:
+        os.fchmod(descriptor, 0o700)
+    finally:
+        os.close(descriptor)
+
+
+def ensure_private_dir(path: Path, *, omh_home: Path | None = None) -> None:
+    """Create or verify a private directory inside the memory store, failing closed.
+
+    Every component from ``<omh_home>/memory`` down to ``path`` must be a real
+    directory: a symlink or junction anywhere on that chain would carry the
+    write, the chmod and the lock sidecar outside the store, so it raises
+    ``OSError`` (``ELOOP``) and nothing is created or chmodded through it. The
+    resolved directory must also sit under the resolved root. ``omh_home``
+    names the root exactly; without it the nearest ``memory`` component does.
+    """
+    directory = Path(os.path.abspath(Path(path).expanduser()))
+    root = _store_root_for(directory, omh_home)
+    try:
+        relative = directory.relative_to(root)
+    except ValueError:
+        raise _store_refusal(directory, "a directory outside the memory store", errno.EXDEV) from None
+    root.parent.mkdir(parents=True, exist_ok=True)
+    current = root
+    _ensure_store_component(current)
+    for part in relative.parts:
+        current = current / part
+        _ensure_store_component(current)
+    real_root = os.path.normcase(os.path.realpath(root))
+    real_directory = os.path.normcase(os.path.realpath(directory))
+    if real_directory != real_root and not real_directory.startswith(real_root.rstrip(os.sep) + os.sep):
+        raise _store_refusal(directory, "a directory that resolves outside the memory store", errno.EXDEV)
+    _chmod_private_dir(directory)
+
+
+def guard_store_write(path: Path, *, omh_home: Path | None = None) -> None:
+    """The one check every writer under ``<omh_home>/memory`` runs before it writes.
+
+    ``ensure_private_dir`` on the parent chain, then the target itself: an
+    existing entry that is a link, junction or anything but a regular file is
+    refused with ``OSError``, so no write, chmod or open lands on what it
+    points at.
+    """
+    path = Path(path)
+    ensure_private_dir(path.parent, omh_home=omh_home)
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if _is_link_stat(info) or not stat.S_ISREG(info.st_mode):
+        raise _store_refusal(path, "a write target that is a link or not a regular file")
 
 
 def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     """Replace ``path`` whole with private permissions; the store's one write shape."""
-    ensure_private_dir(path.parent)
+    guard_store_write(path)
     text = json.dumps(data, indent=2, sort_keys=True) + "\n"
     tmp = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(8)}.tmp")
     created_tmp = False
@@ -345,7 +446,7 @@ def write_project_memory_review_decision(omh_home: Path, review: dict[str, objec
 
 
 def write_memory_index(omh_home: Path, *, lock: StoreLock = memory_store_lock, clock: Clock = utc_now) -> None:
-    ensure_private_dir(memory_dir(omh_home))
+    ensure_private_dir(memory_dir(omh_home), omh_home=omh_home)
     with lock(memory_index_path(omh_home)):
         write_memory_index_unlocked(omh_home, updated_at=clock())
 
@@ -358,7 +459,7 @@ def write_memory_index_unlocked(omh_home: Path, *, updated_at: str) -> None:
     or they wait out the full timeout against themselves.
     """
     root = memory_dir(omh_home)
-    ensure_private_dir(root)
+    ensure_private_dir(root, omh_home=omh_home)
     scopes = [path.relative_to(root).as_posix() for path in memory_scope_paths(omh_home)]
     candidates = [path.relative_to(root).as_posix() for path in safe_memory_files(omh_home, memory_candidates_dir(omh_home))]
     records = [path.relative_to(root).as_posix() for path in safe_memory_files(omh_home, memory_records_dir(omh_home))]

@@ -11,9 +11,27 @@ that stops work: a token equal to `jev`, a token that starts with `jev` and
 continues with no Latin letter (`jev로`, `jev's`, `jev-1`), or an `omh-jev-*`
 name sets the marker. Tokens split on anything that is not a letter or digit,
 so `omh_jev_ask` counts as naming Jev, and a Latin letter after `jev` ends the
-match, so `Jevons paradox` and `jevity` do not. The gate cannot tell a
-negation apart -- "don't use jev" also sets the marker -- and the model can
-still decline to call; that residual is documented rather than guessed around.
+match, so `Jevons paradox` and `jevity` do not.
+
+A mention is consent only when nothing in the person's text negates or
+refuses anything. The scope is the whole segment the gate reads, not the
+clause around the mention: a sentence split cannot see a retraction that
+follows in its own sentence ("use jev? no, review this locally"), so any
+negation or refusal cue anywhere records "not requested". English cues:
+`no`, `not`, `never`, `nope`, `nah`, `none`, `nothing`, `neither`, `nor`,
+`without`, `w/o`, `stop`, `avoid`, `skip`, `cancel`, `refuse`, `forget`,
+`except`, `exclude`, `instead`, `rather than`, `hold off`, `cannot`, any
+`n't` contraction, and the common ones typed without it (`dont`, `wont`),
+plus a few common Latin-script ones (`nicht`, `kein`, `ohne`, `pas`, `sans`,
+`sin`, `nunca`, `jamais`, `não`, `sem`). Korean cues: `말고`/`말아`/`말라`,
+`지 마`/`지 말` (`쓰지마`, `쓰지 말고`, `하지마`), `없` (`없이`, `없어도`), `빼`,
+`제외`, `대신`, `그만`, `금지`, `않`, `싫`, `아니`, and `안`/`못` as a negating
+adverb (`안 써`, `안써`, `못 써`) but not inside a word (`보안`, `안전`). A
+text holding letters of any other script records "not requested" too: the
+gate cannot read negation there, and when it cannot tell whether a mention
+is affirmative it denies. The cost: an affirmative ask that carries a
+negation of its own ("ask jev whether nothing is missing", "claude 말고 jev로
+물어봐") or is written in another script is not consent; the person rephrases.
 
 Only an attended platform can set it. `ATTENDED_PLATFORMS` is an allowlist of
 the host platform ids where a person types the turn's message; every other id
@@ -162,6 +180,19 @@ from typing import Any, Final
 MAX_TRACKED_SESSIONS: Final = 256
 # `jev` at the start of a token, not followed by a Latin letter.
 _JEV_TOKEN: Final = re.compile(r"(?<![^\W_])jev(?![a-z])", re.IGNORECASE)
+# Negation or refusal anywhere in the person's text voids a Jev mention.
+_NEGATION_CUE: Final = re.compile(
+    r"\b(?:no|not|never|nope|nah|none|nothing|neither|nor|without|w/o|stop\w*|avoid\w*|skip\w*"
+    r"|cancel\w*|refus\w*|forget|except|exclud\w*|instead|rather\s+than|hold\s+off"
+    r"|nicht|kein\w*|ohne|pas|sans|sin|nunca|jamais|não|nao|sem"
+    r"|cannot|(?:do|does|did|wo|ca|should|would|could|is|are|was|were|have|has|had|must|need)nt"
+    r")\b|n['\u2019]t\b"
+    r"|말[고아라]|지\s*(?:마|말)|없|빼|제외|대신|그만|금지|않|싫|아니"
+    r"|(?<![가-힣])[안못](?:\s|$|(?=[써쓰해하돼되물보불시가갈줘]))",
+    re.IGNORECASE,
+)
+# Letters the negation cues are written for: Latin and Hangul.
+_READABLE_LETTER: Final = re.compile(r"[A-Za-z\u00c0-\u024f\u1e00-\u1eff\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 
 # One process can hold two copies of this module: Hermes' memory-provider
 # loader execs the bundle again under `_hermes_user_memory.*`, next to the
@@ -376,9 +407,18 @@ def person_text(message: object, *, messaging: bool = True) -> str:
     return _person_segment(message, messaging=messaging)[0]
 
 
+def _names_jev_affirmatively(text: str) -> bool:
+    """The one consent rule: `text` names Jev, negates nothing, and is in a script the cues read."""
+    if not _JEV_TOKEN.search(text):
+        return False
+    if _NEGATION_CUE.search(text):
+        return False
+    return all(_READABLE_LETTER.match(char) for char in text if char.isalpha())
+
+
 def message_requests_jev(message: object, *, messaging: bool = True) -> bool:
     """Whether a person's message names Jev in the sense the gate accepts."""
-    return bool(_JEV_TOKEN.search(person_text(message, messaging=messaging)))
+    return _names_jev_affirmatively(person_text(message, messaging=messaging))
 
 
 def clear_turn(session_id: object) -> None:
@@ -454,7 +494,7 @@ def note_turn(
             # Merged chunks from other senders follow a newline; only the
             # first line is certainly the event sender's own.
             text = text.split("\n", 1)[0]
-        requested = owner_speaks and bool(_JEV_TOKEN.search(text))
+        requested = owner_speaks and _names_jev_affirmatively(text)
     with _lock:
         _remember(_turn_markers, key, (turn, requested))
         _ = _armed_turns.pop(key, None)

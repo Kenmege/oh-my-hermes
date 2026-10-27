@@ -89,6 +89,18 @@ class LifecycleCompatibilityTests(unittest.TestCase):
         self.binding(self.hermes, self.store)
         code, payload, stderr = self.uninstall(self.hermes, "--keep-command")
         self.assertEqual(code, 0, stderr)
+        # The store's OMH entries go; the fixture's user-record.json is not OMH's,
+        # so it and therefore the store directory itself are kept.
+        self.assertEqual(sorted(self.store.iterdir()), [self.sentinel], payload)
+        self.assertIn({"path": str(self.sentinel), "reason": "not created by OMH"}, payload["kept_paths"])
+        self.sentinel.unlink()
+        code, payload, stderr = run_cli([
+            "--hermes-home", str(self.hermes), "--omh-home", str(self.store),
+            "setup", "--core", "--yes", "--no-interactive", "--no-menubar", "--json",
+        ])
+        self.assertEqual(code, 0, stderr)
+        code, payload, stderr = self.uninstall(self.hermes, "--keep-command")
+        self.assertEqual(code, 0, stderr)
         self.assertFalse(self.store.exists(), payload)
 
     def test_explicit_source_update_remains_content_only(self):

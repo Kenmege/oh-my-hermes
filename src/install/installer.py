@@ -1812,7 +1812,7 @@ def uninstall_skill_pack(
         if reason:
             kept.append({"path": str(paths.omh_home), "reason": reason})
         else:
-            _collect_removal(paths.omh_home, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run, force=True)
+            _collect_omh_home_contents(paths, removed=removed, would_remove=would_remove, kept=kept, dry_run=dry_run)
 
     command_removed_at = len(removed)
     command_would_remove_at = len(would_remove)
@@ -1892,6 +1892,91 @@ def _omh_home_removal_refusal(paths: OmhPaths) -> str | None:
     if error or not manifest or manifest.get("package") != "oh-my-hermes" or manifest.get("schema_version") != 1:
         return "OMH home ownership is unproven: no readable OMH manifest.json"
     return None
+
+
+# Top-level OMH-home entries written by producers that do not go through an
+# OmhPaths property. Every other top-level name comes from OmhPaths itself.
+_OMH_HOME_EXTRA_ENTRIES = frozenset({
+    "routing",  # route_question_mode, owner_preference_record, delegation_route_restore
+    "rules",  # toolcall_rules: rules/toolcall-rules.json
+    "tui",  # skin_pack theme.json, tui.launch_card launch-skills.json
+    "menubar",  # surfaces.menubar_app
+    "jev",  # jev_ask_store
+    "documents",  # document_chunk_plan.documents_root
+    "adapter-quality",  # omh.adapter_quality
+    "design-direction-iterations",  # workflows.design_direction_iterations_store
+    "skills-import-manifest.json",  # workflows.external_rule_import
+    "plans", "plan-variants", "plan-context",  # system.paths.project_artifact_dir
+    "codegraph",  # codegraph.schema, when the home is a repository's .omh
+})
+# system.paths.ensure_project_store_ignored writes exactly this into .gitignore.
+_OMH_STORE_GITIGNORE = "*\n"
+
+
+def _omh_created_names() -> frozenset[str]:
+    """Top-level names OMH writes under its home, derived from OmhPaths."""
+    probe = OmhPaths(omh_home=Path("/omh-home-probe"), hermes_home=Path("/hermes-home-probe"))
+    names = set(_OMH_HOME_EXTRA_ENTRIES)
+    for name, attribute in vars(OmhPaths).items():
+        if isinstance(attribute, property):
+            value = getattr(probe, name)
+            if isinstance(value, Path) and value.is_relative_to(probe.omh_home) and value != probe.omh_home:
+                names.add(value.relative_to(probe.omh_home).parts[0])
+    return frozenset(names)
+
+
+def _is_omh_created_entry(entry: Path, names: frozenset[str]) -> bool:
+    name = entry.name
+    if name in names:
+        return True
+    # local_store sidecars: `.<name>.lock` locks and `.<name>.<pid>-<hex>.tmp` writes.
+    if name.startswith(".") and (name.endswith(".lock") or name.endswith(".tmp")):
+        stem = name[1:].rsplit(".", 1)[0]
+        return any(stem == owned or stem.startswith(f"{owned}.") for owned in names)
+    if name == ".gitignore" and entry.is_file() and not entry.is_symlink():
+        try:
+            return entry.read_text(encoding="utf-8") == _OMH_STORE_GITIGNORE
+        except (OSError, UnicodeError):
+            return False
+    return False
+
+
+def _collect_omh_home_contents(
+    paths: OmhPaths,
+    *,
+    removed: list[str],
+    would_remove: list[str],
+    kept: list[dict[str, str]],
+    dry_run: bool,
+) -> None:
+    """Remove only top-level entries OMH creates; the home goes only once empty.
+
+    A manifest proves OMH installed into this directory, not that OMH wrote
+    everything in it: OMH_HOME may name a personal folder, and people drop
+    files into ~/.omh. Anything OMH does not create is kept and reported.
+    """
+    home = paths.omh_home
+    if not home.exists():
+        return
+    names = _omh_created_names()
+    foreign = False
+    for entry in sorted(home.iterdir(), key=lambda item: item.name):
+        if not _is_omh_created_entry(entry, names):
+            kept.append({"path": str(entry), "reason": "not created by OMH"})
+            foreign = True
+            continue
+        if dry_run:
+            would_remove.append(str(entry))
+        else:
+            discard_path(entry)
+            removed.append(str(entry))
+    if foreign:
+        kept.append({"path": str(home), "reason": "OMH home still holds entries not created by OMH"})
+    elif dry_run:
+        would_remove.append(str(home))
+    else:
+        home.rmdir()
+        removed.append(str(home))
 
 
 def _collect_removal(

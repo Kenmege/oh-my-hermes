@@ -4,6 +4,46 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Jev mention that is negated no longer counts as consent to ask Jev.**
+  The consent gate used to grant consent whenever a message named Jev, so
+  "ask jev? no, review locally" let `omh_jev_ask` send the request. Consent
+  now requires a Jev mention with no negation or refusal cue anywhere in the
+  person's message (English cues and contractions, a few other Latin-script
+  words, and Korean forms such as `말고`, `안 써` and `제외`), and a message in
+  a script the gate cannot read for negation is denied. This fails closed: an
+  affirmative ask that carries its own negation, such as "claude 말고 jev로
+  물어봐", is denied and has to be rephrased.
+
+- **The memory store and the principal key refuse symlinked or out-of-store
+  targets.** Every directory from `<omh_home>/memory` down to a write target
+  is checked: a symlink or Windows junction, a non-directory, or a path that
+  resolves outside the store root is refused, and a target file that is a
+  link or not a regular file is refused before writing. The principal key is
+  created with `O_EXCL|O_NOFOLLOW`, read with `O_NOFOLLOW`, and must be a
+  32-byte regular file owned by the current user. Block, dreaming, reminder,
+  session, receipt, journal and counter-lock writers go through the same
+  guard. The checks run before each write rather than through a directory
+  fd, so a swap between check and write is still possible, and the Windows
+  junction and no-`O_NOFOLLOW` branches have not been run on Windows.
+
+- **`omh uninstall --remove-files` / `--all` removes only the entries OMH
+  created and keeps the rest of the OMH home.** Once the home is proven
+  OMH-owned, uninstall removes the top-level entries OMH writes (the
+  `OmhPaths` locations plus a fixed list of other OMH writers, their lock and
+  temp sidecars, and OMH's `*` `.gitignore`) and lists every other entry in
+  `kept_paths` with the reason "not created by OMH". The home itself is
+  removed only when nothing else is left, and `--dry-run` reports the same
+  split. An OMH-created directory such as `runtime/` is still removed with
+  everything inside it.
+
+- **The Jev ask ledger is written through a pinned directory fd on POSIX.**
+  The ledger directory is opened once with `O_DIRECTORY|O_NOFOLLOW`, checked
+  to be a directory owned by the current user, and every later step (lock,
+  read, temp create, replace, cleanup) runs relative to that fd, so swapping
+  the parent directory for a symlink mid-write no longer redirects the
+  ledger, and a symlinked ledger file is neither read nor replaced. Windows
+  keeps the path-based write, where a parent swapped between the check and
+  the write is still followed.
 - **The gateway-attach child no longer aborts when Hermes' gateway hangs up
   first (#2327, reported and first fixed by @skihyeon in #2328).** Its
   `omh-attach-stdin` thread read the TUI's input through `sys.stdin.buffer`

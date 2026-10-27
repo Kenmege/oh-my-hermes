@@ -48,9 +48,45 @@ class InstallerIsolationContractTests(unittest.TestCase):
 @unittest.skipIf(sys.platform == "win32", "install.sh is the POSIX installer; install.ps1 covers Windows")
 class InstallerCwdIsolationTests(unittest.TestCase):
     def test_shell_installer_ignores_untrusted_modules(self) -> None:
+        with TemporaryDirectory() as pip_tmp:
+            # Direct-Python mode runs `<OMH_PYTHON> -m pip`, so it needs an
+            # interpreter that has pip. sys.executable may be a pip-less venv
+            # (e.g. under `uv run`), so build a throwaway venv with pip.
+            pip_python, pip_skip = self._python_with_pip(Path(pip_tmp).resolve())
+            self._run_isolation_cases(pip_python, pip_skip)
+
+    def _python_with_pip(self, base: Path) -> tuple[str | None, str | None]:
+        venv_dir = base / "pip-venv"
+        created = subprocess.run(
+            [sys.executable, "-I", "-m", "venv", str(venv_dir)],
+            cwd=base,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+        python = venv_dir / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+        if created.returncode != 0 or not python.exists():
+            return None, f"cannot create a venv with pip (ensurepip unavailable?): {created.stderr.strip()}"
+        probe = subprocess.run(
+            [str(python), "-I", "-m", "pip", "--version"],
+            cwd=base,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if probe.returncode != 0:
+            return None, f"venv has no usable pip: {probe.stderr.strip()}"
+        return str(python), None
+
+    def _run_isolation_cases(self, pip_python: str | None, pip_skip: str | None) -> None:
         for mode in ("venv", "python"):
             for injection in ("cwd", "PYTHONPATH"):
                 with self.subTest(mode=mode, injection=injection), TemporaryDirectory() as tmp:
+                    if mode == "python" and pip_python is None:
+                        self.skipTest(f"direct-Python mode needs pip: {pip_skip}")
+                    python = pip_python if mode == "python" else sys.executable
                     root = Path(tmp).resolve()
                     cwd = root / "cwd"
                     cwd.mkdir()
@@ -71,7 +107,7 @@ class InstallerCwdIsolationTests(unittest.TestCase):
                         "PATH": os.defpath,
                         "HOME": str(root / "home"),
                         "TMPDIR": str(root),
-                        "OMH_PYTHON": sys.executable,
+                        "OMH_PYTHON": python,
                         "OMH_INSTALL_MODE": mode,
                         "OMH_VENV_DIR": str(root / "venv"),
                         "OMH_PACKAGE_URL": str(root / "nonexistent.whl"),
