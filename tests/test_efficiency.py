@@ -435,7 +435,9 @@ class EfficiencyContractTests(unittest.TestCase):
         # 1260 -> 1440: the reply line gives the persona the reply language,
         # speech level and endings, and progress updates, with the user's
         # language as the fallback; the rail measured 1434.
-        self.assertLessEqual(len(primer_context), 1440)
+        # 1440 -> 1560: the reply line carries the human-voice pass (result
+        # first, no chatbot openers or closers); the rail measured 1550.
+        self.assertLessEqual(len(primer_context), 1560)
         self.assertLessEqual(len(awareness_primer_markdown()), _ledger_limit("awareness_primer_markdown_chars"))
         self.assertLessEqual(
             max(workflow_context_lengths.values()), _ledger_limit("awareness_workflow_context_chars_max")

@@ -380,6 +380,19 @@ All notable changes will be documented here.
   keeps the path-based write, where a parent swapped between the check and
   the write is still followed.
 
+- **Replies read like a person who did the work wrote them.** OMH now ships
+  a human-voice pass adapted from `blader/humanizer` (MIT, v3.1.0): the
+  always-on reply rule adds one sentence (result first, no chatbot openers or
+  closers, staged contrasts, or decoration), the common rail points every
+  skill at the new on-demand `omh-routing/references/human-voice.md` before
+  prose a person reads, and that reference covers the strongest English
+  tells plus Korean habits (번역투 nominalisation, register drift in a banmal
+  persona). The persona still owns the voice; the pass edits content and
+  structure only. `omh quality-evidence reply-lint` reports the
+  high-precision shapes as a new `ai_writing_tell` finding, skipping code and
+  quoted lines. The awareness primer budgets move 1440 -> 1560 and
+  3520 -> 3630 for the one sentence.
+
 ## 4.0.2 - 2026-10-24
 
 - **Install, update and uninstall keep shared state until a profile's
