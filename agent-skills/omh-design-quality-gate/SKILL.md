@@ -60,7 +60,7 @@ Bad example:
 
 Use when web UI, decks, PDFs, posters, or visual packages must beat ordinary output on content, taste, layout, accessibility, and render QA.
 
-    Strong routing signals: `design-quality-gate`, `design quality gate`, `ui ux pro max`, `design pro max`, `frontend pro max`, `visual qa pro`, `premium design`, `high quality design`, `beautiful website`, `frontend publishing`, `publishing quality`, `layout validation`, `ppt design quality`, `pdf design quality`, `デザイン品質ゲート`, `公開品質のデザイン`, `デザインの品質基準`, `웹사이트 디자인`, `프론트엔드 퍼블리싱`, `레이아웃 검증`, `더 뛰어나게`, `고퀄`, `设计质量门禁`, `发布级设计`, `设计质量标准`, `pastikan desain memenuhi standar premium`, `tingkatkan kualitas desain sebelum publikasi`, `tolong poles desain sampai siap dipublikasikan`, `cek standar kualitas desain ini`, `rapikan konten dan tata letak agar layak terbit`, `đảm bảo thiết kế đạt tiêu chuẩn chất lượng cao`, `nâng cao chất lượng thiết kế trước khi xuất bản`, `hãy tinh chỉnh thiết kế cho sẵn sàng xuất bản`, `kiểm tra tiêu chuẩn chất lượng của thiết kế này`, `chỉnh sửa nội dung và bố cục cho đạt mức xuất bản`
+    Strong routing signals: `design-quality-gate`, `design quality gate`, `ui ux pro max`, `design pro max`, `frontend pro max`, `visual qa pro`, `premium design`, `high quality design`, `beautiful website`, `frontend publishing`, `publishing quality`, `layout validation`, `ppt design quality`, `pdf design quality`, `デザイン品質ゲート`, `公開品質のデザイン`, `デザインの品質基準`, `웹사이트 디자인`, `프론트엔드 퍼블리싱`, `레이아웃 검증`, `더 뛰어나게`, `고퀄`, `премиальный дизайн сайта`, `полировка дизайна`, `设计质量门禁`, `发布级设计`, `设计质量标准`, `pastikan desain memenuhi standar premium`, `tingkatkan kualitas desain sebelum publikasi`, `tolong poles desain sampai siap dipublikasikan`, `cek standar kualitas desain ini`, `rapikan konten dan tata letak agar layak terbit`, `đảm bảo thiết kế đạt tiêu chuẩn chất lượng cao`, `nâng cao chất lượng thiết kế trước khi xuất bản`, `hãy tinh chỉnh thiết kế cho sẵn sàng xuất bản`, `kiểm tra tiêu chuẩn chất lượng của thiết kế này`, `chỉnh sửa nội dung và bố cục cho đạt mức xuất bản`
 
 ## Catalog Metadata
 
@@ -76,6 +76,7 @@ Quality bar:
 - Review content accuracy and hierarchy before visual polish.
 - Use design-system/reference rules for web, deck, PDF, and poster surfaces.
 - Reject generic AI slop: weak hierarchy, cramped copy, flat templates, one-note palettes, and unverified exports.
+- For a composed frame (promo, poster, slide, end card), run the color-harmony pass before render: list every hue family on screen with its hex values and where it appears; the surrounding composition adds at most one accent family beyond the captured product or brand palette; neutrals, semantic-state colors and data-series palettes are listed but not counted; text contrast is at least 4.5:1, or 3:1 for large type, on its actual background. A composed frame that fails is REVISE before render; details in `references/design-critique-rubric.md`.
 - Require fresh visual QA for pages, slides, states, viewports, and CJK-heavy regions before PASS.
 
 Required inputs:

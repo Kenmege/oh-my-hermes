@@ -189,6 +189,8 @@ class HostManagedProfilePluginTests(unittest.TestCase):
             base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
             profile = root / ".hermes" / "profiles" / "politehelper"
             profile.mkdir(parents=True)
+            # A real named profile has host identity; an empty shell is ignored.
+            (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             status, _, stderr = run_cli(base + ["setup"])
             self.assertEqual(status, 0, stderr)
             plugin_dir = profile / "plugins" / "omh"

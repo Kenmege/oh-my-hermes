@@ -27,7 +27,7 @@ from ..executor_progress import (
 from ..executors import CODING_EXECUTOR_TARGETS, executor_label
 from ..coding.hermes_harness import build_hermes_coding_harness
 from ..coding.executor_capability_snapshots import validate_executor_capability_snapshot
-from ..local_store import ensure_dir, ensure_file, read_json_object, utc_now
+from ..local_store import ensure_dir, ensure_file, read_json_object, read_runtime_record, utc_now
 from ..system.record_revision import (
     DuplicateMutationReplay,
     guarded_record_update,
@@ -828,7 +828,7 @@ def build_executor_session_status_card(executor_status: dict[str, object]) -> di
 
 
 def _existing_session(paths: OmhPaths, session_id: str) -> dict[str, Any]:
-    session = read_json_object(paths.runtime_wrapper_sessions_dir / session_id / "session.json")
+    session = read_runtime_record(paths.runtime_wrapper_sessions_dir / session_id / "session.json")
     if not session:
         raise FileNotFoundError(session_id)
     return session
@@ -876,7 +876,7 @@ def _session_handoff(paths: OmhPaths, session: dict[str, Any]) -> dict[str, Any]
     run_id = str(session.get("current_run_id", ""))
     if not run_id:
         return {}
-    coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
+    coding = read_runtime_record(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
     handoff = coding.get("executor_handoff") if isinstance(coding, dict) else None
     return handoff if isinstance(handoff, dict) else {}
 
@@ -1315,7 +1315,7 @@ def _isolation_plan_for_session(
             return dict(handoff["isolation_plan"])
     run_id = str(session.get("current_run_id", "") or linked_status.get("run_id", ""))
     if run_id:
-        coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
+        coding = read_runtime_record(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
         if isinstance(coding, dict):
             if isinstance(coding.get("isolation_plan"), dict):
                 return dict(coding["isolation_plan"])

@@ -3866,7 +3866,7 @@ def validate_coding_runtime_handoff(handoff: Any) -> list[str]:
     templates = handoff.get("runtime_templates")
     _require(isinstance(templates, list), errors, "coding_delegation runtime_handoff runtime_templates must be a list")
     if isinstance(templates, list):
-        descriptor_only = handoff.get("selected_executor_profile") in {"omo-runtime", "omc-runtime"}
+        descriptor_only = handoff.get("selected_executor_profile") in {"pi-family-runtime", "omc-runtime"}
         _require(
             bool(templates) or descriptor_only,
             errors,

@@ -22,16 +22,18 @@ from .dag_ulw_cues import (
 from .invocation_cues import invoked_instruction
 from .name_report_cues import about_the_skill
 from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
+from .pi_family_names import RUNTIME_HOME
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
-    OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
+    PI_FAMILY_CODING_AGENT_PHRASES as _PI_FAMILY_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
 from .hermes_session_commands import (
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     NATIVE_LOOP_CADENCE_HINT_KEY,
     host_command_turn,
+    host_context_removed,
     loop_timer_verdict,
     person_request_text,
 )
@@ -1252,7 +1254,7 @@ WORKFLOW_CONTEXT_CARDS = (
             "ultraqa",
         ),
         "user_examples": ("Turn this issue into a PR-ready plan", "Is the Codex run done yet?"),
-        "first_response_shape": "State the selected coding owner or choice point, prepare the handoff/status, and keep dispatch, result, review, CI, and merge evidence separate; when the user explicitly authorized merge or deploy, carry that forward as a prepared post-verification step rather than downgrading it to 'no merge', still gated on observed receipt evidence. Record cross-delegation continuity and the outstanding merge/deploy obligation in the goal ledger under .omh/goals; a delegated subtask completing is not the parent goal completing, and never write continuity into the product repo's .omo/.omx runtime-evidence dirs.",
+        "first_response_shape": f"State the selected coding owner or choice point, prepare the handoff/status, and keep dispatch, result, review, CI, and merge evidence separate; when the user explicitly authorized merge or deploy, carry that forward as a prepared post-verification step rather than downgrading it to 'no merge', still gated on observed receipt evidence. Record cross-delegation continuity and the outstanding merge/deploy obligation in the goal ledger under .omh/goals; a delegated subtask completing is not the parent goal completing, and never write continuity into the product repo's {RUNTIME_HOME}/.omx runtime-evidence dirs.",
         "not_evidence_until_observed": ("dispatch", "implementation", "review", "CI", "merge"),
     },
 )
@@ -1278,6 +1280,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "research": "research_and_ops",
     "research-department": "research_and_ops",
     "source-finder": "research_and_ops",
+    "repro-audit": "research_and_ops",
     "paper-learning": "research_and_ops",
     "long-document-reading": "research_and_ops",
     "jit-learn": "research_and_ops",
@@ -6060,6 +6063,7 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
         or _spend_awareness_marked(raw_text)
         or _data_share_awareness_marked(raw_text)
         or show_reel_request_admitted(raw_text)
+        or _user_trigger_pack_hinted(message)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -6087,7 +6091,7 @@ def _data_share_awareness_marked(text: str) -> bool:
     return bool(data_share_phrases_said(text)) and data_share_request_admitted(text)
 
 
-def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
+def awareness_route_hint(message: str, *, max_hints: int = 2, context_removed: bool = False) -> dict[str, object]:
     """Return bounded message-specific workflow hints without exposing raw text.
 
     The hint reads the person's own words (`person_request_text`), never the
@@ -6097,9 +6101,14 @@ def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, objec
     removed only by a caller that knows the turn came through a messaging
     gateway (the `pre_llm_call` hook, the router, the wrapper); here a
     leading bracket stays the person's.
+
+    `context_removed`: a caller that already cut the person's words from the
+    turn says whether a reply pointer or an attachment note went with it
+    (`host_context_removed`); this reader also finds one in `message` itself.
     """
     request = "" if host_command_turn(message) else person_request_text(message)
-    return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(request, max(max_hints, 0)))
+    context_removed = context_removed or host_context_removed(message)
+    return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(request, max(max_hints, 0), context_removed))
 
 
 def _copy_awareness_route_hint_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -6186,7 +6195,7 @@ def _route_hint_with_action_labels(hint: dict[str, object]) -> dict[str, object]
 
 
 @lru_cache(maxsize=512)
-def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, object]:
+def _awareness_route_hint_cached(message: str, max_hints: int, context_removed: bool = False) -> dict[str, object]:
     degraded: list[tuple[str, str]] = []
     matching_message = executable_routing_text(message)
     intent = classify_workflow_intent(matching_message)
@@ -6290,7 +6299,9 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 continue
             if _rule_suppressed_by_reference_intent(rule, intent):
                 continue
-            if _rule_suppressed_by_context(rule, routing_normalized, shielded=matching_message != message):
+            if _rule_suppressed_by_context(
+                rule, routing_normalized, shielded=matching_message != message, raw=message, context_removed=context_removed
+            ):
                 continue
             if rule["id"] == "loopability_goal" and timed_native_loop:
                 continue
@@ -6544,7 +6555,7 @@ def _named_coding_agent_delivery_signal(routing_normalized: str, tokens: set[str
     """
     named = any(
         phrase in routing_normalized for phrase in _SUBSTRING_NAMED_CODING_AGENT_PHRASES
-    ) or _contains_boundary_phrase(routing_normalized, _OMO_RUNTIME_CODING_AGENT_PHRASES)
+    ) or _contains_boundary_phrase(routing_normalized, _PI_FAMILY_CODING_AGENT_PHRASES)
     if not named:
         return False
     if any(phrase in routing_normalized for phrase in _CODING_DELIVERY_REQUEST_PHRASES):
@@ -7158,6 +7169,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "strategy-brief",
                 "feedback-triage",
                 "research-department",
+                "repro-audit",
                 "paper-learning",
                 "long-document-reading",
                 "jit-learn",
@@ -7382,7 +7394,7 @@ def awareness_primer_payload() -> dict[str, object]:
             },
             {
                 "cue": "delegated coding continuity, an outstanding merge/deploy obligation, or where to record it",
-                "route": "record the obligation in the goal ledger under .omh/goals, never in the product repo's .omo/.omx runtime-evidence dirs; a delegated subtask completing is not the parent goal completing",
+                "route": f"record the obligation in the goal ledger under .omh/goals, never in the product repo's {RUNTIME_HOME}/.omx runtime-evidence dirs; a delegated subtask completing is not the parent goal completing",
             },
             {
                 "cue": "workflow trace, skill improvement, regression corpus, or why-routing questions",
@@ -7663,6 +7675,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "ultraprocess": _CODING_ROUTE_LANE_NEXT_ACTION,
     "workflow-learning": "audit_learning_readiness",
     "data-analysis": "prepare_data_analysis_card",
+    "repro-audit": "prepare_repro_audit",
     "geospatial-analysis": "prepare_geospatial_analysis",
     "biomedical-evidence": "prepare_biomedical_evidence",
     "molecular-docking": "prepare_molecular_docking",
@@ -8570,6 +8583,26 @@ def _user_trigger_pack_route_decision(message: str) -> dict[str, str]:
     return user_trigger_pack_route_hint(message)
 
 
+def _user_trigger_pack_hinted(message: str) -> bool:
+    """Whether this OMH home's own trigger language pack earns the message a route hint (#2284).
+
+    The markers `awareness_context_matches_message` reads are shipped cues and
+    ASCII tokens, so a later turn written wholly in a pack's language (Cyrillic,
+    say) armed nothing and its route hint was never recomputed, while the same
+    message on a first turn was hinted. This asks the hint bridge itself rather
+    than whether a pack phrase appears: a phrase whose words the pack holds back
+    scores as a phrase only and never dispatches, and the bridge answers only a
+    dispatch, so arming on the phrase alone refreshed context for a turn that
+    had no hint to show. The bridge reads the phrase with the router's word
+    edges, so a phrase inside a longer word arms nothing either. With no user
+    pack installed the bridge answers from a cached empty tuple.
+
+    `_user_trigger_pack_route_decision` carries the deferred, doubly guarded
+    import; a standalone plugin host has no router to ask and arms nothing here.
+    """
+    return bool(_user_trigger_pack_route_decision(message))
+
+
 def _user_trigger_pack_route_hint(message: str) -> dict[str, object]:
     """Build the hint a person's own trigger language pack earns (#1535).
 
@@ -8658,7 +8691,9 @@ def _long_document_page_count_signal(text: str) -> bool:
     )
 
 
-def _rule_suppressed_by_context(rule: dict[str, object], text: str, *, shielded: bool = False) -> bool:
+def _rule_suppressed_by_context(
+    rule: dict[str, object], text: str, *, shielded: bool = False, raw: str = "", context_removed: bool = False
+) -> bool:
     rule_id = str(rule.get("id", ""))
     if rule_id == "data_share_review":
         # `shielded`: the masker removed quoted, code, link or relayed text
@@ -8666,6 +8701,12 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str, *, shielded:
         # and no place is then proven inside. The router takes the same
         # report from its own masking (`RoutingQuery.shielded`).
         return not data_share_request_admitted(text, shielded=shielded)
+    if rule_id == "show_reel_production":
+        # The same report: a closed show-reel form with masked text beside it,
+        # or with a reply pointer or an attachment note cut from the turn, may
+        # be showing the fault that text names; and it must hold on the
+        # request as written, as the router reads it (`show_reel_cues`).
+        return not show_reel_request_admitted(text, shielded=shielded or context_removed, raw=raw or None)
     visual_markers = (
         "image card",
         "summary card",

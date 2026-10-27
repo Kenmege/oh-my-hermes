@@ -181,6 +181,8 @@ each bounded in `src/workflows/agent_board.py` before any schema check:
 | `workspace_path` | string | only with `workspace_kind` `dir` or `worktree` | `workspace_path_requires_kind` |
 | `priority` | integer | 0 to 100 | `invalid_integer` |
 | `max_runtime_seconds` | integer | 60 to 86,400 | `invalid_integer` |
+| `goal_mode` | boolean | `true` or `false` | `invalid_boolean` |
+| `goal_max_turns` | integer | 1 to 100 | `invalid_integer` |
 | `initial_status`, `model`, `provider`, `completion_contract` | string | as before | `invalid_initial_status`, `invalid_text` |
 
 OMH's `initial_status` bound admits `todo`, `running`, `blocked`, and `triage`,

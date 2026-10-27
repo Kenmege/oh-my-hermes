@@ -20,7 +20,7 @@ from ..tui.width import line_width
 from .common import _paths, _print_json, _wants_json
 
 # Every glyph and line character the Unicode drawing can use: an output that cannot encode them gets ASCII.
-DELEGATION_VIEW_PROBE = "┌┐└┘─│┬┴├┤┼▼◆●◌○◇✓✗▪·…!←→↻↓"
+DELEGATION_VIEW_PROBE = "┌┐└┘╭╮╰╯─│╎┬┴├┤┼▼▽◆●◌○◇✓✗▪·…!←→↻↓"
 
 
 def cmd_hud(args: argparse.Namespace) -> int:

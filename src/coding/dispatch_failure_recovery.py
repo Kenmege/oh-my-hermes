@@ -58,7 +58,7 @@ from __future__ import annotations
 import subprocess
 from typing import Any, Callable, Mapping, Sequence
 
-from ..executors import executor_label
+from ..executors import canonical_executor_profile, executor_label
 from ..system.local_store import locked_json_update, read_json_object_result, utc_now
 from ..system.paths import OmhPaths
 from .executor_auth_signals import LIMIT_SIGNAL_STALE_AFTER_SECONDS, signal_age_seconds
@@ -508,7 +508,7 @@ def parse_on_failure(value: str, *, known_owners: Sequence[str] = ()) -> tuple[s
     if raw in {ON_FAILURE_REPORT, ON_FAILURE_HERMES, ON_FAILURE_WAIT}:
         return raw, ""
     if raw.startswith(ON_FAILURE_RETARGET_PREFIX):
-        owner = raw[len(ON_FAILURE_RETARGET_PREFIX) :].strip()
+        owner = canonical_executor_profile(raw[len(ON_FAILURE_RETARGET_PREFIX) :].strip())
         if not owner:
             raise OnFailureModeError("--on-failure=retarget: requires an owner, for example retarget:codex")
         if known_owners and owner not in known_owners:

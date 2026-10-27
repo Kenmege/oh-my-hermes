@@ -41,8 +41,8 @@ def skill_shortlist_projection() -> dict[str, object]:
     index = lexical_shortlist._index()
     definitions = {definition.name: definition for definition in routable_definitions()}
     skills = [
-        _skill_entry(name, weights, definitions[name].description)
-        for name, weights, _length in index.documents
+        _skill_entry(name, lexical_shortlist._document(definitions[name], scoring_only=False)[0], definitions[name].description)
+        for name, _weights, _length in index.documents
     ]
     return {
         "schema_version": SKILL_SHORTLIST_SCHEMA_VERSION,
@@ -60,7 +60,7 @@ def skill_shortlist_entry(name: str) -> dict[str, object] | None:
     for document_name, weights, _length in lexical_shortlist._index().documents:
         if document_name == name:
             definition = next(item for item in routable_definitions() if item.name == name)
-            return _skill_entry(name, weights, definition.description)
+            return _skill_entry(name, lexical_shortlist._document(definition, scoring_only=False)[0], definition.description)
     return None
 
 
@@ -70,9 +70,11 @@ def _skill_entry(name: str, weights: Mapping[str, float], description: str) -> d
         by_weight.setdefault(_weight_key(weight), []).append(term)
     vocabulary = lexical_shortlist._anchor_vocabulary(name)
     frequency = lexical_shortlist._document_frequency()
+    # Scoring-only terms are never written out; the bundle adds them on load.
+    hidden = lexical_shortlist.scoring_only_terms(name)
     anchors = sorted(
         term
-        for term in vocabulary
+        for term in vocabulary - hidden
         if frequency.get(term, 0) <= lexical_shortlist.ANCHOR_MAX_DOCUMENT_FREQUENCY
     )
     return {

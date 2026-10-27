@@ -188,12 +188,6 @@ def _routing_precision_intervention_case_count() -> int:
     return count if not isinstance(count, bool) else 0
 
 
-def _installable_skill_count() -> int:
-    from ..skills.catalog import installable_skill_names
-
-    return len(installable_skill_names())
-
-
 def _common_request_case_count() -> int:
     from ..quality.common_request_coverage import build_common_request_coverage_demo
 
@@ -877,8 +871,56 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Three domain-science vocabulary controls (+3).
             # Career actor repair adds five employer requests and two references.
             # Normalized actor/objective follow-up adds seven employer contrasts.
+            # The pi-family runtime rename: `family` alone never names the
+            # executor readiness owner (+1).
+            # The Russian trigger pack adds three chat turns its generic words
+            # dispatched or named before they were held back to whole phrases:
+            # a weekend chores plan, a family trip plan and a bank site down (3).
+            # The ru pack review (#2301): twenty everyday Russian turns that say
+            # a pack word in its everyday sense or inside a longer word -- a
+            # fence to fix, a lift that does not work, a film review, an app
+            # preview, a past-tense remembered, a car rolled out of a garage,
+            # a family budget, an estate agent (+20). Then two turns where a
+            # held-back phrase inside a longer one of the same skill scored
+            # twice and dispatched: a grandmother's "запомни это" and metro
+            # tokens (+2). Then three turns where two held-back phrases of one
+            # skill, overlapping or apart, summed to a dispatch: reports to the
+            # bosses already handed in, a secretary's weekly report, a vague
+            # geometry problem (+3).
+            # repro-audit adds one vocabulary control (+1). Its review replaces
+            # that control, which no trigger reached, with 19 that each say a
+            # phrase the skill once dispatched on or a HellaSwag phrase in
+            # another sense, one per clause of its admission rule (+18). The
+            # #2324 review adds ten more: execution by stem anywhere in the
+            # request (hyphen, -ing, retrain, keep training, fine-tune, again,
+            # a later sentence) and the record-to-relation shape (an upload
+            # state, a citing appendix, a table before sending) (+10). The delta
+            # review makes the whole request an allow-listed shape and adds one
+            # control per position: trailing clauses, a second sentence, a tail
+            # word, a word before the owner, the record slot, the relation, the
+            # owner and the target (+10). A quoted, code-span, curly-quoted or
+            # single-quoted trailing clause is masked before the predicate
+            # reads it, so shielded messages never admit the skill (+4).
+            # show-reel promo/demo/launch/trailer names: the same words as a
+            # playback fault, an edit, an upload, a conversion, a chained post,
+            # a towed trailer, a video call and a renderer install (+8).
+            # The #2322 review classes: a demo, product or explainer video of
+            # a fault (4), a renderer-led statement about a render (4), and
+            # editing or trimming an everyday video (3) (+11).
+            # The #2322 delta review classes: a timed, cinematic or numbered
+            # fault recording (4), a fault in a later sentence (3), a
+            # marketing noun over a fault (2), and cut or edit on a sizzle
+            # reel (2) (+11).
+            # The #2322 third delta: a closed form beside a backticked,
+            # quoted, curly-quoted, `>`-quoted, fenced or linked fault (8), a
+            # three-digit v-version (1), and a with-adjunct that does not end
+            # the sentence (1) (+10).
+            # The #2322 fourth delta: a closed form beside a source path, a
+            # file and line, a bare-domain link or a script the router strips
+            # (4), under a reply pointer or an attachment note (2), with an
+            # emoji (1), and a with-adjunct naming people (2) (+9).
             # sprite-forge adds CSS pixel, soda brand and spreadsheet-sheet controls (+3).
-            expected=1117,
+            expected=1238,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1381,30 +1423,43 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install drift, and /omh-doctor status runs doctor (+1).
             # Career actor repair retains five personal/target/quoted controls.
             # Actor/objective follow-up adds two third-person candidate controls.
+            # The pi-family runtime rename: asking whether pi-family is ready
+            # checks executor readiness (+1).
+            # The Russian trigger pack adds eleven requests that fell back
+            # without it: code review, build failure (bare and with a compile
+            # error), an implementation plan, a bare make-a-plan clarify, a
+            # site accessibility check, deep research, a task graph, what is
+            # running, prod down and save to memory (11).
+            # The ru pack review (#2301): five of those now ask instead of
+            # dispatching, because their words are everyday ones (the build,
+            # site accessibility, task graph, what agents do, save to memory;
+            # same count), plus a screen-reader check, remember-this, a bug, a
+            # landing page, a tech-debt audit, a commit message, the logs and
+            # IT-jargon research, which dispatch on a software word (+8). Then
+            # the nested-phrase fix: "сделай ревью кода" and "запомни это" ask
+            # instead of dispatching on a double count (same count), and a
+            # pull-request review dispatches on its own word (+1). A skill now
+            # credits one held-back pack phrase per message, so an
+            # implementation plan asks instead of dispatching (same count);
+            # `компиляции` is a software word, so the build failure with a
+            # compile error still dispatches. That credit is the ru pack's
+            # only: three Korean requests whose held-back phrases add up on
+            # purpose (chart styling, an architecture diagram with the code
+            # structure, model serving with a serving benchmark) still
+            # dispatch (+3).
+            # repro-audit adds one HellaSwag log versus paper request (+1), and
+            # its review three more: own results, a score against a reported
+            # metric, a courtesy opener (+3), and its delta review a request
+            # that closes on the compared metric (+1).
+            # show-reel promo/demo/launch/trailer names, a two-word duration
+            # and a renderer-led brief, each of which dispatched another lane
+            # or asked on main (+8).
+            # A with-adjunct closes a promo video brief (+1).
             # sprite-forge adds one game character sprite sheet request (+1).
-            expected=1131,
+            expected=1169,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
-        ),
-        CountMetric(
-            name="installable_skill_count",
-            describe="Installable workflow skills quoted in reference surfaces",
-            live=_installable_skill_count,
-            # The current workflow additions are part of the installable catalog.
-            # `data-share-review` adds one. `spend-gate` adds one. `dag-ulw` adds one.
-            # `market-research` adds one.
-            # show-reel adds one installable motion-production method.
-            # Three optional executable science methods (+3).
-            # sprite-forge adds one QC-gated game sprite frame method.
-            expected=152,
-            sites=(
-                "docs/README.md",
-                # The docs index quotes the count in prose and
-                # `test_first_release_trust_surfaces_are_present` asserts that
-                # exact string, so the number lives in two files, not one.
-                "tests/test_router_content.py",
-            ),
         ),
         CountMetric(
             name="common_request_case_count",

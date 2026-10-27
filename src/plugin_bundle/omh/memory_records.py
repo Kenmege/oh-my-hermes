@@ -39,7 +39,7 @@ from .awareness_delivery import _awareness_delivery_lock
 from .hermes_memory import RECORDS_DIRECTORY_LABEL, REVIEWS_DIRECTORY_LABEL, _read_reviews, read_reviewed_records
 from .memory_recall_selector import MemoryRecallSelection, select_memory_recall
 from .memory_recall_support import PROJECT_MEMORY_RECALL_PACK_SCHEMA_VERSION
-from .memory_store_io import atomic_write_json
+from .memory_store_io import atomic_write_json, guard_store_write
 
 DEFAULT_RECORD_RENDER_BUDGET_CHARS = 2400
 DEFAULT_RECORD_LIMIT = 6
@@ -503,6 +503,8 @@ def _bump_counter(
     bumped = list(dict.fromkeys(str(record_id) for record_id in record_ids if _SAFE_REF.fullmatch(str(record_id))))
     if not bumped:
         return 0
+    # The lock chmods its sidecar's directory by path: check the store chain first.
+    guard_store_write(path)
     with _awareness_delivery_lock(path, timeout_seconds=COUNTER_LOCK_TIMEOUT_SECONDS):
         # The raw entries, not a reader's projection: a key this build does not
         # know (another writer's field) survives the rewrite.

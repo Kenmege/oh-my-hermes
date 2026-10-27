@@ -290,7 +290,7 @@ class RuntimeArtifactTests(unittest.TestCase):
                     self.assertIn(f"executor_local_workflow.dispatchability.{field}", errors)
 
     def test_descriptor_only_runtime_profiles_allow_no_executable_templates(self) -> None:
-        for profile in ("omo-runtime", "omc-runtime"):
+        for profile in ("pi-family-runtime", "omc-runtime"):
             with self.subTest(profile=profile):
                 handoff = build_coding_delegation_payload(
                     "$ultrawork complete the goal",

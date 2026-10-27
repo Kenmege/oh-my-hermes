@@ -24,8 +24,8 @@ The host version comes from the readiness module's approved
 ``<cli> --version`` probe, and only for a CLI in that probe's set; that
 ``--version`` run is the only host process this module causes. The set is the
 readiness probe's, but the trigger is wider: this runs the probe for every
-such CLI on PATH, where readiness ran pi only for omo-runtime and opencode only
-when neither pi nor senpi was on PATH. Any other host's version is recorded as
+such CLI on PATH, where readiness ran pi only for pi-family-runtime and opencode only
+when neither pi nor its distribution host was on PATH. Any other host's version is recorded as
 not observed, with the reason.
 """
 

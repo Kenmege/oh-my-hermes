@@ -36,6 +36,7 @@ import math
 import re
 import unicodedata
 
+from ..coding.pi_family_interop import SCORING_ONLY_LEXICAL_TERMS
 from .localization import routing_terms
 from .recommend import held_back_trigger_tokens, shipped_latin_pack_phrases
 from ..skills.catalog import routable_definitions
@@ -223,13 +224,26 @@ class _LexicalIndex:
     average_length: float
 
 
-def _document(definition: SkillDefinition) -> tuple[dict[str, float], float]:
+def scoring_only_terms(skill: str) -> frozenset[str]:
+    """`skill`'s trigger words that weigh like triggers but are never written out.
+
+    `SCORING_ONLY_LEXICAL_TERMS` names an external product the repo does not
+    ship. The index counts it as a trigger word; the sidecar leaves it out of
+    the file, and the bundle reader adds the same weight back when it loads.
+    """
+    return frozenset(lexical_terms(" ".join(SCORING_ONLY_LEXICAL_TERMS.get(skill, ())))) - SIDECAR_EXCLUDED_TERMS
+
+
+def _document(definition: SkillDefinition, *, scoring_only: bool = True) -> tuple[dict[str, float], float]:
     weights: Counter[str] = Counter()
     length = 0.0
     for field, weight in FIELD_WEIGHTS:
         # A word counts once per field, so a long description that repeats a
         # word does not outweigh a name that states it.
-        for term in set(lexical_terms(_field_text(definition, field))) - SIDECAR_EXCLUDED_TERMS:
+        terms = set(lexical_terms(_field_text(definition, field))) - SIDECAR_EXCLUDED_TERMS
+        if field == "triggers" and scoring_only:
+            terms |= scoring_only_terms(definition.name)
+        for term in terms:
             weights[term] += weight
             length += weight
     return dict(weights), length
@@ -295,6 +309,7 @@ def _anchor_vocabulary(skill: str) -> frozenset[str]:
     said = set(lexical_terms(_field_text(definition, "situations")))
     said.update(lexical_terms(_field_text(definition, "triggers")))
     said.update(lexical_terms(_field_text(definition, "name")))
+    said.update(scoring_only_terms(skill))
     held_back = {stem(token) for token in held_back_trigger_tokens(skill)}
     return frozenset(said - held_back - SIDECAR_EXCLUDED_TERMS)
 

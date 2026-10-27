@@ -4,6 +4,52 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The gateway-attach child no longer aborts when Hermes' gateway hangs up
+  first (#2327, reported and first fixed by @skihyeon in #2328).** Its
+  `omh-attach-stdin` thread read the TUI's input through `sys.stdin.buffer`
+  and so held that buffer's lock while it waited. When the owner's side of
+  the WebSocket ended before the TUI closed its input, interpreter
+  finalization closed stdin on the main thread, waited a second for that
+  lock and aborted the process (`Fatal Python error: _enter_buffered_busy`,
+  exit -6), on every Python from 3.11 to 3.14. The TUI then reported
+  `the Hermes gateway exited (code -6)` instead of the child's own code 1.
+  The thread now reads the stdin descriptor directly, which holds no lock,
+  and frames lines as before. The child exits with the code `main()`
+  computes, and normal shutdown still runs, including the atexit handlers
+  that Hermes' in-process stdio entry registers.
+
+- **GPT-6.1 Terra is onboarded.** OpenAI released it on 2026-10-26. The
+  id now has an exact contract read from developers.openai.com: 1.05M
+  context, 128K output, and a `none` to `max` effort ladder with `medium` as
+  the default. That is GPT-6 Luna's shape, so `none` is sent as is and only
+  `minimal` is raised to `low` on record. Before this, OMH passed every rung
+  through unadjudicated. `gpt-6.1-terra-pro` and dated snapshots project
+  onto it. Cost estimates use the 1/5 list price with 0.05 cached input.
+  Provider checks know that Codex, the OpenAI API, and OpenRouter serve it.
+  The `gpt` family calibration applies unchanged, and no shipped chain names
+  it. To try it now, use
+  `omh model-chains set <category> "gpt-6.1-terra:medium, ..."`. On the
+  live-model-tools corpus at `high`, Terra passed the same 18 / 30 instances
+  as GPT-6.1 Sol with about 5% fewer tokens, at half the list price.
+  Hermes through origin/main `a382af23f4` clamps its `max` to `xhigh` on the
+  Codex route.
+
+- **The OMH TUI shows up in herdr's agent list.** herdr lists each pane's
+  agent as idle, working or blocked, but reads Hermes' state from Hermes' own
+  title and screen, which the OMH TUI does not draw, so a pane running `omh`
+  was missing from the list. Inside a herdr pane (`HERDR_ENV=1` and
+  `HERDR_PANE_ID`), the TUI now reports the state its title shows through
+  `herdr pane report-agent` (source `omh:tui`, agent `omh`): a question or
+  approval waiting on you is `blocked`, a running turn `working`, otherwise
+  `idle`. It reports only on a change, off the render loop, sends only the
+  newest state when herdr is slow, and releases the pane on exit. The Hermes
+  gateway the TUI starts does not get the pane's `HERDR_PANE_ID`, so herdr's
+  own Hermes plugin cannot claim the pane and lock those reports out; herdr's
+  CLI and skill still work from Hermes' tools, without a current-pane
+  default. Outside
+  herdr nothing changes and nothing is spawned; a missing or unresponsive
+  herdr is ignored.
+
 - **Setup no longer writes a second `plugins.enabled` when a column-0
   comment sits inside `plugins:` (#2304).** Hermes' own config separates the
   children of `plugins:` with `# ====` banners written at column 0. OMH's
@@ -243,6 +289,74 @@ All notable changes will be documented here.
   upgrade" for those. The stable installer's failed-lookup hint no longer
   suggests `OMH_VERSION=1.0.6`, and `install.ps1` now prints the interpreter it
   picked and probes it with `-I`, as `install.sh` does.
+
+- **Russian ships as a trigger language pack, and a later turn in a
+  user-installed pack's language re-arms the route hint (#2284).**
+  `src/routing/trigger_packs/ru.json`, contributed in #2284, carries 278
+  phrases across 49 skills, such as `сделай ревью кода`, `найди баг`,
+  `сделай лендинг` and `составь план реализации`. A Russian word scores on its
+  own only when it is a software word (`баг`, `лендинг`, `рефакторинг`,
+  `деплоя`); every other word scores only inside its phrase, so a phrase made
+  of everyday words (`составь план`, `сборка упала`) asks one question instead
+  of dispatching; a skill credits at most one such Russian phrase per message,
+  so two of them in one sentence, overlapping or apart, ask as one (the Korean
+  pack's phrases still add up, as they were written to); and phrases
+  an everyday sentence contains (`починить`, `по расписанию`,
+  `в чём проблема`, `убедись`) are not in the pack. A test re-derives the
+  pack's hold-back from its phrases and a reviewed list of software words.
+  Cyrillic and Greek now get the word edges Latin has, so a phrase no longer
+  matches inside a longer word: `ревью` inside `превью`, `выкати` inside
+  `выкатил`. `ultrawork` carries no Russian phrase: its body would exceed the
+  27,300-byte shipped-body ceiling, as with `vi`. On later turns the awareness
+  gate read only shipped cues and ASCII tokens, so a message written wholly
+  in a user pack's non-Latin script never recomputed its route hint, while
+  the same message on a first turn was hinted. The gate now arms when that
+  user pack earns the message a hint, and not on a pack phrase alone.
+  Shipped packs, `ru` included, stay outside this gate on purpose: a later
+  turn in Russian does not re-arm the hint through it. The phrases have not
+  been reviewed by a native speaker. `ru` is an input language only: it is
+  not a `--language` / `OMH_LANG` output choice.
+
+- **A Jev mention that is negated no longer counts as consent to ask Jev.**
+  The consent gate used to grant consent whenever a message named Jev, so
+  "ask jev? no, review locally" let `omh_jev_ask` send the request. Consent
+  now requires a Jev mention with no negation or refusal cue anywhere in the
+  person's message (English cues and contractions, a few other Latin-script
+  words, and Korean forms such as `말고`, `안 써` and `제외`), and a message in
+  a script the gate cannot read for negation is denied. This fails closed: an
+  affirmative ask that carries its own negation, such as "claude 말고 jev로
+  물어봐", is denied and has to be rephrased.
+
+- **The memory store and the principal key refuse symlinked or out-of-store
+  targets.** Every directory from `<omh_home>/memory` down to a write target
+  is checked: a symlink or Windows junction, a non-directory, or a path that
+  resolves outside the store root is refused, and a target file that is a
+  link or not a regular file is refused before writing. The principal key is
+  created with `O_EXCL|O_NOFOLLOW`, read with `O_NOFOLLOW`, and must be a
+  32-byte regular file owned by the current user. Block, dreaming, reminder,
+  session, receipt, journal and counter-lock writers go through the same
+  guard. The checks run before each write rather than through a directory
+  fd, so a swap between check and write is still possible, and the Windows
+  junction and no-`O_NOFOLLOW` branches have not been run on Windows.
+
+- **`omh uninstall --remove-files` / `--all` removes only the entries OMH
+  created and keeps the rest of the OMH home.** Once the home is proven
+  OMH-owned, uninstall removes the top-level entries OMH writes (the
+  `OmhPaths` locations plus a fixed list of other OMH writers, their lock and
+  temp sidecars, and OMH's `*` `.gitignore`) and lists every other entry in
+  `kept_paths` with the reason "not created by OMH". The home itself is
+  removed only when nothing else is left, and `--dry-run` reports the same
+  split. An OMH-created directory such as `runtime/` is still removed with
+  everything inside it.
+
+- **The Jev ask ledger is written through a pinned directory fd on POSIX.**
+  The ledger directory is opened once with `O_DIRECTORY|O_NOFOLLOW`, checked
+  to be a directory owned by the current user, and every later step (lock,
+  read, temp create, replace, cleanup) runs relative to that fd, so swapping
+  the parent directory for a symlink mid-write no longer redirects the
+  ledger, and a symlinked ledger file is neither read nor replaced. Windows
+  keeps the path-based write, where a parent swapped between the check and
+  the write is still followed.
 
 ## 4.0.2 - 2026-10-24
 
@@ -3051,7 +3165,7 @@ All notable changes will be documented here.
   non-interactive listing command, makes no model call, and starts no host
   session. The only host process it runs is the readiness module's approved
   `--version` probe, for a CLI in that probe's set; it runs whenever such a
-  CLI is on PATH, where readiness ran `pi` and `opencode` only as omo hosts.
+  CLI is on PATH, where readiness ran `pi` and `opencode` only as pi-family runtime hosts.
   Each `omh_agent_skills_discovery/v1` receipt binds that host version, the
   OS, the scan path, the manifest's `source_digest`, and the pack
   `catalog_revision`; the parser rejects a receipt that fails the checks
@@ -4632,7 +4746,7 @@ All notable changes will be documented here.
   not a cue. Only the model capture source (`hermes_model`) is screened: L1
   demotion, episode rollup, design-direction promotion, the workflows adapter
   and the `omh memory capture` CLI store the same sentence as before. The rule
-  follows oh-my-openagent's hint admission as a concept only (#2049).
+  follows an upstream harness's hint admission as a concept only (#2049).
 - **`agent-debug` reads a past session as evidence under fixed rules.** A
   new Hermes-only `references/session-forensics.md`, named by one quality-bar
   line, writes the question down (session, turn range, expected, observed, the
@@ -4660,7 +4774,7 @@ All notable changes will be documented here.
   missing answer is not read as a refusal either. `deep-interview`'s interview
   protocol gains one sentence: agreeing to an idea consents to that idea only,
   and a plan, handoff, or code change written later is accepted at its own
-  gate. The `ralplan` row for `code-yeongyu/oh-my-openagent` (concepts only)
+  gate. The `ralplan` row for the Sustainable-Use upstream harness (concepts only)
   now lists the question-gate file studied, and a new `docs/SKILL-SOURCES.md`
   row watches `obra/superpowers` (`skills/brainstorming/SKILL.md`) for
   `deep-interview` (#2049).
@@ -4681,7 +4795,7 @@ All notable changes will be documented here.
   rerun against the final tree before the closing brief, and a defect outside
   the change's blast radius stays open as a tracked issue instead of passing
   a criterion. The existing `docs/SKILL-SOURCES.md` rows for `ultrawork`
-  (`obra/superpowers` and `code-yeongyu/oh-my-openagent`, concepts only for
+  (`obra/superpowers` and the Sustainable-Use upstream harness, concepts only for
   the latter) now list the additional upstream files studied (#2049).
 - **`ulw-work`'s TDD reference checks that a new test guards something before
   it counts.** `references/tdd-red-green.md` now asks four questions before a
@@ -4694,7 +4808,7 @@ All notable changes will be documented here.
   regression test to fail on the code before the fix for that bug's own
   reason. The `ulw-work` body is unchanged; its existing pointer reaches the
   new sections. A new `docs/SKILL-SOURCES.md` row watches
-  `code-yeongyu/oh-my-openagent` (`.omo/rules/test-discipline.md`, concepts
+  the Sustainable-Use upstream harness (its test-discipline rule, concepts
   only) for `ultrawork` (#2049).
 - **`loop` reviews a loop's design before it launches.** A new
   `references/loop-design-review.md`, named by one quality-bar line, asks for
@@ -4750,7 +4864,7 @@ All notable changes will be documented here.
   each task as one `XS`-`XL` band. Both rules reach the portable
   `agent-skills/` projection, and new `docs/SKILL-SOURCES.md` rows watch
   `obra/superpowers` (`writing-plans`) for `plan` and, link-only,
-  `code-yeongyu/oh-my-openagent` (`ulw-plan`) for `ralplan` (#2049).
+  the Sustainable-Use upstream harness (`ulw-plan`) for `ralplan` (#2049).
 - **A workflow name inside a block quote, a relayed line, or a link no longer
   starts that workflow, and a delegated child is not told to start an
   orchestrating engine its brief names.** `> $ulw-work fix the build`,
@@ -4771,17 +4885,17 @@ All notable changes will be documented here.
   `ralplan`, `loop`, `maestro` and the retired engines that fold into
   `ultrawork`); task engines such as `research` and `ultraqa` and every other
   hint are unchanged (#2049).
-- **The upstream tracker now watches the superpowers and oh-my-openagent
+- **The upstream tracker now watches the superpowers and Sustainable-Use harness
   material shipped skills already adapt.** Five skill credits had no row in
   `docs/SKILL-SOURCES.md`, so upstream could change what OMH adapted and no
   issue would be raised. The `ultrawork` TDD reference and the `code-review`
   dispatch and response references now have `obra/superpowers` rows, and
   `frontend`, `visual-qa`, and `design-quality-gate` have link-only
-  `code-yeongyu/oh-my-openagent` rows (Sustainable Use License 1.0, concepts
+  rows for the Sustainable-Use upstream harness (Sustainable Use License 1.0, concepts
   only). Each row opens with a null-prior closure receipt. The nine skills
   that credit ECC were compared against ECC and share a posture rather than
   its structure, so they get no row; a note under the table records that and
-  the code-level omo borrowings. `tests/test_skill_source_attribution_coverage.py`
+  the code-level pi-family runtime borrowings. `tests/test_skill_source_attribution_coverage.py`
   fails when a shipped skill credits one of these upstreams with neither a row
   nor a listed reason (#2049).
 - **Concurrent TUIs share one fanout scan, and an idle widget polls less.**
@@ -5069,7 +5183,7 @@ All notable changes will be documented here.
   keeps both properties.
 - **The executor-name and coding-delivery phrase groups are defined once.**
   `src/plugin_bundle/omh/executor_cues.py` owns
-  `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `OMO_RUNTIME_CODING_AGENT_PHRASES`,
+  `SUBSTRING_NAMED_CODING_AGENT_PHRASES`, `PI_FAMILY_CODING_AGENT_PHRASES`,
   `NAMED_CODING_AGENT_PHRASES`, `CODING_DELIVERY_REQUEST_PHRASES` and
   `CODING_DELIVERY_REQUEST_TOKENS` with their reasoning comments;
   `omh.routing.executor_cues` re-exports them and awareness imports them

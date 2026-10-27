@@ -192,14 +192,6 @@ proves admission is host-only, uncached, revocable, owner-bound, and fails
 closed on unsupported hosts. `test_browser_adapter_benchmark.py` proves the
 benchmark default runs without private artifacts.
 
-During development, maintainers also ran a local driver against the installed
-Hermes `PluginContext`, registered tool handlers, `PluginManager.invoke_hook`,
-and an already-installed Playwright/Chromium, comparing `registry.get_definitions`
-with `model_tools.get_tool_definitions` across inactive, admitted, foreign,
-completed and expired requests. That driver is not distributed with the
-repository. Its results are maintainer-local host-surface evidence only, not
-a model/provider run and not evidence that arbitrary live sites are safe.
-
 `uv run python tools/benchmarks/browser_adapter.py --repetitions 20` runs bounded
 repeated/stale/concurrency/crash/cleanup controls without private checkout
 artifacts or browser startup; real-host timing is `not_run` by default.

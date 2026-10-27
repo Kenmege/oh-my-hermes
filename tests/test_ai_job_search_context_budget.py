@@ -3,8 +3,9 @@
 Baseline: 245d34d7135ba0fba18afbf7f4151d5c4f6a5f37 (integration main).
 Legacy body hashes match main's producer-derived digest fixture after restoring
 only the research lane cardinality; integration-1/merged-measurements.json
-records the combined repeated-byte measurement. The unchanged index, capability
-and registry pins retain their original 85673e100 measurements. Hashes pin existing
+records the combined repeated-byte measurement. The index pin retains its
+original 85673e100 measurement; the capability and registry pins are re-derived
+for the ru trigger pack's sibling-row triggers. Hashes pin existing
 content, not just its size, so removing a safeguard cannot finance this feature.
 """
 from __future__ import annotations
@@ -46,12 +47,16 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         added = [line for line in lines if line.startswith('    - omh-ai-job-search: ')]
         self.assertEqual(len(added), 1)
         legacy = [line for line in lines if line not in added]
+        # 13157 -> 13241 and the digest re-derived: repro-audit adds its own
+        # 84-character entry, which test_skill_context_cost pins.
         # Re-derived 2026-10-27: the sprite-forge skill adds one 84-character
         # index line (+85 with its newline); dropping only that line reproduces
         # the previous pin 08c0a6fc44b47bde948aee6ff427eb2e7312bffb627deeb31b32304747d754df / 13157.
-        self.assertEqual(_digest(legacy), 'c062110c0b2f1e5e4f9c082f42e87271efd89972a5dc997e400861385b2b4308')
-        self.assertEqual(len('\n'.join(legacy)), 13242)
-        delta = len('\n'.join(lines)) - 13242
+        # Merged with main: 13241 + 85 = 13326 and the digest re-derived; dropping
+        # the sprite-forge line reproduces main's cea493d3...aa33 / 13241.
+        self.assertEqual(_digest(legacy), '7086c90b94342f28010e1faefa3b1f56bc4fa536d9fb02e685f35647a1f06cd3')
+        self.assertEqual(len('\n'.join(legacy)), 13326)
+        delta = len('\n'.join(lines)) - 13326
         self.assertGreater(delta, 0)
         self.assertLessEqual(delta, INDEX_DELTA_CAP)
         # A catalog ratchet is exact; do not carry the old row's unused slack.
@@ -65,11 +70,30 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # reverting that one description reproduces the previous digests
         # 774f8789...982a and a108c8d1...6e20.
         for producer, base, cap, expected_hash, limit in (
-            (skill_capabilities, 525502, FULL_ROW_DELTA_CAP,
-             'f9f792c1b0b29a46621f8d023372ddf0f41dca3ac7f672c1f75c7d264626fae9',
+            # 522307 -> 522331 and the sibling digest re-derived: the pi-family
+            # runtime rename moved four sibling rows by +6 each, and the
+            # executor-runtime-readiness row's trigger count went +35 -> +34
+            # when its runtime names became scoring-only (same length).
+            # 522331 -> 522328 and the digest re-derived again for the
+            # model-setup row refresh (-3); no other row moved.
+            # Then the promo postmortem's visual-qa quality-bar rule grows that
+            # sibling row: 522328 -> 523199.
+            # 523199 -> 523243 and the digest re-derived: the ru trigger pack,
+            # after its review, moves sibling rows' trigger previews and `+N more`
+            # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
+            # career row is unchanged.
+            # 523243 -> 526233 and the digest re-derived: repro-audit adds one
+            # row to each producer (+2990 full, +929 standalone).
+            # 526233 -> 526234 and the digest re-derived: the show-reel
+            # row's trigger count went +5 -> +13 (+1); no other row moved.
+            # Merged with main: 526234 + 3195 (sprite-forge row and the
+            # deliverable-package states) = 529429 and 142629 + 960 = 143589,
+            # both digests re-derived from the producers on the merged tree.
+            (skill_capabilities, 529429, FULL_ROW_DELTA_CAP,
+             '2bd9d62ea775a1192e1d3707acc28c4857211afc19c75100d60e8f38cf85a0ee',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
-            (standalone_skill_capability_items, 142660, STANDALONE_ROW_DELTA_CAP,
-             'd0c27f9fd83c733621e5e70945fe704ea2c745cf99c79a892655ce85fdb1dba0',
+            (standalone_skill_capability_items, 143589, STANDALONE_ROW_DELTA_CAP,
+             '7971eca9f1c5df22ac9edb2065bc66e967fed6471a7400c016d0beb166617476',
              release.STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
         ):
             with self.subTest(producer=producer.__name__):
@@ -95,13 +119,23 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertEqual(len(added[0].encode()), 227)
         # Remove only the new row and the explicit operator membership token.
         legacy = [line.replace(', `ai-job-search`', '') for line in lines if line not in added]
+        # Re-derived for the ru trigger pack: `running-work-board` gains
+        # `что сейчас делается` and `dag-ulw` three Cyrillic triggers (+123 bytes).
+        # The pack review replaces `что сейчас делается` with `что делают
+        # агенты` (-4 bytes).
+        # 32993 -> 33096 and the digest re-derived: repro-audit adds its
+        # trigger row and its researcher membership (+103).
         # Re-derived 2026-10-27: the sprite-forge trigger row (205 bytes) and its
         # `, `sprite-forge`` operator token (+16): 32874 -> 33095. Removing only
         # those reproduces the previous pin 6c130e8ecad1e2ea6fada96a8f3b555b3b80f40d63ec64ea6872c1c49bf941e4.
-        self.assertEqual(_digest(legacy), 'c5f90ee8e229cf2245e2e896eb12fd7cb4a0fd0ed017c1c630a57ac6bc852456')
+        # Merged with main: 33096 + 221 = 33317 and the digest re-derived.
+        self.assertEqual(_digest(legacy), '29ebe70fe2183974cd9c8d8ad9859f93d5e2ca3f3c442d3e81be2ddb635b7063')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 33095)
-        self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
+        self.assertEqual(baseline, 33317)
+        # 33_100 -> 33_318: main's ru pack and repro-audit (+222 over 32874) used
+        # the gate's room and sprite-forge adds its 221-byte row and token; each
+        # side alone fit, the merged tree measures 33317. The gate stays exact.
+        self.assertLess(baseline, 33_318)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
     def test_repeated_growth_is_only_mandatory_rails_and_existing_bodies_survive(self) -> None:
@@ -121,30 +155,45 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # Reconstruct that one measured, same-length membership change.
             # The vi trigger rewording also moved five lane bodies, which is
             # why this digest is no longer the clean-base one.
-            restored = ''.join(body.replace('`+26 more`', '`+25 more`')
+            # repro-audit's own lane membership makes it +27 -> +26.
+            restored = ''.join(body.replace('`+27 more`', '`+26 more`')
                                if heading == 'Workflow Lane' and '**Research and company ops**' in body
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
         # Re-derived from both sources: the vi rewordings above plus
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
-        # baseline-verification guidance; only dag-ulw moves versus main.
+        # baseline-verification guidance, then the pi-family runtime rename in
+        # model-setup, maestro, ultrawork, and executor-runtime-readiness.
+        # Re-derived again for the model-setup body refresh (retired provider
+        # and role-slot wording); only model-setup moves versus main.
+        # Then the promo postmortem in content-operator, design-quality-gate,
+        # show-reel, and visual-qa.
+        # Re-derived for the ru trigger pack: the 49 bodies it covers gain
+        # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
+        # Re-derived again for repro-audit: its own body joins the legacy set
+        # (and again for its review's confirmation-wording fix).
         # Re-derived 2026-10-27: the new sprite-forge body plus the visual-qa /
         # show-reel / deliverable-package reinforcement rails, which move 15
         # sibling bodies; HEAD c532cd5c4 reproduces the previous pin
         # 5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3.
-        self.assertEqual(_digest(legacy_hashes), 'f373687a08e925bcd7951a9ba6ba91880db541ef28f9357f7c0be513bfefc023')
+        # Re-derived again on the tree merged with main (both sides' bodies).
+        self.assertEqual(_digest(legacy_hashes), 'd447c9e049feee6971b106d5637b3836f52077a8926638abe3b8154a0b74c53d')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
+        # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
         # Main's search guidance adds 305. 124650 -> 126657: sprite-forge's
         # mandatory Workflow Lane (519) + Runtime Evidence (1446) = 1965, plus
         # 42 bytes of sibling reinforcement rails (+2007).
-        self.assertEqual(legacy['repeated']['bytes'], 126657)
+        # Merged with main: 126593 + 2007 = 128600, re-derived from the producer.
+        self.assertEqual(legacy['repeated']['bytes'], 128600)
         delta = current['repeated']['bytes'] - legacy['repeated']['bytes']
         self.assertEqual(delta, len(sections['Workflow Lane']) + len(sections['Runtime Evidence']))
         self.assertLessEqual(delta, REPEATED_DELTA_CAP)
+        # 126,000 -> 127,943: repro-audit's 1,943 rails, bounded by its own test.
         # 126_000 -> 128_007: the same measured +2007 as above; no new headroom.
-        self.assertLess(current['repeated']['bytes'] - REPEATED_DELTA_CAP, 128_007)
+        # Merged with main: 126,000 + 1,943 + 2,007 = 129,950.
+        self.assertLess(current['repeated']['bytes'] - REPEATED_DELTA_CAP, 129_950)
         feature_refs = [t for t in refs if t.skill_name == FEATURE]
         self.assertEqual(len(feature_refs), 6)
         self.assertLessEqual(sum(len(t.content.encode()) for t in feature_refs), 19397)
@@ -158,8 +207,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         expected = {
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
-            'pre_llm_call_context_chars_max': 5780,
-            'pre_llm_call_context_fallback_chars_max': 7216,
+            'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
+            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
             'awareness_primer_markdown_chars': 3520,
             'awareness_primer_context_chars': 1440,
             'awareness_workflow_context_chars_max': 1500,

@@ -1346,6 +1346,117 @@ class Gpt61SolContractTests(unittest.TestCase):
         self.assertIn("reasoning efforts: low, medium, high, xhigh, max (floor `low`)", stdout)
 
 
+
+_TERRA_61_FORMS = ("gpt-6.1-terra", "openai/gpt-6.1-terra", "openai-codex/gpt-6.1-terra", "GPT-6.1-Terra")
+_TERRA_61_ALL_FORMS = _TERRA_61_FORMS + ("gpt-6.1-terra-pro", "openai/gpt-6.1-terra-pro", "gpt-6.1-terra-2026-10-26")
+
+
+class Gpt61TerraContractTests(unittest.TestCase):
+    """The GPT-6.1 Terra exact contract (2026-10-27): GPT-6 Luna's ladder
+    shape (`none` is documented), a declared `-pro` projection, the `gpt`
+    family calibration, and no shipped chain slot."""
+
+    def test_every_served_form_resolves_the_exact_contract(self) -> None:
+        base = model_contract("gpt-6.1-terra")
+        assert base is not None
+        for form in _TERRA_61_FORMS:
+            with self.subTest(form=form):
+                self.assertEqual(model_family(form), "gpt")
+                self.assertEqual(contract_model_id(form), "gpt-6.1-terra")
+                self.assertIs(model_contract(form), base)
+                projection = model_contract_projection(form)
+                assert projection is not None
+                self.assertEqual(projection["provenance"], "exact")
+        # GPT-5.6 Terra is a different generation and stays uncontracted, and
+        # the tier OpenAI never published stays unknown.
+        for model_id in ("gpt-5.6-terra", "gpt-6-terra", "gpt-6.1-terra-fast", "gpt-6.1-terra-900k", "gpt-6.1-terran"):
+            with self.subTest(model_id=model_id):
+                self.assertIsNone(model_contract_projection(model_id))
+
+    def test_pro_and_the_dated_snapshot_project_with_their_provenance(self) -> None:
+        for form, provenance, mode in (
+            ("gpt-6.1-terra-pro", "declared_inheritance", "pro"),
+            ("openai/gpt-6.1-terra-pro", "declared_inheritance", "pro"),
+            ("gpt-6.1-terra-2026-10-26", "dated_snapshot", "standard"),
+        ):
+            with self.subTest(form=form):
+                projection = model_contract_projection(form)
+                assert projection is not None
+                self.assertEqual(projection["contract_model_id"], "gpt-6.1-terra")
+                self.assertEqual(projection["provenance"], provenance)
+                self.assertEqual(projection["reasoning_mode"], mode)
+                self.assertEqual(projection["service_tier"], "standard")
+
+    def test_contract_records_the_api_ladder_limits_and_price(self) -> None:
+        contract = model_contract("gpt-6.1-terra")
+        assert contract is not None
+        self.assertEqual(contract["reasoning_efforts"], ("none", "low", "medium", "high", "xhigh", "max"))
+        self.assertEqual((contract["effort_floor"], contract["effort_default"]), ("none", "medium"))
+        self.assertEqual(set(contract["unsupported_efforts"]), {"minimal"})
+        self.assertEqual((contract["generation"], contract["released"]), ("gpt-6.1", "2026-10-26"))
+        self.assertEqual(contract["knowledge_cutoff"], "2026-06-01")
+        self.assertEqual(
+            (contract["context_window_tokens"], contract["max_input_tokens"], contract["max_output_tokens"]),
+            (1_050_000, 922_000, 128_000),
+        )
+        self.assertEqual(contract["surface_efforts"], {"codex": ("low", "medium", "high", "xhigh", "max")})
+        self.assertIn("`low` default", contract["surface_notes"]["codex"])
+        self.assertIn("clamps `max` to `xhigh`", contract["surface_notes"]["hermes"])
+        pricing = contract["pricing_usd_per_mtok"]
+        self.assertEqual(
+            (pricing["input"], pricing["cached_input"], pricing["cache_write"], pricing["output"]),
+            (1.0, 0.05, 1.25, 5.0),
+        )
+        self.assertEqual(contract["sources_read"], "2026-10-27")
+        self.assertIn("https://developers.openai.com/api/docs/models/gpt-6.1-terra", contract["sources"])
+        self.assertEqual(contract["claim_boundary"], MODEL_CONTRACT_CLAIM_BOUNDARY)
+
+    def test_price_row_mirrors_the_contract_with_its_cache_ratio(self) -> None:
+        from omh.plugin_bundle.omh.hermes_delegation import APPROX_CACHE_READ_RATIO, _approximate_cost_usd
+
+        contract = model_contract("gpt-6.1-terra")
+        assert contract is not None
+        pricing = contract["pricing_usd_per_mtok"]
+        self.assertEqual(APPROX_PRICE_PER_MTOK["gpt-6.1-terra"], (pricing["input"], pricing["output"]))
+        self.assertAlmostEqual(pricing["input"] * APPROX_CACHE_READ_RATIO["gpt-6.1-terra"], pricing["cached_input"])
+        self.assertNotIn("gpt-6.1-terra-pro", APPROX_PRICE_PER_MTOK)
+        for model in ("gpt-6.1-terra", "gpt-6.1-terra-pro", "openai/gpt-6.1-terra-2026-10-26"):
+            with self.subTest(model=model):
+                self.assertAlmostEqual(_approximate_cost_usd(model, 1e6, 1e6, 1e6), 1.0 + 5.0 + 0.05)
+        # The predecessor keeps its own list rate for machine-level overrides.
+        self.assertEqual(APPROX_PRICE_PER_MTOK["gpt-5.6-terra"], (2.0, 12.0))
+
+    def test_none_is_sent_and_only_minimal_is_raised(self) -> None:
+        for profile in ("codex", "hermes", "generic"):
+            for model in _TERRA_61_ALL_FORMS:
+                with self.subTest(profile=profile, model=model):
+                    route = resolve_model_route(profile, requested_model=model, requested_effort="none")
+                    self.assertEqual(route["selected_reasoning_effort"], "none")
+                    route = resolve_model_route(profile, requested_model=model, requested_effort="minimal")
+                    self.assertEqual(route["selected_reasoning_effort"], "low")
+                    self.assertEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
+        for effort in ("none", "low", "medium", "high", "xhigh", "max"):
+            self.assertIsNone(contract_effort_floor("gpt-6.1-terra", effort), effort)
+
+    def test_no_shipped_chain_names_it_and_it_keeps_the_family_block(self) -> None:
+        from omh.coding.model_recommendations import SHIPPED_MODEL_RECOMMENDATIONS
+
+        for section in ("categories", "role_suggestions", "domain_affinities", "last_resort"):
+            for slot, chain in SHIPPED_MODEL_RECOMMENDATIONS[section].items():
+                with self.subTest(section=section, slot=slot):
+                    self.assertNotIn("gpt-6.1-terra", [candidate["model_alias"] for candidate in chain])
+        self.assertNotIn("gpt-6.1-terra", MODEL_HIGH_EFFORT_CALIBRATIONS)
+        self.assertNotIn("gpt-6.1-terra", MODEL_COMPOSITION_CALIBRATIONS)
+        for model in ("gpt-6.1-terra", "openai/gpt-6.1-terra-pro"):
+            route = {"selected_model": model, "model_family": "gpt", "selected_reasoning_effort": "high"}
+            with self.subTest(model=model):
+                self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["gpt"])
+
+    def test_the_cli_prints_the_ladder(self) -> None:
+        status, stdout, _stderr = run_cli(["coding", "model-contract", "--model", "gpt-6.1-terra"], output_json=False)
+        self.assertEqual(status, 0)
+        self.assertIn("reasoning efforts: none, low, medium, high, xhigh, max (floor `none`)", stdout)
+
 _OPUS_55_FORMS = ("claude-opus-5-5", "anthropic/claude-opus-5-5", "Claude-Opus-5-5")
 
 

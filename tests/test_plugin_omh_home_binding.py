@@ -169,6 +169,8 @@ class ProfileStoreChoiceTests(_IsolatedHome):
     def profile(self, name: str, config: str = "", env: str = "") -> Path:
         home = self.hermes_home / "profiles" / name
         home.mkdir(parents=True)
+        # A real named profile has host identity; an empty shell is ignored.
+        (home / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         if config:
             (home / "config.yaml").write_text(config, encoding="utf-8")
         if env:
@@ -431,6 +433,7 @@ class DoctorProfileBindingTests(_IsolatedHome):
     def test_an_unbound_profile_warns_without_blocking(self) -> None:
         bare = self.hermes_home / "profiles" / "bare"
         bare.mkdir(parents=True)
+        (bare / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         store = self.root / "isolated-omh"
         self.setup_at(store, "--with-plugin")
         self.assertEqual(self.doctor_rows(store), {})
@@ -451,6 +454,7 @@ class DoctorProfileBindingTests(_IsolatedHome):
         for name, env in (("env", "OMH_HOME=/stores/bot\n"), ("own", "")):
             home = self.hermes_home / "profiles" / name
             home.mkdir(parents=True)
+            (home / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             if env:
                 (home / ".env").write_text(env, encoding="utf-8")
             else:
@@ -467,6 +471,7 @@ class DoctorProfileBindingTests(_IsolatedHome):
         # else put there keeps outranking the `.env` choice, and doctor says so.
         home = self.hermes_home / "profiles" / "own"
         home.mkdir(parents=True)
+        (home / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         (home / "config.yaml").write_text(
             "plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: /stores/own\n", encoding="utf-8"
         )
@@ -496,6 +501,7 @@ class DoctorProfileBindingTests(_IsolatedHome):
         # Update takes it back; doctor reports only what update will not fix.
         home = self.hermes_home / "profiles" / "bare"
         home.mkdir(parents=True)
+        (home / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         store = self.root / "isolated-omh"
         self.setup_at(store, "--with-plugin")
         (home / ".env").write_text("OMH_HOME=/stores/bot\n", encoding="utf-8")
@@ -504,6 +510,9 @@ class DoctorProfileBindingTests(_IsolatedHome):
 
     def test_profiles_setup_bound_under_a_default_primary_are_not_reported(self) -> None:
         (self.hermes_home / "profiles" / "bare").mkdir(parents=True)
+        (self.hermes_home / "profiles" / "bare" / "SOUL.md").write_text(
+            "Profile identity\n", encoding="utf-8"
+        )
         store = self.root / ".omh"
         self.setup_at(store, "--with-plugin")
 
@@ -515,6 +524,7 @@ class DoctorProfileBindingTests(_IsolatedHome):
         # multiplexed one refused to load the plugin for every profile.
         bare = self.hermes_home / "profiles" / "bare"
         bare.mkdir(parents=True)
+        (bare / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
         store = self.root / ".omh"
         self.setup_at(store, "--with-plugin")
         for config_path in (self.config_path, bare / "config.yaml"):

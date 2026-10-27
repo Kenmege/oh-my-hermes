@@ -70,9 +70,10 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "model.options": frozenset({"session_id", "refresh"}),
     # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
     "subagent.tail": frozenset({"session_id", "subagent_id"}),
-    # The two actions on one subagent, each on the person's keypress in the agent list (AGENTS.md): `x` once a
-    # second `x` confirms, and `s` with text the person then types and sends. Hermes answers `found` (false when
-    # the child had already finished) and, for a steer, `status` (STEER_QUEUED or STEER_REJECTED).
+    # The two actions on one subagent, each on the person's keypress in the agent list
+    # (docs/OMH-TUI-BOUNDARY.md): `x` once a second `x` confirms, and `s` with text the person then types and
+    # sends. Hermes answers `found` (false when the child had already finished) and, for a steer, `status`
+    # (STEER_QUEUED or STEER_REJECTED).
     "subagent.interrupt": frozenset({"session_id", "subagent_id"}),
     "subagent.steer": frozenset({"session_id", "subagent_id", "text"}),
     # A rewind (Esc Esc, /rewind) adds both truncation keys; see `call_problem`. Hermes refuses a truncation
@@ -86,8 +87,9 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "clipboard.paste": frozenset({"session_id"}),
     "input.detect_drop": frozenset({"session_id", "text"}),
     "slash.exec": frozenset({"command", "session_id"}),
-    # The person's own `!command` (AGENTS.md: nothing else goes this way). Hermes runs it with a 30 s limit,
-    # refuses dangerous and hardline commands (4005), keeps it out of the model's context, and redacts the output.
+    # The person's own `!command` (docs/OMH-TUI-BOUNDARY.md: nothing else goes this way). Hermes runs it with a
+    # 30 s limit, refuses dangerous and hardline commands (4005), keeps it out of the model's context, and redacts
+    # the output.
     "shell.exec": frozenset({"command"}),
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
 }

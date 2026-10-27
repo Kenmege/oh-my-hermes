@@ -14,7 +14,7 @@ The live path measures the product under test:
 5. read tool, token, and cost metrics from authenticated
    `routing_observation/v1` evidence.
 
-There is no OMO execution path. OMH remains Hermes-native: core OMH makes no
+There is no pi-family runtime execution path. OMH remains Hermes-native: core OMH makes no
 provider call, and the explicit benchmark command launches the local Hermes CLI
 under the existing isolated child-process contract.
 
@@ -547,6 +547,73 @@ that added this section.
 Results describe this pinned corpus, OMH version, Hermes version, provider,
 model id and conditions only. They do not establish universal model
 superiority.
+
+### 2026-10-27 `gpt-6.1-terra` vs `gpt-6.1-sol` (GPT-6.1 Terra onboarding)
+
+One question from the GPT-6.1 Terra onboarding: on this corpus, does Terra
+at half of Sol's list price lose anything against GPT-6.1 Sol at the same
+effort? Both arms send the `gpt` family block (`--condition family`), so the
+model is the only difference. Sol's exact override measured as no effect on
+2026-10-02, and comparing against it would add a second variable.
+
+The setup:
+
+- The same pinned evaluation corpus (30 instances, digest
+  `c4ea899a8e727fcc531776e56306ff0e83d129e2248fe4362614b3d186fa7b33`).
+- The `hermes_current_session` path on the Codex subscription
+  (`openai-codex`), so every record reports `cost_usd` 0.
+- omh at `256262138` (origin/main the day of the run; the onboarding PR
+  changes no prompt text). Hermes Agent v0.22.5 (2026.9.24) · stable · local bf0203a794a0.
+- A targeted manifest with both ids at `high`. Every arm used
+  `--split evaluation` and `--max-paid-calls 30`. Hermes' Codex route sends
+  `high` unchanged for both ids; only `max` is clamped for Terra.
+
+Arms ran sequentially on 2026-10-27 UTC:
+
+- **T1:** Terra `family`, 02:33 to 02:50Z. Six instances (E-CALLFLOW-155921,
+  all three E-REFERENCES, and E-PREDICATE-104729/130363) exited as
+  `process_crash` within 25 seconds of each other (02:40:23 to 02:40:48Z).
+  The child process failed before it produced a model answer, so this is a
+  runtime interruption, not a model result. Pairs against T1 drop those six
+  (n = 24).
+- **T2:** Sol `family`, 02:50 to 03:14Z.
+- **T3:** Terra `family` again, 03:14 to 03:28Z. This is the clean Terra arm
+  and the same-model drift control.
+
+| Arm | Model | Passed | Total tokens | Mean tokens (n) |
+| --- | --- | ---: | ---: | ---: |
+| T1 | `gpt-6.1-terra` | 13 / 30 (6 crashes) | 1,616,929 | 67,372 (24) |
+| T2 | `gpt-6.1-sol` | 18 / 30 | 2,018,456 | 67,281 (30) |
+| T3 | `gpt-6.1-terra` | 18 / 30 | 1,912,768 | 63,758 (30) |
+
+T2 and T3 passed the same 18 instances (McNemar: zero discordant pairs, p =
+1.0). Among T1's 24 completed instances, every pass agrees with T3. Paired
+token deltas per instance, with a template-cluster bootstrap (10,000 draws,
+seed 20260813):
+
+| Pair | Mean delta | 95% CI | Instances lower |
+| --- | ---: | --- | ---: |
+| T3 − T1 (same model, drift; n = 24) | +1,039 (+1.5%) | [−2,147, +4,289] | 14 / 24 |
+| T3 − T2 (Terra vs Sol) | −3,523 (−5.2%) | [−7,245, +182] | 19 / 30 |
+| T1 − T2 (Terra vs Sol; n = 24) | −3,757 (−5.3%) | [−7,797, +581] | 15 / 24 |
+
+What it shows:
+
+- **No loss against Sol on this corpus.** Terra solved the same instances
+  with about 5% fewer tokens. The CI touches zero, so the token gap is not
+  claimed. At list price that means about half Sol's cost for the same pass
+  set. The run itself was free on the subscription.
+- **Faster wall clock, contended:** 14 minutes for T3 against 24 for T2,
+  sequential on one machine. The arms ran on one provider, one after
+  another, so this is a reading, not a timing claim.
+- **The corpus ceiling stays at 18 / 30.** No arm passes a read or lsp
+  task, so this corpus cannot show where the vendor says Sol still wins (the
+  hardest coding). A placement that replaces Sol in `deep` or
+  `unspecified-high` needs a corpus with headroom (#1333). Terra in a cheap
+  slot does not.
+
+Results describe this pinned corpus, OMH version, Hermes version, model IDs,
+and conditions only. They do not establish universal model superiority.
 
 ### 2026-10-02 `gpt-6.1-sol` generation and override evaluation (PR #1975 follow-up)
 

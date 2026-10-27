@@ -66,8 +66,8 @@ SOURCE_STATUSES: Final[tuple[str, ...]] = ("present", "absent", "unreadable", "u
 # operator's home and how a discovered entry is invoked, because the invocation
 # form is a property of the source, not of the skill.
 #
-# `omo-runtime` has no probe: it is spawnable (see DISPATCH_COMMAND_TEMPLATES)
-# but its host CLIs (pi/senpi/opencode) have no skill layout this repo can
+# `pi-family-runtime` has no probe: it is spawnable (see DISPATCH_COMMAND_TEMPLATES)
+# but its host CLIs (pi-family and opencode) have no skill layout this repo can
 # verify, and guessing a path would fabricate an environment. It still gets an
 # explicit `unsupported` sources entry so a dry run shows WHY no skills are
 # sequenced instead of an empty payload with no trace.
@@ -76,8 +76,8 @@ _CLAUDE_PLUGINS: Final[str] = ".claude/plugins"
 _CODEX_PROMPTS: Final[str] = ".codex/prompts"
 _CODEX_SKILLS: Final[str] = ".codex/skills"
 
-_OMO_RUNTIME_SOURCE_REASON: Final[str] = (
-    "no skill probe exists for the omo runtime: its host CLIs (pi/senpi/opencode) declare no "
+_PI_FAMILY_RUNTIME_SOURCE_REASON: Final[str] = (
+    "no skill probe exists for the pi-family runtime: its host CLIs (pi-family and opencode) declare no "
     "skill layout this repo can verify, so none is scanned"
 )
 
@@ -431,11 +431,11 @@ def _probe_profile(
         yield (*_prompt_file_source("codex_prompts", base / _CODEX_PROMPTS, f"/{_NAME_PLACEHOLDER}"), "")
         yield (*_skill_dir_source("codex_skills", base / _CODEX_SKILLS, f"${_NAME_PLACEHOLDER}"), "")
         return
-    if profile == "omo-runtime":
+    if profile == "pi-family-runtime":
         # An explicit unsupported entry, not silence: without it a dry run
         # shows `sources: {}` and the operator cannot tell "no skills
         # installed" from "OMH never looked".
-        yield ("omo_runtime_skills", [], "unsupported", _OMO_RUNTIME_SOURCE_REASON)
+        yield ("pi_family_runtime_skills", [], "unsupported", _PI_FAMILY_RUNTIME_SOURCE_REASON)
         return
     return
 

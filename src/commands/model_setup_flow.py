@@ -24,7 +24,7 @@ from .model_setup_inputs import (
     confirmed_model_ids,
     model_alias_changes,
 )
-from .model_setup_overrides import load_omo_category_overrides
+from .model_setup_overrides import load_category_overrides
 from .model_setup_projections import provider_next_actions, recommendation_projections
 
 
@@ -121,16 +121,16 @@ def model_activation_result(
         }
         for model_id in sorted(confirmed)
     ]
-    omo_overrides = None
-    omo_override_source = ""
-    if getattr(args, "import_omo_category_overrides", False):
+    imported_category_overrides = None
+    category_override_source = ""
+    if getattr(args, "import_category_overrides", False):
         try:
-            omo_overrides, omo_override_source = load_omo_category_overrides(Path.home())
+            imported_category_overrides, category_override_source = load_category_overrides(Path.home())
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-            raise OmhError(f"cannot import OMO category overrides: {exc}") from exc
+            raise OmhError(f"cannot import category overrides: {exc}") from exc
     recommendation_catalog = merge_recommendation_catalog(
         SHIPPED_MODEL_RECOMMENDATIONS,
-        omo_overrides,
+        imported_category_overrides,
     )
     explicit_main = aliases.get("main") or ""
     recommendation = dependencies.resolve_model_recommendation(
@@ -145,8 +145,8 @@ def model_activation_result(
         catalog=recommendation_catalog,
         main=recommendation,
         resolve_model_recommendation=dependencies.resolve_model_recommendation,
-        omo_overrides=omo_overrides,
-        omo_override_source=omo_override_source,
+        imported_category_overrides=imported_category_overrides,
+        category_override_source=category_override_source,
     )
     next_actions = provider_next_actions(confirmed, inspection)
 

@@ -7,7 +7,7 @@ from ..plugin_bundle.omh.awareness import (
     awareness_route_hint_context_from_payload,
 )
 from ..plugin_bundle.omh.degradation import degradation_chat_note
-from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, person_request_text
+from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, host_context_removed, person_request_text
 from ..plugin_bundle.omh.route_answerers import answerer_ladder
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, read_route_question_mode
 from ..routing.catalog_questions import is_skill_catalog_question
@@ -69,7 +69,7 @@ def build_chat_route_hint_payload(
         if host_command_turn(message)
         else person_request_text(message, messaging=source in MESSAGING_CHAT_SOURCES)
     )
-    route_hint = awareness_route_hint(hint_message, max_hints=max_hints)
+    route_hint = awareness_route_hint(hint_message, max_hints=max_hints, context_removed=host_context_removed(message))
     route_hint = _route_hint_with_catalog_picker(route_hint, hint_message)
     route = route_chat_message(message, source=source, limit=max_hints)
     route_decision = route["route_decision"]

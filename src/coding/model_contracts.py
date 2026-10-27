@@ -517,6 +517,139 @@ _GPT_6_1_SOL: Final[dict[str, object]] = {
     "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
 }
 
+# GPT-6.1 Terra, the Terra tier's first GPT-6-generation release (the API
+# changelog's "Oct 26 ... Released GPT-6.1 Terra"). GPT-6 Luna's ladder shape,
+# not GPT-6.1 Sol's: the model page and the latest-model guide both list
+# `none` ("GPT-6.1 Terra, GPT-6 Sol, and GPT-6 Luna support `none`"), so a
+# no-reasoning request is sent as `none` and only `minimal` is raised. OMH's
+# 2026-09-23 note that no GPT-6 Terra exists still holds: OpenAI skipped 6.0
+# for this tier. Recognized, priced, and provider-mapped, but in no shipped
+# chain: GPT-5.6 Terra's slots went to GPT-6 Sol on 2026-09-23, so there is
+# no Terra slot for it to inherit, and placement is an owner decision.
+_GPT_6_1_TERRA: Final[dict[str, object]] = {
+    "schema_version": MODEL_CONTRACT_SCHEMA_VERSION,
+    "model_id": "gpt-6.1-terra",
+    "reasoning_mode": "standard",
+    "service_tier": "standard",
+    "family": "gpt",
+    "generation": "gpt-6.1",
+    # The API changelog entry date ("Oct 26 ... Released GPT-6.1 Terra").
+    "released": "2026-10-26",
+    "rollout": (
+        "in Codex and ChatGPT Work for Plus, Pro, Enterprise, and Edu, and in the API; Codex CLI "
+        "needs 0.159.0 or later (vendor launch coverage); a released id is not account-level "
+        "readiness evidence"
+    ),
+    "knowledge_cutoff": "2026-06-01",
+    "context_window_tokens": 1_050_000,
+    "max_input_tokens": 922_000,
+    "max_output_tokens": 128_000,
+    "limits_note": (
+        "the model page documents a 1,050,000-token context, 922,000 maximum input tokens, and "
+        "128,000 max output"
+    ),
+    # The API page's ladder. `none` is a documented rung, so the floor is
+    # `none` and a no-reasoning request has nothing to be raised to; `minimal`
+    # asks for SOME reasoning and goes up to `low`, never down to `none`.
+    "reasoning_efforts": ("none", "low", "medium", "high", "xhigh", "max"),
+    "effort_floor": "none",
+    "effort_default": "medium",
+    "unsupported_efforts": {
+        "minimal": "not in the documented ladder; the migration guide says start with `low`",
+    },
+    "tool_calling": {
+        "api": "responses",
+        "note": (
+            "tool calling requires the Responses API (the model page and the migration guide); "
+            "Chat Completions is supported for requests without tools"
+        ),
+    },
+    "unsupported_parameters": ("temperature", "top_p", "top_logprobs"),
+    "unsupported_parameters_note": (
+        "rejected when reasoning effort is not `none`; on Chat Completions `logprobs` is rejected too, "
+        "and on Responses `message.output_text.logprobs` is removed from `include`"
+    ),
+    # The reasoning guide states the mechanism for the GPT-6 family, and the
+    # Codex catalog sets `supports_reasoning_effort_updates` for this id.
+    "dynamic_effort": {
+        "mechanism": "configuration_update",
+        "scope": "standard single-agent mode only",
+        "constraints": (
+            "not combinable with automatic compaction or automatic truncation",
+            "two adjacent configuration_update items are rejected",
+            "the original prompt prefix is preserved for prompt caching",
+        ),
+        "compatible_profiles": (),
+        "status": "documented_not_observed",
+    },
+    "runtime_mechanisms": {
+        "persisted_reasoning_all_turns": "documented_not_observed",
+        "async_tool_calling": "documented_not_observed",
+        "mid_turn_steering": "documented_not_observed",
+        "pro_reasoning_mode": "documented_not_observed",
+    },
+    "surface_notes": {
+        "codex": (
+            "the Codex client's model catalog (openai/codex models-manager, read 2026-10-27) lists "
+            "`low` through `max` (no `none`) plus a Codex-only `ultra` rung that no OMH ladder or "
+            "chain carries, a `low` default where the API defaults to `medium`, `low` default "
+            "verbosity, `xhigh` multi-agent effort, reasoning-effort updates enabled, and a 500K "
+            "context window with an 872K maximum; it gives the id the same base instructions as "
+            "GPT-6 Astra and GPT-6.1 Sol and names no upgrade from GPT-5.6 Terra"
+        ),
+        "hermes": (
+            "Hermes v0.22.5 and origin/main a382af23f4 (2026-10-26) match this id to no GPT-6 "
+            "effort prefix, so the Codex route clamps `max` to `xhigh` without a notice; neither "
+            "carries a price row, and the Codex route falls back to a 256K context while "
+            "OpenRouter resolves 1.05M; observed in the Hermes source, not a vendor statement"
+        ),
+    },
+    # The Codex client's model-catalog ladder from `surface_notes.codex`,
+    # without `ultra` (owner decision, 2026-09-23: no OMH ladder or chain
+    # carries it).
+    "surface_efforts": {
+        "codex": ("low", "medium", "high", "xhigh", "max"),
+    },
+    "documented_traits": (
+        "stated for the GPT-6 family from behaviour observed with GPT-6 Astra: asks the user a "
+        "question more readily",
+        "stated for the GPT-6 family: follows instructions more strictly and is more sensitive to "
+        "instructions contained in skills",
+        "stated for the GPT-6 family: tends toward detailed, formatted responses",
+        "stated for the GPT-6 family: may delegate less often than desired",
+        "stated for the GPT-6 family: tends to be thorough in testing before considering a task "
+        "complete",
+        "the model page positions it for visual reasoning, precise computer use, and clear, "
+        "natural writing; the vendor still points the most complex coding at GPT-6.1 Sol or "
+        "GPT-6 Astra (launch coverage)",
+    ),
+    # OpenAI list price (developers.openai.com model and pricing pages, read
+    # 2026-10-27). No promotion mark. The cached rate is 5% of input, as on
+    # GPT-6.1 Sol, so `APPROX_CACHE_READ_RATIO` carries a row for it.
+    "pricing_usd_per_mtok": {
+        "input": 1.0,
+        "cached_input": 0.05,
+        "cache_write": 1.25,
+        "cache_write_12h": 2.5,
+        "output": 5.0,
+        "long_context_over_272k_input": "2x input and cache rates, 1.5x output, for the full request",
+        "batch_and_flex": "0.5x every standard rate",
+        "fast_mode": "2x every applicable rate",
+        "ultrafast": "not offered (the Ultrafast guide names only GPT-6 Astra and GPT-6.1 Sol)",
+        "regional_processing": "+10% where available",
+    },
+    "data_handling": _DATA_HANDLING_NOT_READ,
+    "sources": (
+        "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+        "https://developers.openai.com/api/docs/guides/latest-model",
+        "https://developers.openai.com/api/docs/guides/reasoning",
+        "https://developers.openai.com/api/docs/pricing",
+        "https://developers.openai.com/api/docs/changelog",
+    ),
+    "sources_read": "2026-10-27",
+    "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
+}
+
 # Claude Opus 5.5, the first Claude contract. Thinking is always on: a
 # thinking-disabled request or a manual budget returns HTTP 400, so a
 # no-thinking rung is raised to `low` on record. One optional key joins
@@ -1245,6 +1378,7 @@ MODEL_CONTRACTS: Final[dict[str, Mapping[str, object]]] = {
     "gpt-6-astra": _GPT_6_ASTRA,
     "gpt-6-sol": _GPT_6_SOL,
     "gpt-6.1-sol": _GPT_6_1_SOL,
+    "gpt-6.1-terra": _GPT_6_1_TERRA,
     "gpt-6-luna": _GPT_6_LUNA,
     "claude-opus-5-5": _CLAUDE_OPUS_5_5,
     "claude-sonnet-5-5": _CLAUDE_SONNET_5_5,
@@ -1290,6 +1424,15 @@ DECLARED_MODEL_CONTRACT_PROJECTIONS: Final[dict[str, Mapping[str, str]]] = {
     # catalog declares either spelling.
     "gpt-6.1-sol-pro": {
         "contract_model_id": "gpt-6.1-sol",
+        "reasoning_mode": "pro",
+        "service_tier": "standard",
+    },
+    # GPT-6.1 Terra's pro reasoning mode, on the Sol terms above: the
+    # reasoning guide gives `pro` to GPT-6 models at the selected model's
+    # standard rates, and OpenRouter lists `openai/gpt-6.1-terra-pro` at the
+    # base 1/5 card (read 2026-10-27). No `-fast` / `-flex` row.
+    "gpt-6.1-terra-pro": {
+        "contract_model_id": "gpt-6.1-terra",
         "reasoning_mode": "pro",
         "service_tier": "standard",
     },

@@ -54,6 +54,7 @@ from ..source_finder import (
     SOURCE_FINDER_SOURCE_KINDS,
 )
 
+from .repro_audit_skill import DEFINITION as REPRO_AUDIT_DEFINITION
 from .dag_ulw_skill import DEFINITION as DAG_ULW_DEFINITION
 from .decision_prototype_skill import DEFINITION as DECISION_PROTOTYPE_DEFINITION
 from .jev_skills import JEV_DEFINITIONS
@@ -723,7 +724,7 @@ _DEFINITIONS = [
         phase="single-cycle-plan-to-pr",
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
-        handoff_policy="Keep the one-cycle process orchestration, source/codebase research, planning, review framing, docs-sync checks, PR narration, and evidence boundaries in Hermes; convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
+        handoff_policy="Keep the one-cycle process orchestration, source/codebase research, planning, review framing, docs-sync checks, PR narration, and evidence boundaries in Hermes; convert implementation into a selected executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, another coding agent, or explicit Hermes coding runtime only when the user accepts that owner.",
         required_inputs=("task statement", "repo or workspace context", "executor preference or choose-at-handoff policy", "verification expectations"),
         expected_outputs=("ralplan-ready context and plan", "ultragoal or selected executor/runtime handoff", "code-review gate", "docs sync checklist", "single-cycle PR-ready summary with observed evidence and gaps"),
         artifact_expectations=("process checklist or runtime record when a wrapper can observe the stages", "prepared handoff artifact only after implementation owner selection", "docs-specialist claim check when public behavior changes"),
@@ -1184,7 +1185,7 @@ _DEFINITIONS = [
             "for each lane's label but pass the user's model and reasoning effort as explicit overrides in "
             "`omh_delegate_route` on every lane, so each dispatch runs the named model and the lane status shows "
             "it. [capability:delivery_boundary] Convert implementation into an "
-            "external executor/runtime handoff such as Codex, Claude Code, OMX/OMO/OMC, or another coding agent "
+            "external executor/runtime handoff such as Codex, Claude Code, OMX/pi-family/OMC, or another coding agent "
             "only when the user accepts that owner; no external CLI is the default owner, and external handoff is "
             "a separate opt-in path, never the default recommendation."
         ),
@@ -1434,7 +1435,7 @@ _DEFINITIONS = [
         handoff_policy=(
             "Convert an explicitly chosen external coding owner into a prepared handoff: claude-code as a "
             "prompt-only `coding_prompt_handoff/v1` (never dispatchable, never described as a run), codex as a "
-            "dispatchable `coding_executor_handoff/v1`, and omx-runtime/omo-runtime/omc-runtime as "
+            "dispatchable `coding_executor_handoff/v1`, and omx-runtime/pi-family-runtime/omc-runtime as "
             "`coding_runtime_handoff/v1`. "
             f"This engine loads only after that choice is made -- {HERMES_HARNESS_DEFAULT_WORDING} -- and it "
             "never substitutes for the Hermes harness path or picks the owner itself."
@@ -1485,7 +1486,7 @@ _DEFINITIONS = [
             "the prepared handoff record is never dispatchable and never described as a run; only the "
             "fanout-dispatch bridge -- `omh coding fanout dispatch` or its `omh coding run` single-run entry -- "
             "ever spawns a CLI), codex is a dispatchable `coding_executor_handoff/v1`, and "
-            "omx-runtime/omo-runtime/omc-runtime are `coding_runtime_handoff/v1`.",
+            "omx-runtime/pi-family-runtime/omc-runtime are `coding_runtime_handoff/v1`.",
             "Compose the prompt from the selected profile's DISCOVERED skills via `omh coding executor-skills "
             "--profile <profile>`: arrange the returned skills by the unit's role recipe, one named skill per "
             "step, using each skill's own invocation string verbatim (`/name`, `/pack:name` from its manifest, "
@@ -4216,6 +4217,7 @@ _DEFINITIONS = [
             "Review content accuracy and hierarchy before visual polish.",
             "Use design-system/reference rules for web, deck, PDF, and poster surfaces.",
             "Reject generic AI slop: weak hierarchy, cramped copy, flat templates, one-note palettes, and unverified exports.",
+            "For a composed frame (promo, poster, slide, end card), run the color-harmony pass before render: list every hue family on screen with its hex values and where it appears; the surrounding composition adds at most one accent family beyond the captured product or brand palette; neutrals, semantic-state colors and data-series palettes are listed but not counted; text contrast is at least 4.5:1, or 3:1 for large type, on its actual background. A composed frame that fails is REVISE before render; details in `references/design-critique-rubric.md`.",
             "Require fresh visual QA for pages, slides, states, viewports, and CJK-heavy regions before PASS.",
         ),
         why_this_exists=(
@@ -5292,6 +5294,7 @@ _DEFINITIONS = [
         quality_bar=(
             "List the exact pages, states, viewports, files, images, or TUI frames being checked.",
             "For TUI surfaces, bind every capture to an explicit terminal size (80x24 and 120x40 at minimum); pasted rendered output at a named size is the screenshot-equivalent, and a capture without its size is not evidence.",
+            "When a product surface is composed into a larger frame (promo, poster, slide, end card), measure it against the frame: a look-alike of a UI that exists, in place of its real renderer's output, is BLOCK, while an unbuilt UI labeled concept or a brief-requested stylised treatment labeled as such is not; with no subtitles a product-led shot is full-bleed, the full frame minus a 46 px edge inset (at least about 988 px tall at 1080p) with platform-UI zones still clear, and with subtitles it fills at least 90% of the width and height of the body safe area with the subtitle band clear; text rows are at least 2% of the frame's shorter side; a logo or identity mark keeps at least one of its own text rows from the frame and window edges, intentional crops excepted; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun in each plural category of the content locale. Each miss is one `differences` entry.",
             "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
             "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
             "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
@@ -5354,6 +5357,7 @@ _DEFINITIONS = [
             "quality_bar": (
                 "List the exact pages, states, viewports, files, images, or TUI frames being checked.",
                 "For TUI surfaces, bind every capture to an explicit terminal size (80x24 and 120x40 at minimum); pasted rendered output at a named size is the screenshot-equivalent, and a capture without its size is not evidence.",
+                "When a product surface is composed into a larger frame (promo, poster, slide, end card), measure it against the frame: a look-alike of a UI that exists, in place of its real renderer's output, is BLOCK, while an unbuilt UI labeled concept or a brief-requested stylised treatment labeled as such is not; with no subtitles a product-led shot is full-bleed, the full frame minus a 46 px edge inset (at least about 988 px tall at 1080p) with platform-UI zones still clear, and with subtitles it fills at least 90% of the width and height of the body safe area with the subtitle band clear; text rows are at least 2% of the frame's shorter side; a logo or identity mark keeps at least one of its own text rows from the frame and window edges, intentional crops excepted; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun in each plural category of the content locale. Each miss is one `differences` entry.",
                 "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
                 "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
                 "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
@@ -5368,7 +5372,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "35e56c2673097fa9ab269c5900e63cabbe8624b5cc5edb89863248fb0917bafd",
+            "quality_bar": "a5918496e1677a4f82e026cdaaef52d9a6c77787b5e699fd9a58d6137c3bb7ca",
         },
     ),
     SkillDefinition(
@@ -8822,7 +8826,7 @@ _DEFINITIONS = [
         handoff_policy=(
             "Keep Hermes-native model setup in Hermes: inspect its config, provider plugins, auth presence, and aliases, "
             "then use Hermes-native config/auth flows for an approved change. Maestro coordinates prepared external coding "
-            "handoffs for Codex, Claude Code, OMO/OMC/OMX, and generic owners; it is not an executor and never owns Hermes "
+            "handoffs for Codex, Claude Code, pi-family/OMC/OMX, and generic owners; it is not an executor and never owns Hermes "
             "aliases, providers, skill execution, or Kanban model selection. Diagnosis uses local Hermes config/auth commands "
             "and reads only config plus auth/plugin presence; it never reads `.env` values, credential material, or session prose. "
             "Show the exact Hermes-native command/config preview, bind it to the inspected config digest, and apply only after "
@@ -8832,7 +8836,7 @@ _DEFINITIONS = [
         required_inputs=(
             "metadata-only discovery report and its source/candidate states",
             "user confirmation of which discovered models and providers are currently active",
-            "target Hermes role alias (main, realtime-search, or design), semantic category, X-platform domain, or external coding owner",
+            "target Hermes model alias (`main` or a user-named alias), semantic category, X-platform domain, or external coding owner",
             "optional user-edited recommendation overrides",
         ),
         expected_outputs=(
@@ -8851,20 +8855,20 @@ _DEFINITIONS = [
             "Keep discovery states closed and explicit: recommended, observed_before, confirmed_active, inactive, unobserved, and truncated; report an unknown OMP layout as layout_unverified. Historical observed_before metadata is not active-model confirmation.",
             "Preserve explicit model choices. If an explicitly requested model is unavailable, return choice_required instead of silently substituting another candidate.",
             "Do not add a second Hermes provider registry, edit Hermes YAML directly, invoke a model, contact a provider, or run network readiness probes from OMH core.",
-            "CCAPI and Apitopia are editorial provider-family preferences only, not observed availability, entitlement, or credential evidence. Do not promise anti-ban behavior, cooldown bypasses, hidden retries, or provider-specific superiority.",
+            "CCAPI for Claude is an editorial provider-family preference only, not observed availability, entitlement, or credential evidence. Do not promise anti-ban behavior, cooldown bypasses, hidden retries, or provider-specific superiority.",
             "Keep prerequisite check, diagnosis, guidance, apply, and verify as separate, explicit steps.",
         ),
         quality_tier="hermes-setup-gated",
         quality_bar=(
             *_MODEL_SETUP_FIVE_STEP_BAR,
-            "Chain interview: when the user wants the per-category model chains changed, first show the current state (`omh model-chains show`), then interview one category at a time with numbered options — 1) keep current, 2) shipped default, 3) Ultrafast tier, 4) custom entry (직접 입력) — and apply each outcome with `omh model-chains set <category> \"model[:effort], ...\"` or by editing ~/.omh/routing/model-chains.json directly; close by re-reading the file and showing the resulting chains with their origins.",
+            "Chain interview: when the user wants the per-category model chains changed, first show the current state (`omh model-chains show`), then interview one category at a time with numbered options — keep current first, the shipped default only when the current chain differs from it, the Ultrafast tier only when a chain member has a known `-ultrafast` id, and a custom entry (직접 입력) last — and apply each outcome with `omh model-chains set <category> \"model[:effort], ...\"` or by editing ~/.omh/routing/model-chains.json directly; close by re-reading the file and showing the resulting chains with their origins.",
         )
         + (
-            "Treat each Hermes role slot (main, realtime-search, design), semantic category, and external owner as an independent prerequisite/diagnose/recommend/apply unit instead of one combined change.",
-            "Explain the shipped recommendations as editable editorial defaults, not benchmarks or allowlists: ultrabrain uses GPT-6 Astra; deep prefers Claude Opus 5.5, GPT-6.1 Sol, then Kimi K3.1 Pro at high; architect prefers Claude Opus 5.5, GPT-6 Astra, Claude Fable 5.1, then Kimi K3.1 Pro at xhigh; unspecified-high prefers GPT-6.1 Sol, Claude Opus 5.5, then Kimi K3.1 Pro; unspecified-low prefers GLM-5.3, DeepSeek V4.1 Flash, GPT-6.1 Sol, then Claude Sonnet 5.5 at low; quick prefers GLM-5.3 Flash, GPT-6 Luna, Claude Haiku 5.5, then Kimi K3.1 Pro at low; writing prefers Claude Opus 5.5, Claude Sonnet 5.5, Kimi K3.1 Pro, then Gemini 3.1 Pro; visual-engineering prefers Claude Opus 5.5, Claude Fable 5.1, Gemini 3.1 Pro, then Kimi K3.1 Pro; artistry prefers Gemini 3.1 Pro, Claude Opus 5.5, Claude Fable 5.1, then Kimi K3.1 Pro; capable prefers Claude Opus 5.5, GPT-6.1 Sol, Claude Fable 5.1, then Kimi K3.1 Pro at medium; simple-work prefers GPT-6 Luna, Claude Haiku 5.5, then DeepSeek V4.1 Flash at low; and deep-work prefers Claude Opus 5.5 then GPT-6.1 Sol at max. Each chain names the current generation of a model line; a superseded generation (Fable 5, Opus 5, GLM 5.2, DeepSeek V3.2, GPT-5.6 Luna, GPT-5.6 Sol, GPT-5.6 Terra, GPT-6 Sol, Claude Haiku 4.5) or a retired line (Qwen3-Coder) is kept only by a machine-level chain override. Chain customization is a config edit: a category written into ~/.omh/routing/model-chains.json (mixture_chain_overrides/v1, seeded by omh setup) replaces that chain for routing, fallback, and HUD labels without touching code. The interactive omh setup also records which providers the machine holds and whether it has a Claude Code subscription in ~/.omh/routing/providers.json (provider_entitlements/v1); every chain is then reordered so served entries lead, nothing is removed, and the Claude Code subscription only seeds the Maestro lane's --model preference because Hermes cannot spend it.",
+            "Treat each Hermes model alias, semantic category, and external owner as an independent prerequisite/diagnose/recommend/apply unit instead of one combined change.",
+            "Explain the shipped recommendations as editable editorial defaults, not benchmarks or allowlists: ultrabrain uses GPT-6 Astra; deep prefers Claude Opus 5.5, GPT-6.1 Sol, then Kimi K3.1 Pro at high; architect prefers Claude Opus 5.5, GPT-6 Astra, Claude Fable 5.1, then Kimi K3.1 Pro at xhigh; unspecified-high prefers GPT-6.1 Sol, Claude Opus 5.5, then Kimi K3.1 Pro; unspecified-low prefers GLM-5.3, DeepSeek V4.1 Flash, GPT-6.1 Sol, then Claude Sonnet 5.5 at low; quick prefers GLM-5.3 Flash, GPT-6 Luna, Claude Haiku 5.5, then Kimi K3.1 Pro at low; writing prefers Claude Opus 5.5, Claude Sonnet 5.5, Kimi K3.1 Pro, then Gemini 3.1 Pro; visual-engineering prefers Claude Opus 5.5, Claude Fable 5.1, Gemini 3.1 Pro, then Kimi K3.1 Pro; artistry prefers Gemini 3.1 Pro, Claude Opus 5.5, Claude Fable 5.1, then Kimi K3.1 Pro; capable prefers Claude Opus 5.5, GPT-6.1 Sol, Claude Fable 5.1, then Kimi K3.1 Pro at medium; simple-work prefers GPT-6 Luna, Claude Haiku 5.5, then DeepSeek V4.1 Flash at low; and deep-work prefers Claude Opus 5.5 then GPT-6.1 Sol at max. Each chain names the current generation of a model line; a superseded generation (Fable 5, Opus 5, GLM 5.2, DeepSeek V3.2, GPT-5.6 Luna, GPT-5.6 Sol, GPT-5.6 Terra, GPT-6 Sol, Claude Haiku 4.5, Kimi K3, Grok Code Fast) or a retired line (Qwen3-Coder) is kept only by a machine-level chain override. Chain customization is a config edit: a category written into ~/.omh/routing/model-chains.json (mixture_chain_overrides/v1, seeded by omh setup) replaces that chain for routing, fallback, and HUD labels without touching code. The interactive omh setup also records which providers the machine holds and whether it has a Claude Code subscription in ~/.omh/routing/providers.json (provider_entitlements/v1); every chain is then reordered so served entries lead, nothing is removed, and the Claude Code subscription only seeds the Maestro lane's --model preference because Hermes cannot spend it.",
             "For X/Twitter scraping or trend analysis, keep x_platform_data as a domain affinity rather than a role alias: prefer confirmed-active Grok, then Kimi K3.1 Pro, then Gemini, without removing the rest of the route or overriding an explicit model.",
             "When a recommendation head is missing, choose the first confirmed-active owner-compatible candidate in that chain. Only after every selected category, role-slot, and domain chain is exhausted, consult the shared final order Claude Opus 5.5 then GPT-6.1 Sol. If no candidate is confirmed active anywhere, keep the selector on its owner's native default model and let the rest of OMH setup finish without a model-config write.",
-            "Give provider-specific native next actions without claiming provider readiness: use installed Hermes flows for OpenAI OAuth/OpenAI Codex, Anthropic or an existing Claude provider, Qwen OAuth or Alibaba, Gemini/Google/Vertex, Grok/xAI, Kimi, GLM/Z.AI, or an already-working custom provider; preserve working alternatives.",
+            "Give provider-specific native next actions without claiming provider readiness: use installed Hermes flows for OpenAI OAuth/OpenAI Codex, Anthropic or an existing Claude provider, Qwen OAuth or Alibaba, Gemini/Google/Vertex, Grok/xAI, Kimi, GLM/Z.AI, DeepSeek, or an already-working custom provider; preserve working alternatives.",
             "Closing step: once model routing/chains are confirmed, ask once whether the user also wants to set up coding delegation (the maestro lane) for an external coding CLI -- do not ask before model setup is done and never auto-enable it. Point at `omh coding executor-skills --profile <profile>` for skill-set discovery, `~/.omh/routing/dispatch-models.json` for an optional per-owner model preference, and the `ulw-maestro` skill for the handoff itself; name Codex and Claude Code neutrally rather than favoring either.",
         ),
         why_this_exists=(
@@ -8896,7 +8900,7 @@ _DEFINITIONS = [
         recovery_notes=(
             "If discovery is absent, truncated, unreadable, or layout_unverified, name that source state and continue with manual confirmed-active input instead of scanning more broadly.",
             "If a provider serves only dated snapshot ids (`gpt-6.1-sol-YYYY-MM-DD`), confirm the dated id as active and keep it as served: OMH reads a trailing `-YYYY-MM-DD` as the base alias for recommendation chains, HUD labels, prices, and calibration, so the base's chain position applies without renaming the id; a date on a base no chain names still resolves nothing.",
-            "If a preferred Kimi, Claude, OpenAI, GLM, Grok, Gemini, or Qwen candidate is missing, preserve it as inactive and try the next confirmed-active compatible editorial candidate; do not substitute for an explicit unavailable choice.",
+            "If a preferred Kimi, Claude, OpenAI, GLM, DeepSeek, Grok, or Gemini candidate is missing, preserve it as inactive and try the next confirmed-active compatible editorial candidate; do not substitute for an explicit unavailable choice.",
             "If no compatible model is confirmed active, record owner_default, finish applicable OMH setup without a model-config write, and name the relevant Hermes-native provider/auth or user-override next action.",
             "If the diagnosed Hermes config cannot be read, report the read failure and stop before proposing a diff; if the config digest changes or the user rejects the diff, do not apply it.",
             "If an OAuth provider (OpenAI Codex/ChatGPT, Anthropic, Qwen OAuth) needs login or an account switch, guide the user to `hermes model` in another terminal (interactive provider selection with browser OAuth), which works whichever surface they chat in, then `/model --refresh` back in the session. In Hermes' own terminal (`hermes --tui`), `/setup` also runs the interactive wizard, including provider login, and the `/model` picker there handles only inline API-key entry, not OAuth; the OMH TUI refuses `/setup`, and its bare `/model` lists the models Hermes offers this session and switches to the one picked, with no login step.",
@@ -11792,6 +11796,7 @@ _DEFINITIONS.extend(
         PRODUCT_DISCOVERY_DEFINITION,
         SALES_PIPELINE_DEFINITION,
         SHOW_REEL_DEFINITION,
+        REPRO_AUDIT_DEFINITION,
         GEOSPATIAL_ANALYSIS_DEFINITION,
         SPRITE_FORGE_DEFINITION,
         BIOMEDICAL_EVIDENCE_DEFINITION,

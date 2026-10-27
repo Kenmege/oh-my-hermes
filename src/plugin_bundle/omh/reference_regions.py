@@ -1,8 +1,9 @@
 """Lexical reference regions shared by routing matchers, never output rewriting.
 
-The block-quote, relay-header and URL regions follow the mask list of
-oh-my-openagent's skill-pointer arming guard (concept only, commit 1f031d0d4);
-the patterns and wording here are OMH's own.
+The block-quote, relay-header and URL regions follow the mask list of the
+upstream skill-pointer arming guard recorded in the note on code-level
+borrowings in `docs/SKILL-SOURCES.md` (concept only, commit 1f031d0d4); the
+patterns and wording here are OMH's own.
 """
 
 from __future__ import annotations
@@ -90,6 +91,36 @@ class ReferenceRegions:
     links: tuple[str, ...] = ()
 
 
+# The longest run of blanks masking leaves as it is. A search that opens on
+# `\s*` or `[^.]*?` re-reads a run from each position in it, so a pasted log
+# blanked to its own length made one routing pass quadratic in the log: minutes
+# for a few thousand lines inside a `pre_llm_call` hook, which holds the GIL.
+_LONG_MASKED_RUN = 256
+_BLANK_RUN = re.compile(rf"\s{{{_LONG_MASKED_RUN + 1},}}")
+
+
+def _squeezed_masked_runs(projected: str, regions: tuple[tuple[int, int], ...]) -> str:
+    """``projected`` with each run of blanks over `_LONG_MASKED_RUN` that meets a masked region read as one blank.
+
+    A run the person typed themselves, with nothing masked in it, stays as it is.
+    """
+    if not regions or len(projected) <= _LONG_MASKED_RUN:
+        return projected
+    pieces: list[str] = []
+    kept = 0
+    for run in _BLANK_RUN.finditer(projected):
+        start, end = run.span()
+        if not any(region_start < end and start < region_end for region_start, region_end in regions):
+            continue
+        pieces.append(projected[kept:start])
+        pieces.append("\n" if "\n" in run.group() or "\r" in run.group() else " ")
+        kept = end
+    if not pieces:
+        return projected
+    pieces.append(projected[kept:])
+    return "".join(pieces)
+
+
 def executable_routing_text(message: str) -> str:
     """Project matching input without altering the original message or CJK clauses."""
     return reference_regions(message).executable_text
@@ -110,7 +141,10 @@ def reference_regions(message: str) -> ReferenceRegions:
     every region: a line region or URL that starts outside a quote or fence is
     taken whole, so a stray quote inside it opens nothing, and one that starts
     inside a quote or fence is part of that region and adds nothing. Masking
-    preserves character positions and line breaks, never joins words.
+    preserves character positions and line breaks and never joins words, up to
+    one exception: a run of blanks longer than `_LONG_MASKED_RUN` that masking
+    made or reached (a pasted log, fenced or block-quoted) is one blank, a line
+    break when it spans lines (`_squeezed_masked_runs`).
     """
     candidates = sorted(
         (
@@ -207,7 +241,8 @@ def reference_regions(message: str) -> ReferenceRegions:
     else:
         take_through(len(message))
     projected = list(message)
-    for region_start, region_end in (*spans, *((s, e) for s, e, _ in taken)):
+    regions = (*spans, *((s, e) for s, e, _ in taken))
+    for region_start, region_end in regions:
         projected[region_start:region_end] = [
             char if char in "\r\n" else " " for char in message[region_start:region_end]
         ]
@@ -216,7 +251,7 @@ def reference_regions(message: str) -> ReferenceRegions:
         return tuple(message[s:e] for s, e, k in taken if k in kinds)
 
     return ReferenceRegions(
-        "".join(projected),
+        _squeezed_masked_runs("".join(projected), regions),
         tuple(message[s:e] for s, e in spans),
         kind("relay", "link"),
         kind("quote"),

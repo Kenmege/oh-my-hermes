@@ -28,7 +28,7 @@ _HANDOFF_FIELD_BY_OWNER_MODE: dict[str, HandoffField] = {
 # holds by construction: the handoff builder also serves runtime profiles and
 # the generic prompt fallback, which are not Maestro.
 _EXTERNAL_PROFILES = frozenset(
-    {*EXTERNAL_CLI_PROFILES, "omx-runtime", "omo-runtime", "omc-runtime", "generic"}
+    {*EXTERNAL_CLI_PROFILES, "omx-runtime", "pi-family-runtime", "omc-runtime", "generic"}
 )
 
 

@@ -202,16 +202,19 @@ its first or second byte is read as keys.
 
 The bot board (Ctrl+S, `/bots`, `src/tui/bot_board.py`) only reads. For the
 Hermes root the TUI runs under and each named profile beside it
-(`<root>/profiles/<name>/`), it reads `gateway_state.json` and `state.db`,
-the latter opened `mode=ro`, and immutable when no `-wal`, `-shm` or
+(`<root>/profiles/<name>/`), it reads `gateway_state.json`, `config.yaml`,
+`profile.yaml` (for Hermes' display name only), Hermes' `memories/MEMORY.md`
+and `USER.md` (each only as a regular file, at most 1 MiB), the directory listing of the OMH store's `memory/records/` when
+`config.yaml` names that store, and `state.db`, the latter opened `mode=ro`, and immutable when no `-wal`, `-shm` or
 `-journal` is beside it (no connection has it open), so SQLite creates no
 `-wal` or `-shm` there; with a connection open, the read takes its read mark
 in the existing `-shm`, as every reader of the store does. It never opens the
 store outside SQLite, since closing a descriptor on it would drop this
 process's SQLite locks on it. It probes the pid a gateway record names with
 signal 0 and reads that process's start time and state (`/proc` on Linux,
-`sysctl(KERN_PROC_PID)` on macOS); it sends no other signal, and nothing to the
-gateway. It reads on one thread for the session, never on the render path,
+`sysctl(KERN_PROC_PID)` on macOS) and, for a running gateway, its resident
+memory (`/proc/<pid>/statm`, or `proc_pidinfo`, which answers only for this
+user's processes); it sends no other signal, and nothing to the gateway. It reads on one thread for the session, never on the render path,
 and reads nothing while the board is closed.
 
 ## Sessions it refuses, and what it writes
@@ -263,6 +266,38 @@ pinned to its literal tuple. That blocks the realistic drift of a later edit
 calling another Hermes, network or subprocess helper; it is not a sandbox, and
 does not catch an allowed Hermes function called with other arguments, or check
 where the grant's url points.
+
+## herdr
+
+Inside a herdr pane, and only there (`HERDR_ENV=1` and a `HERDR_PANE_ID`, the
+pane environment herdr's own Hermes plugin is gated on too; that plugin only
+reports a session id, never a state), the TUI tells herdr the state its title
+shows, so herdr's agent list can name it: it runs `herdr pane report-agent
+<pane> --source omh:tui --agent omh --state <state>`, with `waiting on you` as
+`blocked`, `running` as `working` and `idle` as `idle`, each time that state
+changes and never per frame, and `herdr pane release-agent` on the way out,
+since herdr keeps the pane's agent after the TUI exits until told. The agent
+label is `omh`, one herdr does not know: a known label (`hermes`) would tie
+the report to herdr's own Hermes process and screen detection. The binary is
+an absolute `HERDR_BIN_PATH` or `herdr` on PATH, the person's own; the verbs
+and flags are fixed and only the binary and pane id come from that
+environment, with no text from the session. One call runs at a time on a
+worker thread, so the loop never waits on herdr, and only the newest waits
+behind it (a later change replaces it, and the release replaces any report
+and stops the one in flight); each call gives up after 1 s and fails without
+a word (no herdr, a dead socket, a timeout), and an exit waits at most 2 s
+before it stops the release. herdr's CLI reaches herdr over its own local
+socket: no network call. Outside herdr nothing is spawned. No session id is
+sent: herdr keeps one only from its own `herdr:*` sources.
+
+The gateway child does not get the pane's `HERDR_PANE_ID`; herdr's CLI and
+skill still work there, without a current-pane default. herdr drops the same
+one name for its own pane-less popups. Where the gateway runs, herdr's Hermes
+plugin (gated on `HERDR_ENV=1` and that id) would otherwise report a
+`herdr:hermes` session for the pane, and herdr then refuses the TUI's own
+reports from then on (measured on herdr 0.9.5: the pane stayed at `working`,
+or left the list); a gateway daemon started from the child would also keep the
+pane's id after the pane closed.
 
 ## Job control, and what OMH does not do
 

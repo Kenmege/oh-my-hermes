@@ -134,6 +134,7 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
+from .herdr import HerdrReporter
 from .keys import (
     BUTTON_LEFT,
     BACKSPACE,
@@ -483,6 +484,8 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
+# What each state is in herdr's agent list, when the TUI runs in a herdr pane (`herdr.py`).
+HERDR_STATES = {STATE_IDLE: "idle", STATE_RUNNING: "working", STATE_WAITING: "blocked"}
 WAITING_GLYPH = "? "  # in place of the spinner while a question waits on the person
 
 # The prompts waiting for the running turn, listed above the composer's top rule.
@@ -1468,6 +1471,7 @@ class App(ModesMixin, AgentViewMixin):
         # The info line's right side last composed: what it showed, and the theme and HUD snapshot it was composed with.
         self.info_held: tuple[tuple[object, ...], Theme, HudSnapshot | None, tuple[Line, ...]] | None = None
         self.title_pushed = False
+        self.herdr = HerdrReporter(self.environ)  # the title's state, told to herdr inside a herdr pane
         self.background_mode = BACKGROUND_AUTO
         self.dirty = True
         self.last_render = -math.inf
@@ -1896,7 +1900,7 @@ class App(ModesMixin, AgentViewMixin):
             self.dirty = True
 
     def _shutdown(self) -> None:
-        """Hand the screen back to the shell, then stop the HUD poller and turn off yolo the TUI set.
+        """Hand the screen back to the shell, then stop the HUD poller, turn off yolo the TUI set and release herdr.
 
         The terminal writes come first (reports off, the alternate screen
         left, the live region erased whatever the last lines' rendering
@@ -1935,8 +1939,11 @@ class App(ModesMixin, AgentViewMixin):
                 if self.board_reader is not None:
                     self.board_reader.close()
             finally:
-                if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
-                    self._turn_off_yolo_set_here(self.sid)
+                try:
+                    if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
+                        self._turn_off_yolo_set_here(self.sid)
+                finally:
+                    self.herdr.release()  # herdr keeps the pane's agent after the TUI exits until told
 
     def _set_mouse(self, enabled: bool) -> None:
         """Turn mouse reports on or off, noting when they went off: reports sent before the off still arrive after it."""
@@ -2410,6 +2417,7 @@ class App(ModesMixin, AgentViewMixin):
     def _write_title(self) -> None:
         """The terminal title, `<session title> · <state>`, written only when it changed (the first one pushes the old)."""
         state = STATE_WAITING if self.slot is not None else STATE_RUNNING if self._busy() else STATE_IDLE
+        self.herdr.report(HERDR_STATES[state])
         words = f"{self.session_title or TITLE_DEFAULT} · {state}"
         if words == self.title_words:
             return  # every frame asks; most change nothing here
@@ -4492,6 +4500,7 @@ class App(ModesMixin, AgentViewMixin):
             "delegation graph", payload=lambda: self.hud.payload if self.hud is not None else None,
             read_at=lambda: self.hud.received_at if self.hud is not None else None, depth=self.color_depth,
             clock=self.wall_clock,  # the HUD poller stamps its reads with the wall clock
+            aura=self._aura_phase,
         ))
 
     def _bots(self, arg: str) -> None:
@@ -4876,11 +4885,21 @@ class App(ModesMixin, AgentViewMixin):
         """
         composer = self.composer
         return (
-            self.motion and self.color_depth == TRUECOLOR and aura_moves(self.theme)
+            self._aura_moves()
             and not composer.pastes and not composer.masked and not self._composer_hidden()
             and self.list_selected is None and self.tree_selected is None  # browsing draws the composer blank
             and bool(aura_ranges(composer.text))
         )
+
+    def _aura_moves(self) -> bool:
+        """Whether the dag-ulw aura moves on this terminal now: the truecolor depth, motion on, and a background its
+        band shows on (`theme.aura_moves`). Where it does not, nothing draws it but the composer's still look."""
+        return self.motion and self.color_depth == TRUECOLOR and aura_moves(self.theme)
+
+    def _aura_phase(self) -> int | None:
+        """The phase a running dag-ulw node's aura stands at (`dag_tree`, `/dag`), or None where the aura does not
+        move: those surfaces then draw the node as they always have."""
+        return self._spinner_frame() if self._aura_moves() else None
 
     def _render_when_due(self) -> None:
         if self.terminal.resized():  # one that came during this step's work: no frame is drawn at the old size
@@ -5220,7 +5239,8 @@ class App(ModesMixin, AgentViewMixin):
     def _tail(self, cols: int) -> list[Line]:
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
-        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
+        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None,
+                                           glint=self._aura_moves())
         if not lines and self.transcript.taken_any:
             lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
         if self._busy() and self.waiting_since is not None:

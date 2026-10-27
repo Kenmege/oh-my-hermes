@@ -1,6 +1,6 @@
 """Seeded adversarial invariants for the fanout dispatch scheduler.
 
-Adopted from OMO's chaos bench discipline: enumerated tests only find bugs
+Adopted from the pi-family runtime's chaos bench discipline: enumerated tests only find bugs
 someone already imagined, so this file drives the real dispatch engine over
 randomly shaped DAGs, outcomes, pool widths, and owner lanes, and checks
 invariants that must hold for EVERY shape. No wall clock and no bare

@@ -3819,7 +3819,7 @@ class FanoutBriefCliTests(unittest.TestCase):
             self.assertNotIn("alt:", stdout.split("docs")[0].split("core")[-1])
 
     def test_brief_renders_local_inventory_provider_model_intact(self) -> None:
-        # A route frozen from a local-inventory catalog (the omo runtime path,
+        # A route frozen from a local-inventory catalog (the pi-family runtime path,
         # `inventory_model_catalog`) carries a provider-prefixed model id like
         # "openrouter/qwen-3.5-coder"; the slash must survive into the
         # parenthesized label unchanged in both JSON and plain text.

@@ -301,6 +301,37 @@ def _awareness_delivery_lock(
             _release_delivery_lock(handle, mechanism)
 
 
+@contextmanager
+def _awareness_delivery_lock_at(
+    dir_fd: int, name: str, *, timeout_seconds: float = _LOCK_TIMEOUT_SECONDS
+) -> Iterator[str]:
+    """`_awareness_delivery_lock` for ``name`` inside an already-open directory descriptor.
+
+    Same lock file (`.<name>.lock`), same flags and mode, same backends, so it
+    excludes path-based holders of the same ledger. The open is relative to
+    ``dir_fd``: a parent directory swapped for a symlink after the caller
+    opened and verified ``dir_fd`` cannot move the lock file elsewhere. The
+    caller owns creating and verifying the directory. POSIX only (`dir_fd`).
+    """
+    lock_name = f".{name}.lock"
+    descriptor = os.open(lock_name, _LOCK_OPEN_FLAGS, 0o600, dir_fd=dir_fd)
+    keep = False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "lock path is not a regular file", lock_name)
+        os.fchmod(descriptor, 0o600)
+        keep = True
+    finally:
+        if not keep:
+            os.close(descriptor)
+    with os.fdopen(descriptor, "a+", encoding="utf-8") as handle:
+        mechanism = _acquire_delivery_lock(handle, Path(lock_name), timeout_seconds)
+        try:
+            yield mechanism
+        finally:
+            _release_delivery_lock(handle, mechanism)
+
+
 def _write_delivery_record(path: Path, data: dict[str, Any], *, compact: bool = False) -> None:
     """Atomically replace a ledger. `compact` drops the pretty-printing.
 

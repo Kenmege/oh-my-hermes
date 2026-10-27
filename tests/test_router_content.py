@@ -503,7 +503,11 @@ class RouterContentTests(unittest.TestCase):
             # existing 226-byte allowance (less than the historical ~2%).
             # The feature regression reconstructs and pins the legacy rows;
             # every other reference keeps the original 33,100 ceiling.
-            limit = 33_344 if (
+            # 33,344 -> 33,565: merged with main, the registry measures 33,561:
+            # main's 33,340 (ru pack and repro-audit rows) plus sprite-forge's
+            # 221-byte row and operator token. Each side alone fit; main's
+            # 4-byte headroom is kept, not widened.
+            limit = 33_565 if (
                 template.skill_name == "oh-my-hermes"
                 and template.relative_path == "references/workflow-registry.md"
             ) else 33_100
@@ -4332,9 +4336,8 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("`deep-interview`, `ralplan`, `loop`", docs_readme)
         # Retired engines must not be presented as current planning skills.
         self.assertNotIn("`ultragoal`", docs_readme)
-        # omh-docs and github-issue-intake raise the measured catalog to 119.
-        # sprite-forge raises the measured catalog to 152.
-        self.assertIn("**152 installable skills**", docs_readme)
+        # The front door names no skill count: a literal drifts with every skill.
+        self.assertIn("groups the installable skills by user intent", docs_readme)
         self.assertIn("**Retain knowledge**", docs_readme)
         # The unit suite runs through the deterministic sharding tools (issue
         # #1294): plan once, run per shard plus the serial quarantine, then
@@ -4374,7 +4377,7 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("harness validate", pages)
         self.assertIn("Pinned stable install", release)
         self.assertIn("release_readiness_checklist/v1", release)
-        self.assertIn("omh release checklist --version 1.0.5 --json", release)
+        self.assertIn("omh release checklist --version <version> --json", release)
         self.assertIn("all-skill awareness lane coverage", release)
         self.assertIn("bundled role context", release)
         self.assertIn("bounded context budgets", release)
@@ -4388,7 +4391,7 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("--hermes-home /tmp/hermes-smoke release hermes-smoke --live --install-path setup", release)
         self.assertIn("hermes skills check omh-routing", release)
         self.assertIn("uv build", release)
-        self.assertIn("oh_my_hermes-1.0.5-py3-none-any.whl", release)
+        self.assertIn("oh_my_hermes-<version>-py3-none-any.whl", release)
         self.assertIn("/tmp/omh-wheel-smoke/bin/omh --help", release)
         self.assertIn("OMH_VENV_DIR=/tmp/omh-installer-venv", release)
         self.assertIn("## Feature Report", pr_template)

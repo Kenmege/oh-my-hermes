@@ -3,8 +3,8 @@
 `docs/SKILL-SOURCES.md` is what the upstream tracker reads. A skill body or
 reference that credits an outside harness, with no registry row for that pair,
 leaves the source unwatched: upstream can change the material OMH adapted and
-nothing raises an issue. That is how superpowers, ECC, and oh-my-openagent
-credits sat in shipped skills with zero rows.
+nothing raises an issue. That is how superpowers, ECC, and the pi-family
+runtime's upstream credits sat in shipped skills with zero rows.
 
 The subject is derived from the producers rather than listed by hand. Each
 (skill, upstream) pair whose generated text carries an attribution marker must
@@ -28,8 +28,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = REPO_ROOT / "docs" / "SKILL-SOURCES.md"
 
 # Upstream source (as `normalize_source` writes it) -> the marker that credits
-# it in generated skill text. Bare "omo" is not a marker: it also names the
-# omo runtime OMH hands work to, which is interop, not a borrowing.
+# it in generated skill text. The runtime's bare short name is not a marker:
+# it also names the pi-family runtime OMH hands work to, which is interop,
+# not a borrowing.
 UPSTREAM_MARKERS = {
     "github.com/obra/superpowers": re.compile(r"\bsuperpowers\b", re.IGNORECASE),
     "github.com/affaan-m/everything-claude-code": re.compile(

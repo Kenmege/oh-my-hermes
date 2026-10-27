@@ -842,6 +842,8 @@ class UninstallTests(unittest.TestCase):
             home = _Home(root)
             profile = home.hermes_home / "profiles" / "bot"
             profile.mkdir(parents=True)
+            # A real named profile has host identity; an empty shell is ignored.
+            (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install()
             home.brand(profile / "config.yaml")
             self.assertEqual(home.run("update")[0], 0)
@@ -892,6 +894,7 @@ class ProfileReleaseTests(unittest.TestCase):
             split_store = root / "split-store"
             for profile in (shared, split):
                 profile.mkdir(parents=True)
+                (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             # The split profile names its own store (#1679, #1680); the
             # shared one names none and is given the primary's.
             (split / "config.yaml").write_text(
@@ -925,6 +928,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(Path(tmp))
             shared = home.hermes_home / "profiles" / "shared"
             shared.mkdir(parents=True)
+            (shared / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install()
             home.brand(shared / "config.yaml", skin="omh-amber")
             state = json.loads(home.state_path.read_text(encoding="utf-8"))
@@ -943,6 +947,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(Path(tmp))
             shared = home.hermes_home / "profiles" / "shared"
             shared.mkdir(parents=True)
+            (shared / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install(skin="omh-crimson")
             home.brand(shared / "config.yaml", skin="omh-amber")
 
@@ -962,6 +967,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(root)
             bot = home.hermes_home / "profiles" / "bot"
             bot.mkdir(parents=True)
+            (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             (bot / ".env").write_text(f"OMH_HOME={(root / 'env-store').as_posix()}\n", encoding="utf-8")
             home.legacy_install()
             home.brand(bot / "config.yaml", skin="omh-amber")
@@ -981,6 +987,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(root)
             bot = home.hermes_home / "profiles" / "bot"
             bot.mkdir(parents=True)
+            (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             (bot / ".env").write_text(f"OMH_HOME={(root / 'env-store').as_posix()}\n", encoding="utf-8")
             home.legacy_install()
             config = bot / "config.yaml"
@@ -1012,6 +1019,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(root)
             bot = home.hermes_home / "profiles" / "bot"
             bot.mkdir(parents=True)
+            (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install()
             config = bot / "config.yaml"
             self.assertEqual(Path(plugin_omh_home_setting(config.read_text(encoding="utf-8"))), home.omh_home)
@@ -1036,6 +1044,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(root)
             bot = home.hermes_home / "profiles" / "bot"
             bot.mkdir(parents=True)
+            (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             own_store = root / "own-store"
             config = bot / "config.yaml"
             config.write_text(
@@ -1063,6 +1072,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(Path(tmp))
             bot = home.hermes_home / "profiles" / "bot"
             bot.mkdir(parents=True)
+            (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install(skin="omh-crimson")
             home.brand(bot / "config.yaml", skin="omh-amber")
             skills = (home.omh_home / "skills").resolve().as_posix()
@@ -1103,6 +1113,7 @@ class ProfileReleaseTests(unittest.TestCase):
             home = _Home(root)
             profile = home.hermes_home / "profiles" / "bot"
             profile.mkdir(parents=True)
+            (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install()
             home.brand(profile / "config.yaml")
             # A bot with no bundle and no registration is a new bot to the
@@ -1151,6 +1162,7 @@ class UnreadableProfileSettingTests(unittest.TestCase):
                 home = _Home(root)
                 bot = home.hermes_home / "profiles" / "bot"
                 bot.mkdir(parents=True)
+                (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
                 home.config.write_text(BEFORE, encoding="utf-8", newline="")
                 (bot / "config.yaml").write_text(
                     BEFORE + shape.format(store=(root / "bot-store").as_posix()), encoding="utf-8", newline=""
@@ -1172,6 +1184,7 @@ class UnreadableProfileSettingTests(unittest.TestCase):
             home = _Home(root)
             bot = home.hermes_home / "profiles" / "bot"
             bot.mkdir(parents=True)
+            (bot / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             home.legacy_install()
             home.brand(bot / "config.yaml", skin="omh-amber")
             config = bot / "config.yaml"

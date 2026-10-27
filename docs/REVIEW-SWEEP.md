@@ -94,18 +94,17 @@ The PR template carries a validation checklist. Contributors routinely leave it
 unchecked. Running it yourself is the difference between a review that asserts
 and a review that knows.
 
+Run the Build & Test list of `CLAUDE.md` as it reads at the PR head
+(`git show <head>:CLAUDE.md`), not as it reads on your own checkout: the suite,
+ruff, compileall, every `docs ... --check` gate, and `git diff --check`, from
+`/tmp/omh-review-<number>`.
+
 ```sh
 cd /tmp/omh-review-<number>
-PYTHONPATH=tests uv run python -m unittest discover -s tests 2>&1 | tail -20
-uv run --group lint ruff check src tests
-uv run python -m compileall -q src tests
-uv run python -m omh.cli docs workflows --check
-uv run python -m omh.cli docs roles --check
-uv run python -m omh.cli docs capability-families --check
-git diff --check
+git show HEAD:CLAUDE.md | sed -n '/^## Build & Test/,/^## /p'
 ```
 
-CI runs all three of those byte gates unconditionally on every PR
+CI runs the byte gates unconditionally on every PR
 (`.github/workflows/ci.yml`), so a desync fails there whether or not you catch
 it. Run them anyway: a red gate you name with the source that moved is a
 useful finding, and a red gate the author has to bisect from a CI log is not.

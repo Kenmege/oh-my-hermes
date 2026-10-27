@@ -1192,7 +1192,7 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(OMH_JEV_ASK_SCHEMA["name"], "omh_jev_ask")
 
     def test_the_route_question_projection_renames_options_only(self) -> None:
-        route = route_chat_message("почему сборка падает на main", source="discord", limit=3)
+        route = route_chat_message("main पर बिल्ड क्यों फेल हो रहा है", source="discord", limit=3)
         block = route["route_question"]
         from omh.plugin_bundle.omh.tools.jev_ask_tool import _project_route_question
 
@@ -1210,7 +1210,7 @@ class ParityTests(unittest.TestCase):
 
 class RouteAnswerProvenanceTests(_ConsentedCase):
     def test_omh_jev_ask_provenance_needs_an_answered_ledger_row_for_the_same_digest(self) -> None:
-        route = route_chat_message("почему сборка падает на main", source="discord", limit=3)
+        route = route_chat_message("main पर बिल्ड क्यों फेल हो रहा है", source="discord", limit=3)
         block = route["route_question"]
         options = list(block["questions"]["route_choice"]["options"])
         answers = {"route_choice": {"type": "choice", "choice": options[0],
@@ -1222,12 +1222,12 @@ class RouteAnswerProvenanceTests(_ConsentedCase):
         with TemporaryDirectory() as tmp:
             home = _Home(tmp, {"TYPESAFE_API_KEY": SENTINEL})
             record_args = {"question_digest": block["question_digest"], "answered_by": "omh_jev_ask",
-                           "route_choice": options[0], "message": "почему сборка падает на main",
+                           "route_choice": options[0], "message": "main पर बिल्ड क्यों फेल हो रहा है",
                            "source": "discord"}
             with patch.dict(os.environ, home.env):
                 refused = json.loads(omh_route_answer_handler({**record_args, "ask_id": "0" * 16}, session_id=SESSION))
             self.assertEqual(refused["status"], "invalid_request")
-            asked = home.call({"state": "почему сборка падает на main", "route_question": block},
+            asked = home.call({"state": "main पर बिल्ड क्यों फेल हो रहा है", "route_question": block},
                               _Recorder(TransportReply(200, {}, _answered_body(answers=answers))))
             self.assertEqual(asked["status"], "answered")
             self.assertEqual(asked["question_digest"], block["question_digest"])
@@ -1276,7 +1276,7 @@ class RouteAnswerProvenanceTests(_ConsentedCase):
         # R5-2: omh_jev_ask echoes whatever digest the block carries, so a
         # forged block with a real digest, its own options and its own
         # instructions was answered and then recorded under Jev's provenance.
-        message = "почему сборка падает на main"
+        message = "main पर बिल्ड क्यों फेल हो रहा है"
         block = route_chat_message(message, source="discord", limit=3)["route_question"]
         digest = block["question_digest"]
         options = list(block["questions"]["route_choice"]["options"])
@@ -1339,12 +1339,12 @@ class RouteAnswerProvenanceTests(_ConsentedCase):
         self.assertIn("this process sent", refused["error"])
 
     def test_an_ask_that_did_not_answer_backs_no_claim(self) -> None:
-        route = route_chat_message("почему сборка падает на main", source="discord", limit=3)
+        route = route_chat_message("main पर बिल्ड क्यों फेल हो रहा है", source="discord", limit=3)
         block = route["route_question"]
         options = list(block["questions"]["route_choice"]["options"])
         with TemporaryDirectory() as tmp:
             home = _Home(tmp, {"TYPESAFE_API_KEY": SENTINEL})
-            timed_out = home.call({"state": "почему сборка падает на main", "route_question": block},
+            timed_out = home.call({"state": "main पर बिल्ड क्यों फेल हो रहा है", "route_question": block},
                                   _Recorder(TimeoutError("t")))
             self.assertEqual(timed_out["status"], "timeout")
             with patch.dict(os.environ, home.env):

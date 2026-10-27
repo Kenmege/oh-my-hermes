@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from omh.plugin_bundle.omh import runtime_paths
+from omh.coding.pi_family_interop import RUNTIME_HOME
 from omh.plugin_bundle.omh.run_records import EVENTS_FILE, EXTERNAL_EFFECT_RECEIPT_STORE_NAME
 
 import os
@@ -463,12 +464,13 @@ class OmhPaths:
 
 
 # Product-repo runtime-evidence directories that OMH delegation continuity must
-# never be written into. `.omo`/`.omx` are other oh-my products' runtime trees
+# never be written into. `RUNTIME_HOME` (the pi-family runtime's) and `.omx`
+# are other oh-my products' runtime trees
 # and `.document-harness` is a product's own evidence dir; continuity is
 # OMH-owned durable state and belongs in the OMH state root's goal ledger, never
 # hand-written into a product repo. `continuity_write_target` resolves the only
 # allowed destination so a writer can never construct one of these instead.
-CONTINUITY_FORBIDDEN_TARGETS: tuple[str, ...] = (".omo", ".omx", ".document-harness")
+CONTINUITY_FORBIDDEN_TARGETS: tuple[str, ...] = (RUNTIME_HOME, ".omx", ".document-harness")
 
 
 def continuity_write_target(paths: OmhPaths) -> dict[str, object]:
@@ -477,7 +479,7 @@ def continuity_write_target(paths: OmhPaths) -> dict[str, object]:
     Returns the OMH state root, the goals directory continuity lives under, and
     the forbidden product-repo runtime-evidence targets. A continuity writer
     resolves its path from `goals_dir` here and can never assemble a
-    `.omo`/`.omx`/`.document-harness` path, because this is the only target it
+    path to any of `CONTINUITY_FORBIDDEN_TARGETS`, because this is the only target it
     is handed.
     """
     return {

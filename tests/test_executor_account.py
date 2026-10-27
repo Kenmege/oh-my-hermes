@@ -172,7 +172,7 @@ class UnreadableAndAbsentTests(unittest.TestCase):
         with TemporaryDirectory() as home:
             base = Path(home)
             write_json(base / ".claude.json", {"oauthAccount": {"emailAddress": "khope@gmail.com"}})
-            for owner in ("hermes", "omo-runtime", "generic", ""):
+            for owner in ("hermes", "pi-family-runtime", "generic", ""):
                 with self.subTest(owner=owner):
                     self.assertEqual(observed_account_tag(owner, home=base), "")
 

@@ -365,6 +365,10 @@ class ShippedTriggerPackTests(unittest.TestCase):
             ("vi", "kiểm tra accessibility", "accessibility-audit"),
             ("vi", "build thất bại", "build-failure-triage"),
             ("vi", "tiến hành nghiên cứu chuyên sâu", "research"),
+            ("ru", "сделай ревью кода", "code-review"),
+            ("ru", "сборка упала", "build-failure-triage"),
+            ("ru", "составь план реализации", "plan"),
+            ("ru", "проверь доступность сайта", "accessibility-audit"),
         )
 
         for language, message, expected in probes:

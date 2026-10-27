@@ -181,9 +181,11 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # plus its newline (+86), measured against clean 85673e100. This exposes the
 # complete career workflow; no eager toolkit text or standing padding is added.
 # test_ai_job_search_context_budget pins the legacy index and marginal cost.
+# 13243 -> 13327: one repro-audit index line, measured from the producer.
 # 13243 -> 13328: one index line for the new `sprite-forge` skill; its name
 # and visible description window (+85). Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 13328
+# Merged with main: 13327 (main) + 85 = 13412, re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 13412
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -832,12 +834,41 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # (+3072) for career discovery/drafting/interviews/evidenced outcomes. Retire
 # the old 22 unused characters, not carry them forward. Existing rows are
 # byte-stable and test_ai_job_search_context_budget pins them and this delta.
+# 525379 -> 525403: the pi-family runtime's profile was renamed; four
+# capability rows name it in a runtime list ("pi-family" for the old
+# three-letter name, +6 each, +24). No other row moved. Re-derived from the
+# producer.
+# 525403 -> 525400: the model-setup row drops the retired Apitopia, Qwen and
+# realtime-search/design wording and names Kimi K3 as superseded and DeepSeek
+# as a candidate (-3). Re-derived from the producer; the slack is retired.
+# 525400 -> 526271: only the `visual-qa` row moves (+871). Its quality bar
+# gains the composed-frame rule from the 2026-10-26 promo postmortem: a
+# look-alike of an existing UI in place of its renderer's output is BLOCK
+# (labeled concept and brief-requested stylised treatments are not), and
+# fill (full-bleed minus the edge inset without subtitles, the body safe area
+# with them), logo clear space, decorative meta text and per-locale count
+# agreement are measured. No other row changed. Re-derived from the producer.
+# 526271 -> 526315: the shipped `ru` (Russian) trigger language pack, after
+# its review (#2301) dropped the phrases everyday sentences contain and kept
+# one phrase of each nested held-back pair. Its Cyrillic phrases merge into
+# rows' trigger previews: `dag-ulw` shows `даг ультраворк` and `+2 more
+# triggers`, `running-work-board` trades its eighth trigger for a `+N more
+# triggers` count, and other rows' `+N more` counts move. Re-derived from the
+# producer on the tree merged with main.
+# 526315 -> 529305: one repro-audit capability row (+2990); no other row
+# moved. Re-derived from the producer on the tree merged with main.
+# 529305 -> 529306: show-reel adds 8 promo/launch/product video triggers;
+# its row only counts the ones past those it shows ("+5 more triggers" becomes
+# "+13 more triggers", +1). Re-derived from the producer on the tree merged
+# with main.
 # 525379 -> 528553: only the new `sprite-forge` capability row (3172) plus its
 # separator (+3174); no eager toolkit bytes or headroom. Re-derived from the producer.
 # 528553 -> 528574: the `deliverable-package` row description adds the
 # `archived` and `published` states ("attached, archived, and published" over
 # "and attached", +21). Measured by release drift; no headroom.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 528574
+# Merged with main: 529306 (main) + 3174 + 21 = 532501, re-derived from the
+# producer on the merged tree; no headroom.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 532501
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -941,9 +972,11 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # separator (+935), measured against clean 85673e100; the complete method and
 # offline companion stay on demand. No sibling row or per-item limit moves;
 # test_ai_job_search_context_budget pins existing rows and the feature delta.
+# 142635 -> 143564: one standalone repro-audit summary row, producer measured.
 # 142635 -> 143595: one 958-character standalone `sprite-forge` summary +
 # separator (+960); the method and Pillow companion stay on demand.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 143595
+# Merged with main: 143564 (main) + 960 = 144524, re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 144524
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

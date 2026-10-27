@@ -56,6 +56,7 @@ references rather than normal user steps.
 | Capture and recall reviewed project context | [Project Memory](MEMORY.md) |
 | Find out which stage failed when a saved memory was not used | [Memory Recall Incident](MEMORY-RECALL-INCIDENT.md) |
 | Answer what a web page said as of a date, or compare then versus now | [Temporal Source Receipts](TEMPORAL-SOURCE-RECEIPTS.md) |
+| Compare existing HellaSwag results with reported paper conditions without running a model | [Research result audit](REPRO-AUDIT.md) |
 | Read a very large PDF, contract, or manual through Hermes in page ranges | [Long Document Reading](LONG-DOCUMENT-READING.md) |
 | Judge whether a realtime voice connector keeps whole spoken turns | [Realtime Voice Trial Receipts](REALTIME-VOICE-TRIAL-RECEIPTS.md) |
 | See which OMH workflow owns each plugin in the active host catalog | [Plugin Catalog Coverage](PLUGIN-CATALOG-COVERAGE.md) |
@@ -74,7 +75,7 @@ Hermes memory, skills, tools, gateway surfaces, and OMH's role, see the
 
 ## Six Capability Families
 
-The public front door groups **152 installable skills** by user intent. Exact
+The public front door groups the installable skills by user intent. Exact
 skill names remain available for deterministic routing, wrapper rendering, and
 operator control.
 
@@ -104,14 +105,17 @@ Use [Capabilities](CAPABILITIES.md) for the manifest contract and
 - Model recommendations and X/Grok affinity are editable editorial order, not
   benchmark or availability claims. Missing heads can use a confirmed compatible
   Qwen, Gemini, Grok, or other alternative; explicit unavailable choices pause.
-- `pi` and `senpi` are OMO runtime-family hosts. CCAPI and Apitopia are
-  user-declared editorial provider preferences, never probed integrations.
+- CCAPI for Claude is preferred provider-family metadata only; it is not a
+  bundled or probed integration and is considered only when the user declares
+  the corresponding local route active.
 - Wrapper sessions own chat continuity and plan decisions. Linked runtime runs
   own dispatch, execution, verification, review, CI, and merge evidence.
 - GitHub issue intake keeps raw content transient: only checked-in issue forms
   can authorize a connector request, each dispatch consumes one stable
   idempotency key, and connector read-back is the sole creation evidence.
-- Generated workflow docs come from `src/skills/catalog.py`; update the catalog
+- Generated workflow docs come from the skill catalog
+  (`src/skills/catalog_definitions.py` and the other `src/skills/catalog_*.py`
+  tables, with derivations in `src/skills/catalog.py`); update the catalog
   before refreshing generated references.
 - Project memory under `.omh/memory/` is reviewed OMH-local context. Recall packs
   are not opaque Hermes memory or execution evidence.
@@ -138,7 +142,6 @@ Use [Capabilities](CAPABILITIES.md) for the manifest contract and
 | Bind an image result to the route a producer attested, apart from the route requested | [Visual Generation Receipts](VISUAL-GENERATION-RECEIPTS.md) |
 | Common oh-my capability axes and gaps | [Parity Matrix](PARITY.md) |
 | Implemented application surfaces | [Application Cases](APPLICATION_CASES.md) |
-| Public roadmap | [Roadmap](ROADMAP.md) |
 | GitHub Pages source | [Website](../site/index.html) |
 
 ## Agent And Operator Contracts
@@ -168,12 +171,15 @@ findable only by knowing its filename.
 When a public claim changes, check the README, site, capabilities, direction,
 architecture, generated workflow reference, and agent contract together.
 
+Run every `docs ... --check` gate in the Build & Test list of
+[`CLAUDE.md`](../CLAUDE.md), plus `uv run python -m omh.cli harness validate`
+and `git diff --check`; that list is the one maintained copy. For a page added,
+moved, or deleted under `docs/`, the gate that matters first is
+`uv run python -m omh.cli docs navigation --check`. The docs-content contract
+tests run with:
+
 ```sh
 PYTHONPATH=tests uv run python -m unittest tests/test_router_content.py -v
-uv run python -m omh.cli harness validate
-uv run python -m omh.cli docs workflows --check
-uv run python -m omh.cli docs navigation --check
-git diff --check
 ```
 
 Three separate evidence classes answer three different questions, and a failure

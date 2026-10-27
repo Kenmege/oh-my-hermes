@@ -142,6 +142,7 @@ MODEL_REASONING_LEVELS = frozenset({
 UNSUPPORTED_MODEL_OPTIONS = "unsupported_model_options"
 ENSURE_TIMEOUT_SECONDS = 30
 OPEN_TIMEOUT_SECONDS = 10
+STDIN_READ_BYTES = 64 * 1024
 # After the TUI closes its input: how long the answers to calls already sent (the last session's detach) may take.
 # The TUI waits 0.5 s, then terminates, then waits 2 s more before the kill (`app.CLOSE_GRACE_SECONDS`,
 # `app.TERMINATE_GRACE_SECONDS`): this ends inside that, and a loopback detach answers in milliseconds.
@@ -1052,11 +1053,24 @@ def _frames(text: str) -> Iterable[dict[str, Any] | str]:
 
 
 def _start_stdin_reader(loop: asyncio.AbstractEventLoop, lines: asyncio.Queue[bytes | None]) -> None:
-    """Read the TUI's lines on a thread; end of input arrives as None."""
+    """Read the TUI's lines on a thread; end of input arrives as None.
+
+    It reads the descriptor, not `sys.stdin.buffer`: a thread blocked in the buffer's read holds the buffer's
+    lock, and when the relay ends first, interpreter finalization closes stdin on the main thread, waits a second
+    for that lock and aborts the process (`_enter_buffered_busy`, #2327). A read of the descriptor holds no lock.
+    """
+    descriptor = sys.stdin.fileno()
 
     def read() -> None:
-        for raw in sys.stdin.buffer:
-            loop.call_soon_threadsafe(lines.put_nowait, raw)
+        held: list[bytes] = []  # the line read so far, in pieces, so a long line (a pasted image) is joined once
+        while chunk := os.read(descriptor, STDIN_READ_BYTES):
+            *ended, rest = chunk.split(b"\n")
+            for piece in ended:
+                loop.call_soon_threadsafe(lines.put_nowait, b"".join((*held, piece)))
+                held = []
+            held.append(rest)
+        if any(held):  # a last line with no newline, as iterating the buffer yields it
+            loop.call_soon_threadsafe(lines.put_nowait, b"".join(held))
         loop.call_soon_threadsafe(lines.put_nowait, None)
 
     threading.Thread(target=read, name="omh-attach-stdin", daemon=True).start()

@@ -304,6 +304,9 @@ def _classify_inline_external_dirs(line: str) -> _InlineExternalDirs:
     if not match:
         return _InlineExternalDirs(False, False, [])
     value = match.group("value").strip()
+    if value.startswith("#"):
+        return _InlineExternalDirs(False, False, [])
+    value = _split_trailing_comment(value)[0]
     if value in _BARE_YAML_NULLS:
         return _InlineExternalDirs(True, True, [])
     parsed = _parse_inline_list(value)
@@ -312,17 +315,94 @@ def _classify_inline_external_dirs(line: str) -> _InlineExternalDirs:
     return _InlineExternalDirs(True, True, parsed)
 
 
+def _external_dirs_block_line(line: str) -> bool:
+    return re.fullmatch(r"  external_dirs:\s*(?:#.*)?", line) is not None
+
+
+def _skills_block_line(line: str) -> bool:
+    """A plain skills block may carry a trailing YAML comment."""
+    return re.fullmatch(r"skills:\s*(?:#.*)?", line) is not None
+
+
+def _skills_document_parts(config_text: str) -> tuple[str, str, str]:
+    """Keep a single document's envelope outside the skills-only editor."""
+    lines = config_text.splitlines(keepends=True)
+    body_start, body_end = 0, len(lines)
+    started = content = ended = directives = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        marker = re.fullmatch(r"(---|\.\.\.)[ \t]*(?:#.*)?", line.rstrip("\r\n"))
+        if marker and marker[1] == "---":
+            if started or content or ended:
+                raise ValueError("multi-document YAML is user-owned; leaving it alone")
+            started = True
+            body_start = index + 1
+            continue
+        if marker and marker[1] == "...":
+            if ended:
+                raise ValueError("multiple YAML document ends are user-owned; leaving them alone")
+            ended = True
+            body_end = index
+            continue
+        if ended:
+            raise ValueError("content after YAML document end is user-owned; leaving it alone")
+        if line.startswith("%"):
+            if started or content or not re.match(r"%(?:YAML|TAG)[ \t]", line):
+                raise ValueError("unsupported YAML directive placement; leaving it alone")
+            directives = True
+            continue
+        content = True
+    if directives and not started:
+        raise ValueError("YAML directives require a document start; leaving it alone")
+    return "".join(lines[:body_start]), "".join(lines[body_start:body_end]), "".join(lines[body_end:])
+
+
+def _empty_mapping_root_index(lines: list[str]) -> int | None:
+    meaningful = [index for index, line in enumerate(lines)
+                  if line.strip() and not line.lstrip().startswith("#")]
+    if len(meaningful) == 1:
+        index = meaningful[0]
+        if re.fullmatch(r"\{\}[ \t]*(?:#.*)?", lines[index].rstrip("\r\n")):
+            return index
+    return None
+
+
 def _validate_external_dirs_mutation_shape(config_text: str) -> None:
+    lines = config_text.splitlines()
+    # The skills caller has already separated a single document's envelope.
+    # Other section writers retain their stricter whole-document guard.
+    normalized = ["skills:" if _skills_block_line(line) else line for line in lines]
+    guard = ("non-mapping or unsupported root YAML is user-owned; leaving it alone"
+             if not _root_is_plain_block_mapping(lines) and _empty_mapping_root_index(lines) is None else "")
+    guard = guard or _section_shape_guard(normalized, "skills")
+    if not guard and _section_node_is_sequence(normalized, "skills"):
+        guard = "sequence skills configuration is user-owned; leaving it alone"
+    if guard:
+        raise ValueError(guard)
     in_skills = False
+    first_child = False
     external_dirs_declarations = 0
     for line in config_text.splitlines():
         stripped = line.strip()
-        if _ends_top_level_node(line):
-            in_skills = stripped == "skills:"
+        if not stripped or stripped.startswith("#"):
             continue
+        if _ends_top_level_node(line):
+            in_skills = _skills_block_line(line)
+            first_child = in_skills
+            continue
+        if in_skills:
+            guard = _document_syntax_guard([line])
+            if guard:
+                raise ValueError(guard)
+        if in_skills and first_child:
+            if stripped.startswith(("{", "[")):
+                raise ValueError("flow skills configuration is user-owned; leaving it alone")
+            first_child = False
         if in_skills and line.startswith("  ") and not line.startswith("    "):
             inline = _classify_inline_external_dirs(line)
-            if inline.matched or stripped == "external_dirs:":
+            if inline.matched or _external_dirs_block_line(line):
                 external_dirs_declarations += 1
                 if external_dirs_declarations > 1:
                     raise ValueError(_DUPLICATE_EXTERNAL_DIRS_SHAPE)
@@ -331,14 +411,16 @@ def _validate_external_dirs_mutation_shape(config_text: str) -> None:
 
 
 def external_dirs(config_text: str) -> list[str]:
-    lines = config_text.splitlines()
+    lines = config_text.removeprefix("\ufeff").splitlines()
     result: list[str] = []
     in_skills = False
     in_external = False
     for line in lines:
         stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
         if _ends_top_level_node(line):
-            in_skills = stripped == "skills:"
+            in_skills = _skills_block_line(line)
             in_external = False
             continue
         if in_skills and in_external:
@@ -353,7 +435,7 @@ def external_dirs(config_text: str) -> list[str]:
                     result.extend(inline.values)
                 in_external = False
                 continue
-            in_external = stripped == "external_dirs:"
+            in_external = _external_dirs_block_line(line)
             continue
     return result
 
@@ -1802,17 +1884,32 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
 
 
 def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange:
+    # A stream BOM is not part of the first key; carry it outside the editor.
+    if config_text.startswith("\ufeff"):
+        change = ensure_external_dir(config_text[1:], skill_dir)
+        return ConfigChange(change.changed, change.message, "\ufeff" + change.text)
+    prefix, body, suffix = _skills_document_parts(config_text)
+    if prefix or suffix:
+        change = ensure_external_dir(body, skill_dir)
+        text = prefix + change.text + suffix if change.changed else config_text
+        return ConfigChange(change.changed, change.message, text)
     _validate_external_dirs_mutation_shape(config_text)
     target = _normalize(skill_dir)
     if target in external_dirs(config_text):
         return ConfigChange(False, "external dir already present", config_text)
 
     lines = config_text.splitlines()
+    empty_root = _empty_mapping_root_index(lines)
+    if empty_root is not None:
+        # An empty flow mapping has no entries to preserve, but appending a
+        # block mapping after the closed {} node would produce invalid YAML.
+        lines[empty_root] = lines[empty_root][2:]
+        return ensure_external_dir("\n".join(lines) + "\n", skill_dir)
     if not lines:
         text = f"skills:\n  external_dirs:\n    - {target}\n"
         return ConfigChange(True, "created skills.external_dirs", text)
 
-    skills_index = next((idx for idx, line in enumerate(lines) if line.strip() == "skills:" and not line.startswith(" ")), None)
+    skills_index = next((idx for idx, line in enumerate(lines) if _skills_block_line(line)), None)
     if skills_index is None:
         text = config_text.rstrip() + f"\n\nskills:\n  external_dirs:\n    - {target}\n"
         return ConfigChange(True, "appended skills.external_dirs", text)
@@ -1820,6 +1917,8 @@ def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
     external_index = None
     for idx in range(skills_index + 1, len(lines)):
         line = lines[idx]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
         if _ends_top_level_node(line):
             break
         if line.startswith("  ") and not line.startswith("    "):
@@ -1830,9 +1929,11 @@ def ensure_external_dir(config_text: str, skill_dir: str | Path) -> ConfigChange
                 values = inline.values
                 if target in values:
                     return ConfigChange(False, "external dir already present", config_text)
-                lines[idx:idx + 1] = _format_external_dirs([*values, target])
+                replacement = _format_external_dirs([*values, target])
+                replacement[0] += _split_trailing_comment(line.partition(":")[2].strip())[1]
+                lines[idx:idx + 1] = replacement
                 return ConfigChange(True, "expanded inline external_dirs", "\n".join(lines) + "\n")
-            if line.strip() == "external_dirs:":
+            if _external_dirs_block_line(line):
                 external_index = idx
                 break
 
@@ -1873,6 +1974,14 @@ def remove_external_dir_entries(config_text: str, entries: Iterable[str]) -> Con
 
 
 def _remove_external_dir_items(config_text: str, should_remove: Callable[[str], bool]) -> ConfigChange:
+    if config_text.startswith("\ufeff"):
+        change = _remove_external_dir_items(config_text[1:], should_remove)
+        return ConfigChange(change.changed, change.message, "\ufeff" + change.text)
+    prefix, body, suffix = _skills_document_parts(config_text)
+    if prefix or suffix:
+        change = _remove_external_dir_items(body, should_remove)
+        text = prefix + change.text + suffix if change.changed else config_text
+        return ConfigChange(change.changed, change.message, text)
     _validate_external_dirs_mutation_shape(config_text)
     lines = config_text.splitlines()
     changed = False
@@ -1881,8 +1990,11 @@ def _remove_external_dir_items(config_text: str, should_remove: Callable[[str], 
     in_external = False
     for line in lines:
         stripped = line.strip()
+        if stripped.startswith("#"):
+            output.append(line)
+            continue
         if _ends_top_level_node(line):
-            in_skills = stripped == "skills:"
+            in_skills = _skills_block_line(line)
             in_external = False
             output.append(line)
             continue
@@ -1902,10 +2014,12 @@ def _remove_external_dir_items(config_text: str, should_remove: Callable[[str], 
                 values = [value for value in inline.values if not should_remove(value)]
                 if len(values) != len(inline.values):
                     changed = True
-                    output.extend(_format_external_dirs(values))
+                    replacement = _format_external_dirs(values)
+                    replacement[0] += _split_trailing_comment(line.partition(":")[2].strip())[1]
+                    output.extend(replacement)
                     in_external = False
                     continue
-            in_external = stripped == "external_dirs:"
+            in_external = _external_dirs_block_line(line)
             output.append(line)
             continue
         output.append(line)

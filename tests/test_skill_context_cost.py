@@ -52,12 +52,34 @@ class SkillContextCostTests(unittest.TestCase):
         # expanding to the roughly 3% headroom prior entries permitted.
         # The feature-cost regression pins legacy body bytes, bounds these
         # two sections and also enforces (current - 1,943) < 126,000.
+        # 127,943 -> 129,886: main measures 126,593; repro-audit's mandatory
+        # Workflow Lane and Runtime Evidence rails measure +1,943 (128,536).
+        # The old allowance (1,350 bytes) is preserved, not widened; the
+        # increment and body caps below bound the audit itself.
         # 127,943 -> 129,950: HEAD c532cd5c4 measures 126,593; adding sprite-forge
         # and the visual-qa/show-reel/deliverable-package rails measures 128,600.
         # The exact +2,007 is sprite-forge's mandatory Workflow Lane (519) and
         # Runtime Evidence (1,446) plus 42 sibling rail bytes. The old allowance
         # (1,350 bytes) is preserved, not widened.
-        self.assertLess(profile["repeated"]["bytes"], 129_950)
+        # Merged with main: 126,593 + 1,943 + 2,007 = 130,543 measured, plus the
+        # same 1,350 allowance = 131,893.
+        self.assertLess(profile["repeated"]["bytes"], 131_893)
+
+    def test_repro_audit_context_increment_stays_bounded(self) -> None:
+        from omh.skills.context_cost import _skill_context_cost_profile
+        from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
+
+        templates = builtin_skill_templates()
+        references = builtin_skill_reference_templates()
+        full = _skill_context_cost_profile("full", templates, references)
+        without = _skill_context_cost_profile(
+            "full", [template for template in templates if template.name != "repro-audit"], references
+        )
+        audit = next(template for template in templates if template.name == "repro-audit")
+        increment = full["repeated"]["bytes"] - without["repeated"]["bytes"]
+        self.assertGreaterEqual(increment, 0)
+        self.assertLessEqual(increment, 2_000)
+        self.assertLessEqual(len(audit.content.encode("utf-8")), 8_000)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()
@@ -82,10 +104,15 @@ class SkillContextCostTests(unittest.TestCase):
 
         # Pre-feature producer measurements, not token/latency estimates. This
         # feature changes opening actions only, never indexed descriptions.
-        # Career adds its bounded 86-character entry; sprite-forge adds its
-        # 84-character line + newline (13,243 -> 13,328).
-        self.assertEqual(skill_index_chars(), 13_328)
-        baseline = {'research': 19_587, 'web-research': 11_495, 'source-finder': 9_221}
+        # Career adds its bounded 86-character entry; repro-audit its 84-character one;
+        # sprite-forge its line + newline (13,243 -> 13,328); merged with main's
+        # repro-audit line, 13,327 + 85 = 13,412.
+        self.assertEqual(skill_index_chars(), 13_412)
+        # research and web-research add the shipped `ru` trigger pack's routing
+        # signals (+446 and +316 bytes, after its review dropped the everyday
+        # and nested phrases) to their pre-feature bodies; the search guidance
+        # increment itself (286 and 305) is unchanged.
+        baseline = {'research': 20_033, 'web-research': 11_811, 'source-finder': 9_221}
         for name, before in baseline.items():
             record = skill_record(name)
             body = record.body().content

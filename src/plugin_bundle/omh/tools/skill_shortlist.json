@@ -1775,11 +1775,28 @@
 "situation":"Motion showcase to make",
 "terms":{
 "1":"based concept direction evidenc fram ground inspection local localiz measur produc qa render segment specific time user variant",
-"2":"animat approv author captur compell delivery different export instead introduction launch movement narrativ read rhythm script short showreel slid static timed turn video",
+"2":"animat approv author captur compell delivery different export hyperfram instead introduction launch movement narrativ promo promotional read rhythm script short showreel sizzl slid static timed turn video",
 "3":"film reproducibl work",
 "4":"audienc motion portfolio showcas sourc teaser",
 "5":"reel",
 "6":"product"
+}
+},
+{
+"anchors":"acc benchmark condition differ evaluation hellaswag identify norm number paper provenanc repro result scor",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-repro-audit",
+"name":"repro-audit",
+"situation":"Evaluation logs versus reported paper conditions",
+"terms":{
+"1":"evidenc exact gated never new report review versus",
+"2":"acc against benchmark check differ exist identify miss norm number provenanc record set whether without",
+"3":"compar model result scor",
+"4":"condition evaluation paper run suppli",
+"5":"hellaswag repro",
+"6":"log",
+"8":"audit"
 }
 },
 {
@@ -2047,7 +2064,7 @@
 }
 },
 {
-"anchors":"claud codex helper lack machin migration mode omc omo omx subagent vs worktree",
+"anchors":"claud codex helper lack machin migration mode omc omx subagent vs worktree",
 "hangul":"길지 넘겨 넘길 덱스 런타 로드 르메 메스 브에 비성 서브 실행 업트 에이 으로 이전 임으 작업 전트 준비 코덱 코드 코딩 클로 타임 트리 헤르",
 "hangul_anchors":"길지 넘겨 넘길 덱스 런타 로드 르메 메스 브에 비성 서브 실행 업트 에이 으로 이전 임으 작업 전트 코덱 코딩 클로 타임 트리 헤르",
 "label":"omh-executor-runtime-readiness",
@@ -2055,7 +2072,7 @@
 "situation":"Unsure whether Codex or Claude Code is ready",
 "terms":{
 "1":"another api befor capability choos compar connector credential external gap inventory named oh plugin toolbelt unsur user whether whol",
-"2":"helper lack machin migration miss omc omo omx run set subagent support vs",
+"2":"helper lack machin migration miss omc omx run set subagent support vs",
 "3":"mode ready",
 "4":"agent handoff herm worktree",
 "6":"claud code codex coding executor readiness tool",

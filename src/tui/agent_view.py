@@ -236,7 +236,7 @@ class AgentViewMixin:
 
         def draw() -> tuple[list[Line], TreeState]:
             return tree_lines(graph, self.roster, cols, cap, self.theme, frame, folds, self.tree_selected,
-                              self.color_depth, now)
+                              self.color_depth, now, self._aura_phase())
 
         lines, self.tree_state = draw()
         if self.tree_selected is not None and self.tree_selected not in self.tree_state.order:

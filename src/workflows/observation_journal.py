@@ -19,7 +19,7 @@ from ..coding.fanout_repair import (
     bounded_repair_checks,
 )
 
-from ..system.local_store import append_jsonl_locked, read_json_object, read_jsonl_objects, utc_now
+from ..system.local_store import append_jsonl_locked, read_jsonl_objects, read_runtime_record, utc_now
 from ..plugin_bundle.omh.run_records import (
     CODING_DELEGATION_FILE,
     LIFECYCLE_PROJECTION_SCHEMA_VERSION,
@@ -544,7 +544,7 @@ def _join_required_events(events: list[str]) -> str:
 
 def _journal_review_required(paths: OmhPaths, run_id: str) -> bool:
     try:
-        coding = read_json_object(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
+        coding = read_runtime_record(paths.runtime_runs_dir / run_id / CODING_DELEGATION_FILE)
     except (OSError, json.JSONDecodeError, ValueError):
         return False
     if not isinstance(coding, dict):

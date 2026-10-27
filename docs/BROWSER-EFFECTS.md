@@ -173,12 +173,3 @@ task rechecks at approval, abort/release removing held bytes, native mutators
 staying blocked, and concurrent replays sharing one attempt. The benchmark
 measures only inert-read classification p95 against a 0.1 ms threshold and
 reports zero attempt-store operations, browser roundtrips, and provider calls.
-
-During development, maintainers also ran local drivers against the reference
-adapter with an already-installed Chromium, and against installed Hermes
-`PluginContext`, registered `ToolEntry` handlers and real `PluginManager`
-hooks, using trusted synthetic-fixture approvals. Those drivers are not
-distributed with the repository. Their results are maintainer-local fixture
-evidence for interception, durable ordering, readback, and cleanup on the
-loopback fixture only. They are not a real human approval connector
-observation and not evidence for arbitrary websites.

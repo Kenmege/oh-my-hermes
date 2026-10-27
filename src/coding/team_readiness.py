@@ -86,7 +86,7 @@ def build_team_worker_readiness(paths: OmhPaths, *, target_limit: int | None = D
             "team_worker_events": list(TEAM_WORKER_EVENTS),
             "default_target_scan_limit": target_limit,
             "record_command_template": (
-                "omh runtime observe --session <session-id> --runtime-profile <hermes|omx-runtime|omo-runtime|omc-runtime> "
+                "omh runtime observe --session <session-id> --runtime-profile <hermes|omx-runtime|pi-family-runtime|omc-runtime> "
                 "--event <runtime_start|worktree_creation|worker_dispatch|worker_result> --summary <observed evidence>"
             ),
             "worker_event_requirement": "Observed worker_dispatch and worker_result records require --worker-ref.",

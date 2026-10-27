@@ -110,7 +110,10 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # longer pointed at todo_list, whose write would then be held. Its "(they
 # carry plan_stage)" reason is dropped to pay for the third plan (-1 on the
 # routed request). Re-derived from the producer.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5780
+# 5780 -> 5786: the pi-family runtime's profile was renamed, and the routed
+# coding handoff policy names it in its runtime list ("OMX/pi-family/OMC",
+# +6). Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5786
 # The same scenario set on the fallback: a session the awareness section did
 # not render for (a restart resume, a legacy id-rotating compaction, a refused
 # section, an older host) still gets the primer in the fenced context, so its
@@ -135,7 +138,9 @@ PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5780
 # producer.
 # 7217 -> 7216: the same `plan_todo` change (-1). Re-derived from the
 # producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7216
+# 7216 -> 7222: the same runtime-list rename (+6). Re-derived from the
+# producer.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7222
 
 SLOT_LIMITS: dict[str, int] = {
     "primer": AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,

@@ -283,10 +283,10 @@ EXECUTOR_MODEL_OPTIONS: Final[dict[str, tuple[dict[str, object], ...]]] = {
 #
 # Routing is expressed as semantic CATEGORIES -- what kind of thinking a unit
 # needs -- and a role or scale is resolved by naming the categories that serve
-# it. This is the rule the omo config already uses, and adopting it here means a
-# user with an omo config and a user without one go through the SAME rule
+# it. This is the rule the pi-family runtime config already uses, and adopting it
+# here means a user with that config and a user without one go through the SAME rule
 # engine; only the category->model table differs. Previously the built-ins were
-# a hand-written per-role table that had to be kept in sync with omo's semantics
+# a hand-written per-role table that had to be kept in sync with that config's semantics
 # by hand, and drifted from them.
 #
 # The local-inventory module imports these three names rather than restating
@@ -330,7 +330,7 @@ _ULW_CATEGORY_RE: Final[re.Pattern[str]] = re.compile(
 
 
 def canonical_model_category(value: object) -> str:
-    """Normalize one explicit OMO/ULW category or return an empty sentinel."""
+    """Normalize one explicit ULW model category or return an empty sentinel."""
     normalized = str(value or "").strip().casefold().replace("_", "-")
     if normalized.startswith("/ulw-"):
         normalized = normalized[5:]
@@ -363,7 +363,7 @@ CATEGORY_ROLE_SOURCES: Final[dict[str, tuple[str, ...]]] = {
     # `unspecified-low` closes the chain so the fallback names a DIFFERENT
     # model rather than repeating the head at a weaker effort.
     "brain": ("deep", "unspecified-low"),
-    # `unspecified-high` is omo's name for "the default working model", not for
+    # `unspecified-high` is the runtime config's name for "the default working model", not for
     # "the strongest one" -- that is `ultrabrain`. So standard implementation
     # heads on it, `small` drops to quick/unspecified-low, and `large` escalates
     # to ultrabrain/deep. All three rungs stay distinct.
@@ -1169,9 +1169,9 @@ def _resolve_hermes_recommendation_route(
 ) -> dict[str, object]:
     """Resolve Hermes against editorial policy and confirmed active models.
 
-    Hermes owns native provider bindings rather than an OMO executor catalog.
+    Hermes owns native provider bindings rather than a pi-family executor catalog.
     Recommendation resolution therefore consumes only the caller-confirmed
-    active set. The local OMO catalog is intentionally absent from this path.
+    active set. The local pi-family catalog is intentionally absent from this path.
     """
     from .model_recommendations import resolve_model_recommendation
 

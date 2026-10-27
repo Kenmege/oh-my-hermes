@@ -53,7 +53,7 @@ identical prompt. Nothing else about the pipeline changes per model.
 
 | Family | Matched by | Example ids |
 | --- | --- | --- |
-| `gpt` | `gpt-`; design-qualified alias `openai-gpt-` | `gpt-6-astra`, `gpt-5.6-sol`, `digitalocean/openai-gpt-5.6-sol` |
+| `gpt` | `gpt-`; design-qualified alias `openai-gpt-` | `gpt-6-astra`, `gpt-6.1-terra`, `gpt-5.6-sol`, `digitalocean/openai-gpt-5.6-sol` |
 | `claude` | `claude-`; design-qualified alias `anthropic-claude-`; bare tiers `opus`/`sonnet`/`haiku`/`fable`/`mythos` | `claude-fable-5-1`, `claude-mythos-5-1`, `digitalocean/anthropic-claude-opus-5` |
 | `gemini` | `gemini-` | `gemini-3.1-pro` |
 | `kimi` | `kimi-` | `kimi-k3`, `kimi-k3-ultrafast`, `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, `moonshotai/kimi-k3.1-pro` |
@@ -248,7 +248,7 @@ discipline for how those prompts are assembled:
   batching half itself; that sentence moved here.
 
 The first three originate from the stop-condition techniques the
-oh-my-openagent research surfaced for high-effort models (terminal-condition
+upstream agent-harness research surfaced for high-effort models (terminal-condition
 rules, criterion-bound blocking, capped re-review), generalized to every
 family. The fourth comes from the DeepSeek Harness review named above. The
 fifth generalizes that harness's priced-prefix composition constraint to
@@ -385,7 +385,7 @@ family's *known* failure mode. No family carries richer guidance than another
 without a stated reason, and no vendor is privileged. Provenance falls into
 three buckets, each named per family below:
 
-- **Adapted research** — stop-condition work from the oh-my-openagent
+- **Adapted research** — stop-condition work from an upstream agent-harness
   project on how high-effort reasoning models over-verify.
 - **Observed failure modes** — behavior seen in live OMH/Hermes usage of that
   family (recorded in the commits that introduced each block).
@@ -398,7 +398,7 @@ baseline-vs-calibrated prompt pairs where the *only* difference is the
 calibration block, and `tests/test_omh_live_model_benchmark.py` pins that
 pairing so a benchmark claim can never mix in other prompt changes.
 
-### `gpt` (GPT-5.6 Sol / Terra / Luna, GPT-6 Sol, GPT-6 Luna)
+### `gpt` (GPT-5.6 Sol / Terra / Luna, GPT-6 Sol, GPT-6 Luna, GPT-6.1 Terra)
 
 - **Model trait:** a strong long-horizon reasoner. Its characteristic waste
   is spending depth on things that are already decided: re-deriving facts it
@@ -410,7 +410,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   the contract away — GPT's tight compositional style tends to drop stated
   boundaries and criteria while shortening a prompt, and a tighter prompt
   that loses an invariant is a worse prompt.
-- **Source:** adapted research (oh-my-openagent stop-condition findings on
+- **Source:** adapted research (upstream agent-harness stop-condition findings on
   high-effort models), one of the two original calibration entries.
 - **Version rule:** the block above is written for the 5.6 generation and
   is what every `gpt-` id receives unless an exact-model override exists.
@@ -723,6 +723,60 @@ pairing so a benchmark claim can never mix in other prompt changes.
   `high` (the `deep` rung), and `gpt-6-sol` vs `gpt-6.1-sol` at `medium`
   (the last-resort rung).
 
+
+### `gpt-6.1-terra` (GPT-6.1 Terra, exact contract; `gpt` family calibration)
+
+- **Documented contract (official, developers.openai.com, read 2026-10-27):**
+  released 2026-10-26 (API changelog). The model page lists a 1,050,000-token
+  context, 922,000 max input, 128,000 max output, and a 2026-06-01 knowledge
+  cutoff. Reasoning effort runs `none` through `max` with `medium` the API
+  default. The latest-model guide says so directly: "GPT-6.1 Terra, GPT-6
+  Sol, and GPT-6 Luna support `none`". That is GPT-6 Luna's shape, not GPT-6.1
+  Sol's, so a no-reasoning request goes out as `none` and only `minimal` is
+  raised to `low` on record. Tool calling requires the Responses API.
+  `gpt-6.1-terra-pro` is the declared pro-reasoning-mode projection
+  (OpenRouter lists it at the base card), and a dated
+  `gpt-6.1-terra-YYYY-MM-DD` id projects onto the base.
+- **Price (official):** 1 / 5 per MTok, cached input 0.05 (5% of input, the
+  `APPROX_CACHE_READ_RATIO` row), 30-minute cache writes 1.25 and 12-hour
+  2.50, the >272K long-context multiplier, Batch/Flex at half and Fast mode
+  at double. No Ultrafast tier: the Ultrafast guide names only Astra and
+  6.1 Sol. That is half of 6.1 Sol's card and below GPT-5.6 Terra's 2 / 12.
+- **Surfaces (official-client and observed):** the Codex client's catalog
+  (openai/codex `models-manager`, read 2026-10-27) lists `low` through `max`
+  plus the Codex-only `ultra`, a `low` default, a 500K context with an 872K
+  maximum, and the same base instructions as GPT-6 Astra and GPT-6.1 Sol. It
+  names no upgrade from GPT-5.6 Terra. Hermes v0.22.5 and origin/main
+  `a382af23f4` (observed) match the id to no GPT-6 effort prefix. On the
+  Codex route Hermes therefore clamps `max` to `xhigh` with no notice and
+  falls back to a 256K context. Neither build has a price row. A chain that
+  names Terra at `max` on the Codex route actually runs `xhigh` until
+  Hermes adds the id to its GPT-6 tier tables.
+- **Model trait:** the guide states the GPT-6 family traits from Astra's
+  behaviour and gives Terra no prompting guidance of its own. The model page
+  positions it for visual reasoning, precise computer use, and writing. The
+  vendor still points the most complex coding at 6.1 Sol or Astra (launch
+  coverage). Vendor-reported numbers (Terminal-Bench 4.0 50.3% at `max`,
+  Agents' Last Exam +15 pp over GPT-5.6 Terra at `medium`, and the error-prompt
+  set) are labeled vendor-reported and drive no placement.
+- **What OMH injects:** the `gpt` family block, unchanged. There is no exact
+  override. The Codex catalog gives Terra Astra's base prompt as it does 6.1
+  Sol, but the 2026-10-02 measurement found the Astra-text override had no
+  measurable effect on 6.1 Sol, so the onboarding copies no unmeasured text.
+- **Placement:** none. GPT-5.6 Terra's slots went to GPT-6 Sol on 2026-09-23,
+  so no Terra slot exists for this id to inherit, and joining a shipped
+  chain is an owner decision. An operator places it with
+  `omh model-chains set <category> "gpt-6.1-terra:medium, ..."`.
+- **Measured (2026-10-27, `benchmarks/live-model-tools/v1`):** Terra vs 6.1
+  Sol at `high` on the Codex subscription, with the family block on both, so
+  the model is the only difference. The clean Terra arm passed the same 18 /
+  30 instances as Sol with 5.2% fewer tokens per instance (CI [−7,245,
+  +182], spans zero). A first Terra arm lost six instances to a 25-second
+  burst of child-process crashes, a runtime interruption. Its 24 completed
+  instances agree with the clean arm, and same-model drift was +1.5%. This
+  corpus tops out at 18 / 30 and has no read or lsp passes, so it says
+  nothing about the hardest coding, where the vendor still points to Sol.
+  Full tables are in the benchmark README.
 ### `claude` (Fable 5.1, Mythos 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5, Haiku)
 
 - **Model trait:** conscientious to a fault. Left alone it grows the
@@ -1420,7 +1474,7 @@ pairing so a benchmark claim can never mix in other prompt changes.
   Hermes Agent DeepSeek provider profile, reasoning-effort table, and
   `reasoning_content` replay path, read the same day); community
   (OpenRouter's model listing for the gateway id and the long-horizon
-  characterization, and the oh-my-openagent / oh-my-pi / models.dev
+  characterization, and the pi-family runtime / oh-my-pi / models.dev
   handling surveyed for divergence), each labeled as such above.
 - **Persona language after an OMH skill load (2026-10-01):** on a Korean
   persona, `deepseek-v4.1-flash-ultrafast` flipped the reply after an OMH
@@ -1808,6 +1862,7 @@ choose models by, not a guarantee for another persona or skill.
 | `gpt-6.1-sol` (exact-model override) | yes → `gpt` | yes, both override tables (Astra's wording, byte for byte), resolved before the family block | exact documented contract (Astra's `low`-floor ladder, no `none`; the Codex client's ladder recorded beside it without the Codex-only `ultra`); `gpt-6.1-sol-pro` inherits through a declared projection; editorial for 6.1 Sol, the `family` vs `optimized` pair is the named follow-up |
 | `gpt-6-sol` (exact contract, no exact calibration; retired from the shipped chains 2026-10-01) | yes → `gpt` | yes, through the family block | exact documented contract (the API `none`-to-`max` ladder; the Codex client's ladder recorded beside it without `none` and without the Codex-only `ultra`); no exact counter: while it held `deep@high` and `main` (until 2026-10-01) those slots reached the calibrated tiers, and none was added because the Codex Sol prompt's keep-working sentence is not importable and no `family` vs `optimized` pair has run; the three generation pairs are the named follow-up |
 | `gpt-6-luna`, `claude-opus-5-5` (exact contracts, no exact calibration) | yes → `gpt` / `claude` | yes, through the family block | exact documented contracts (Luna's `none`-to-`max` ladder; Opus 5.5's always-on thinking, forced-`tool_choice` 400, and 0.05x cache reads); no exact counter because neither shipped placement reaches the high-effort tier on the subagent side and the Opus composer block is kept byte-stable per the vendor's Opus 5.5 prompting guide; the old-vs-new generation pairs are the named follow-up |
+| `gpt-6.1-terra` (exact contract, no exact calibration) | yes → `gpt` | yes, through the family block | exact documented contract (Luna's `none`-to-`max` ladder, `-pro` projection, 5% cache reads); recognized, priced, and provider-mapped but in no shipped chain; Hermes' Codex route clamps its `max` to `xhigh` until Hermes adds the id to its GPT-6 tier tables |
 | `openai-gpt-`, `anthropic-claude-` (design-qualified aliases) | yes → `gpt` / `claude` | yes, through the design family | concrete models.dev/OpenCode serving ids carry these sub-prefixes; their catalog `base_model` fields establish the underlying design family |
 | other `openai-`, `anthropic-` vendor-qualified ids | recognized as model targets, family `unknown` | no → `generic` | vendor qualification alone does not establish a design; O-series, image, and emerging ids remain uncalibrated |
 | `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed` (exact contracts, no exact calibration) | yes → `kimi` | yes, through the family block | exact documented contracts (three-rung `low`/`high`/`max` ladder with `max` as default, every other rung raised on record; Highspeed has its own rate card); K3.1 Pro holds every former Kimi K3 slot since 2026-10-24, Highspeed is recognition-only; the K3-vs-K3.1 pair is the named follow-up, blocked on a served route |

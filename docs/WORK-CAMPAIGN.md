@@ -19,7 +19,7 @@ covers the host boundary, the CLI, and the evidence states in more detail.
 
 The normal Hermes chat parent retains its model and narrates progress. One
 campaign orchestrator uses the existing configurable `architect` chain
-(Fable-first by default). It owns planning, dependency changes, dispatch,
+(its shipped head by default). It owns planning, dependency changes, dispatch,
 results, conflicts, the broad verification queue, and go/no-go. Workers use
 the independently configurable `ultrabrain` chain (Astra-first by default).
 Owner and worker model/provider/effort overrides take precedence independently.
@@ -189,7 +189,7 @@ Each arm of `work_campaign_canary/v1` emits a `measurement_provenance` list
 containing only `source`, `record_path`, `record_digest`, `input_path`,
 `input_digest`, and `run_ref`. This receipt-binding metadata is distinct from
 the model-selection vocabulary read by `route_provenance()` from
-`coding_model_route/*`; it never selects or changes a route. The unreleased
+`coding_model_route/*`; it never selects or changes a route. The
 canary contract uses `measurement_provenance` on both input rows and output
 arms, not the earlier `provenance` spelling; there is no compatibility alias.
 Observed failed, cancelled, and unknown outcomes count in the completion

@@ -54,7 +54,7 @@ from .hermes_memory import demotion_origin_ref
 from .memory_admission import MODEL_CAPTURE_SOURCE
 from .memory_prefetch_receipt import MAX_PREFETCH_RECEIPT_BYTES, prefetch_receipt_path
 from .memory_state_files import state_file_lock, write_text_atomic
-from .memory_store_io import scan_project_memory_records
+from .memory_store_io import guard_store_write, scan_project_memory_records
 from .iso_datetime import strict_fromisoformat
 
 DIGEST_WINDOW_CAP_DAYS = 7
@@ -114,7 +114,7 @@ def _advance_session_mark(omh_home: str | Path, mark: str, at: datetime) -> None
     is replaced, since nothing in it could be kept, and so is a mark further
     ahead than ``MARK_FUTURE_SKEW_SECONDS``, which no reader honours either."""
     path = session_close_path(omh_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    guard_store_write(path, omh_home=Path(omh_home).expanduser())
     stamp = at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     with state_file_lock(path):
         state, marks = _read_session_marks(path)

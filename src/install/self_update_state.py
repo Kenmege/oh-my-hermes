@@ -134,6 +134,8 @@ def interrupted_activation(
         pointed = require_generation_path(root, pointed, None, "current pointer target")
         if same_existing_path(pointed, candidate):
             return candidate, previous
+    if state["activation_in_progress"].get("restore_required") is True:
+        return candidate, previous
     shutil.rmtree(candidate, ignore_errors=True)
     state["activation_in_progress"] = None
     save_state(root, state)

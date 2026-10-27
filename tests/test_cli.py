@@ -45,6 +45,7 @@ from omh.wrapper_sessions import (
     record_plan_decision,
     select_wrapper_session_executor,
 )
+from omh.coding.pi_family_interop import RUNTIME_CONFIG_FILES, RUNTIME_HOME
 
 
 # Fake `_detect_external_cli_profiles` result for setup-wizard tests that
@@ -439,7 +440,7 @@ class CliTests(unittest.TestCase):
         cases = (
             ("codex", "$ai-slop-cleaner clean delegation code", "executor_handoff", "ai-slop-cleaner", "command_template", "$ai-slop-cleaner {message}", True),
             ("omx-runtime", "$ultrawork complete the goal", "runtime_handoff", "ultrawork", "display_only", "$ultrawork {message}", False),
-            ("omo-runtime", "$ultrawork complete the goal", "runtime_handoff", "ultrawork", "skill_reference", "", False),
+            ("pi-family-runtime", "$ultrawork complete the goal", "runtime_handoff", "ultrawork", "skill_reference", "", False),
             ("omc-runtime", "$ultrawork complete the goal", "runtime_handoff", "ultrawork", "descriptor_only", "", False),
             ("hermes", "$ultrawork complete the goal", "runtime_handoff", "ultrawork", "display_only", "/ulw-work {message}", False),
         )
@@ -10177,9 +10178,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
-            omo = root / ".omo" / "omo.json"
-            omo.parent.mkdir(parents=True)
-            omo.write_text(json.dumps({"models": [{"provider": "anthropic", "model_id": "claude-opus-5-5"}]}), encoding="utf-8")
+            runtime_config = root / RUNTIME_HOME / RUNTIME_CONFIG_FILES[0]
+            runtime_config.parent.mkdir(parents=True)
+            runtime_config.write_text(json.dumps({"models": [{"provider": "anthropic", "model_id": "claude-opus-5-5"}]}), encoding="utf-8")
             event = root / "event.json"
             event.write_text(
                 json.dumps(
@@ -10600,7 +10601,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("plain OMX runtime", strategy["fallback"])
             self.assertIn("Runtime capability discovery:", payload["runtime_handoff"]["prompt_template"])
             self.assertIn("runtime-native workflow templates, skills, worker lanes, subagents, MCP tools", payload["runtime_handoff"]["prompt_template"])
-            self.assertIn("OMX/OMO/OMC templates when actually available", payload["runtime_handoff"]["prompt_template"])
+            self.assertIn("OMX/pi-family/OMC templates when actually available", payload["runtime_handoff"]["prompt_template"])
             self.assertIn("These are examples, not proof of availability.", payload["runtime_handoff"]["prompt_template"])
             self.assertIn("continue with solo runtime execution", payload["runtime_handoff"]["prompt_template"])
             self.assertIn("local_capabilities_used", payload["runtime_handoff"]["prompt_template"])
@@ -12781,6 +12782,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             # Every profile shares the primary's OMH home, so one setup run
             # writes the same runtime/state.json once per Hermes home.
             (hermes_home / "profiles" / "bot").mkdir(parents=True, exist_ok=True)
+            # A real named profile has host identity; an empty shell is ignored.
+            (hermes_home / "profiles" / "bot" / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
             config_path = hermes_home / "config.yaml"
 
@@ -12848,6 +12851,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             hermes_home = root / ".hermes"
             profile = hermes_home / "profiles" / "bot"
             profile.mkdir(parents=True, exist_ok=True)
+            # Seed genuine profile identity before expecting setup to configure it.
+            (profile / "SOUL.md").write_text("Profile identity\n", encoding="utf-8")
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
 
             self.assertEqual(run_cli(base + ["setup", "--with-plugin", "--yes"])[0], 0)

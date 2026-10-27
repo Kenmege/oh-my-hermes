@@ -6126,7 +6126,7 @@ A single-owner task, a small parallel task, or an open-ended loop is not a campa
 
 ```text
 current chat parent (model unchanged, narrates, may display or cancel)
-  -> exactly one campaign orchestrator on the `architect` route (Fable-first by shipped default)
+  -> exactly one campaign orchestrator on the `architect` route (its shipped chain head by default)
        -> bounded leaves on the `ultrabrain` route (Astra-first by shipped default)
        -> conflict decisions and one integration fan-in
   -> one integrated, verified result back to the chat parent
@@ -6373,9 +6373,9 @@ Load this reference once the coding owner is already explicitly chosen and a pro
 
 ## 1. Reading The Skill Set
 
-Run `omh coding executor-skills --profile <profile> [--project-root <root>] [--unit-role <role>]` before composing anything. It is a thin, read-only wrapper over local discovery: `--profile` selects which executor's declared skills to read (`claude-code`, `codex`, or `omo-runtime`; `hermes` is rejected -- Hermes-native lanes never route through this command), `--project-root` also probes project-local Claude Code skills, and `--unit-role` additionally returns a suggested sequence and, when a genuine arrangement choice exists, a selection card.
+Run `omh coding executor-skills --profile <profile> [--project-root <root>] [--unit-role <role>]` before composing anything. It is a thin, read-only wrapper over local discovery: `--profile` selects which executor's declared skills to read (`claude-code`, `codex`, or `pi-family-runtime`; `hermes` is rejected -- Hermes-native lanes never route through this command), `--project-root` also probes project-local Claude Code skills, and `--unit-role` additionally returns a suggested sequence and, when a genuine arrangement choice exists, a selection card.
 
-The payload is `executor_skill_discovery/v1`: `sources` (one entry per probed location, each with a `status` of `present`, `absent`, `unreadable`, or `unsupported`, plus a `reason` when not `present`), `skills` (each entry carries `name`, `invocation`, `role`, `role_score`, and `source` -- never a description), `rejected_name_count`, and a `claim_boundary` that must ride into the composed prompt's evidence boundary unchanged. `omo-runtime` always reports its one source as `unsupported`: its host CLIs declare no skill layout this repo can verify, so the payload says so instead of coming back empty with no trace. The command also accepts the remaining executor profiles (`generic`, `omx-runtime`, `omc-runtime`); those have no probed skill layout at all and return an empty `sources` map -- treat that exactly like an all-absent result and take the explicit-generic path.
+The payload is `executor_skill_discovery/v1`: `sources` (one entry per probed location, each with a `status` of `present`, `absent`, `unreadable`, or `unsupported`, plus a `reason` when not `present`), `skills` (each entry carries `name`, `invocation`, `role`, `role_score`, and `source` -- never a description), `rejected_name_count`, and a `claim_boundary` that must ride into the composed prompt's evidence boundary unchanged. `pi-family-runtime` always reports its one source as `unsupported`: its host CLIs declare no skill layout this repo can verify, so the payload says so instead of coming back empty with no trace. The command also accepts the remaining executor profiles (`generic`, `omx-runtime`, `omc-runtime`); those have no probed skill layout at all and return an empty `sources` map -- treat that exactly like an all-absent result and take the explicit-generic path.
 
 ## 2. Role Recipes
 
@@ -6569,8 +6569,8 @@ _DOMAIN_ENGINEERING_ATTRIBUTION = """## Attribution
 
 Concept lineage only. The idea of a mandatory per-language reference gate that
 escalates on `unsafe`/FFI contact, and of a hypothesis-first native debugging
-loop, is adapted from the `programming` and `debugging` skills of the
-`omo-ai` plugin; the DAP-over-printf preference is adapted from `can1357/oh-my-pi`'s
+loop, is adapted from the `programming` and `debugging` skills of an
+upstream coding-agent plugin; the DAP-over-printf preference is adapted from `can1357/oh-my-pi`'s
 first-class debug adapter tooling. No upstream text is reproduced -- the
 wording, the artifact vocabulary, and the `prepared_not_observed` claim
 boundary are OMH's own, and OMH keeps its no-execution boundary: every command
@@ -12008,7 +12008,7 @@ DESIGN_NAMED_BAR = (
 )
 
 # Concept lineage only. The wording in these references is OMH's own — the
-# nearest upstream architecture (oh-my-openagent's frontend skill) is under
+# nearest upstream architecture (the frontend skill credited below) is under
 # the Sustainable Use License, so no upstream text is reproduced anywhere in
 # this family; its permissively licensed design upstreams are credited as
 # the idea sources they are.
@@ -12862,10 +12862,21 @@ axis explicitly; a PASS with no named evidence per axis is not a review.
   broken CJK line-height.
 - **Spacing rhythm** — values come from the scale; sibling gaps agree;
   sections breathe in proportion to their weight. FAIL: off-scale values,
-  touching sections, arrhythmic padding.
+  touching sections, arrhythmic padding, a logo or identity mark with less
+  than one of its own text rows of clear space from the frame or window edge
+  (an intentional crop is exempt).
 - **Color system** — layered backgrounds, text hierarchy through color, a
   deliberate accent budget, semantic states. FAIL: one flood color plus
   gray; decorative gradients with no role; contrast under the floor.
+  For a composed frame (promo, poster, slide, end card), judge harmony from
+  a written hue-family list, not by eye: every family on screen with its hex
+  values and where it appears (background, chrome, subject, logo, captions,
+  accents). The captured product or brand palette is given and never
+  repainted; the surrounding composition adds at most one accent family
+  beyond it. Neutrals, semantic-state colors and data-series palettes are
+  listed but not counted. Text contrast is at least 4.5:1, or 3:1 for large
+  type, on the background it actually sits on. Run the list before render;
+  after render it only confirms.
 - **State coverage** — primitives show hover, focus-visible, active,
   disabled, loading, error, and empty. FAIL: any interactive element with
   only a default state.
@@ -12883,8 +12894,9 @@ axis explicitly; a PASS with no named evidence per axis is not a review.
   the brief is operational or data-dense. FAIL: an editorial prior applied to
   a dashboard, fintech, or developer-tool surface with no stated reason.
 - **Chosen, not inherited** — framework blue, glass surfaces, gradient
-  accents, the default UI typeface, per-surface shadows, and uniform column
-  grids each carry a stated reason or are replaced. FAIL: a default present
+  accents, the default UI typeface, per-surface shadows, uniform column
+  grids, and decorative meta text (window title bars, dimension labels,
+  invented paths) each carry a stated reason or are replaced. FAIL: a default present
   with no rationale, checked against the review prompts in
   `omh-frontend/references/taste-foundations.md`.
 

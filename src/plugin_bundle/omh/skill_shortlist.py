@@ -42,6 +42,7 @@ import threading
 import unicodedata
 
 from .hermes_session_commands import NATIVE_LOOP_CADENCE_HINT_KEY
+from .pi_family_names import SCORING_ONLY_LEXICAL_TERMS
 from .reference_regions import executable_routing_text
 
 SIDECAR_PATH = Path(__file__).resolve().parent / "tools" / "skill_shortlist.json"
@@ -182,11 +183,19 @@ def _index() -> _Index | None:
         skills: list[_Skill] = []
         document_frequency: dict[str, int] = {}
         hangul_frequency: dict[str, int] = {}
+        stopwords = frozenset(str(payload["stopwords"]).split())
+        stem_exceptions = frozenset(str(payload["stem_exceptions"]).split())
         for row in payload["skills"]:
             weights: dict[str, float] = {}
             for key, terms in row["terms"].items():
                 for term in str(terms).split():
                     weights[term] = float(key)
+            # Trigger words the sidecar never writes (an external product name,
+            # `SCORING_ONLY_LEXICAL_TERMS`): the source index counts them as
+            # trigger words, so they are added back here at the trigger weight.
+            hidden = _scoring_only_terms(str(row["name"]), stopwords, stem_exceptions)
+            for term in hidden:
+                weights[term] = weights.get(term, 0.0) + _TRIGGER_FIELD_WEIGHT
             # The source sums each field's weight per term in field order; the
             # sum of the per-term totals is the same whole number.
             length = float(sum(weights.values()))
@@ -202,7 +211,7 @@ def _index() -> _Index | None:
                     situation=str(row["situation"]),
                     weights=weights,
                     length=length,
-                    anchors=frozenset(str(row["anchors"]).split()),
+                    anchors=frozenset(str(row["anchors"]).split()) | hidden,
                     hangul=hangul,
                     hangul_anchors=frozenset(str(row["hangul_anchors"]).split()),
                 )
@@ -256,6 +265,20 @@ def catalog_skill_label(name: str) -> str:
     if index is None:
         return ""
     return next((skill.label for skill in index.skills if skill.name == name), "")
+
+
+# `FIELD_WEIGHTS["triggers"]` in `omh.routing.lexical_shortlist`.
+_TRIGGER_FIELD_WEIGHT = 2.0
+
+
+def _scoring_only_terms(skill: str, stopwords: frozenset[str], exceptions: frozenset[str]) -> frozenset[str]:
+    """`lexical_shortlist.scoring_only_terms`, read without the loaded index."""
+    terms: set[str] = set()
+    for raw in _routing_terms(" ".join(SCORING_ONLY_LEXICAL_TERMS.get(skill, ()))):
+        for part in raw.split("-"):
+            if len(part) >= 2 and part.isascii() and part.isalnum() and part not in stopwords:
+                terms.add(_stem(part, exceptions))
+    return frozenset(terms)
 
 
 def _installed(skill: _Skill, installed: frozenset[str] | None) -> bool:

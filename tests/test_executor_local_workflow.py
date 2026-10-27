@@ -18,7 +18,7 @@ class ExecutorLocalWorkflowTests(unittest.TestCase):
             "codex": ("codex_skill", "command_template", "$ultrawork {message}"),
             "hermes": ("hermes_installed_skill", "display_only", "/ulw-work {message}"),
             "omx-runtime": ("omx_skill", "display_only", "$ultrawork {message}"),
-            "omo-runtime": ("omo_skill_reference", "skill_reference", ""),
+            "pi-family-runtime": ("pi_family_skill_reference", "skill_reference", ""),
             "omc-runtime": ("omc_skill_descriptor", "descriptor_only", ""),
         }
 
@@ -65,7 +65,7 @@ class ExecutorLocalWorkflowTests(unittest.TestCase):
     def test_hermes_uses_installed_display_name_and_reference_profiles_are_empty(self) -> None:
         hermes = self._binding("hermes", "ultrawork")
         self.assertEqual(hermes["candidate"]["invocation"]["template"], "/ulw-work {message}")
-        for profile in ("omo-runtime", "omc-runtime"):
+        for profile in ("pi-family-runtime", "omc-runtime"):
             with self.subTest(profile=profile):
                 binding = self._binding(profile, "ultrawork")
                 invocation = binding["candidate"]["invocation"]
@@ -93,7 +93,7 @@ class ExecutorLocalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(validate_executor_local_workflow(binding), [])
 
-        for profile in ("hermes", "omx-runtime", "omo-runtime", "omc-runtime"):
+        for profile in ("hermes", "omx-runtime", "pi-family-runtime", "omc-runtime"):
             with self.subTest(profile=profile):
                 runtime = build_executor_local_workflow(
                     profile=profile,

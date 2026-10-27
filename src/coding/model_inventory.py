@@ -1,7 +1,7 @@
 """Deterministic local model inventory (`model_inventory/v1`).
 
 Reporting-only observation of which coding models the user has locally
-activated: agent CLIs on PATH, models named by the oh-my-openagent (omo)
+activated: agent CLIs on PATH, models named by the pi-family runtime
 config, opencode provider config, and opencode auth provider names. The
 inventory answers "what does this user actually have?" before any delegation
 or routing decision is proposed.
@@ -32,6 +32,11 @@ from typing import Callable, Final, Mapping
 
 from ..system.local_store import utc_now
 from ..system.metadata_safety import require_opaque_metadata_ref
+from .pi_family_interop import (
+    OPENCODE_RUNTIME_CONFIG_RELATIVE,
+    PI_DISTRIBUTION_HOME,
+    PI_DISTRIBUTION_HOST,
+)
 from .executor_auth_signals import executor_auth_signals
 from .model_discovery import discover_local_models
 from .model_routing import (
@@ -60,7 +65,7 @@ CLI_PRESENCE_COMMANDS: Final[tuple[str, ...]] = (
     "claude",
     "opencode",
     "pi",
-    "senpi",
+    PI_DISTRIBUTION_HOST,
     "gemini",
     "grok",
     "qwen",
@@ -86,33 +91,30 @@ MODEL_DOMAIN_AFFINITY_CLAIM_BOUNDARY: Final[str] = (
     "always wins."
 )
 
-# The executor profile a locally-derived catalog belongs to: omo ships either
-# as an extension of a pi-family host CLI (pi, or its senpi distribution) or
+# The executor profile a locally-derived catalog belongs to: the pi-family
+# runtime ships either as an extension of a pi-family host CLI (pi, or its
+# distribution host) or
 # as an opencode plugin — both layouts are first-class hosts (see
-# OMO_RUNTIME_HOST_CANDIDATES in fanout_dispatch). Models named by its config
-# run under the OMO runtime surface, never under codex/claude-code (whose
+# PI_FAMILY_HOST_CANDIDATES in fanout_dispatch). Models named by its config
+# run under the pi-family runtime surface, never under codex/claude-code (whose
 # catalogs stay built-in). Catalog compatibility boundary: the legacy
 # route-authoritative model list is still read ONLY from the opencode config
-# path (`~/.config/opencode/oh-my-openagent.json`). The separate
-# reporting-only discovery payload observes canonical `~/.omo/omo.json[c]`
-# and `~/.omo/models.json` metadata, but never promotes those observations
+# path (`OPENCODE_RUNTIME_CONFIG_RELATIVE`). The separate reporting-only
+# discovery payload observes the runtime's canonical home config
+# (`RUNTIME_HOME` / `RUNTIME_CONFIG_FILES`, `RUNTIME_MODELS_FILE`) metadata, but never promotes those observations
 # into this catalog. Unknown `~/.omp` layouts remain explicitly unverified.
-MODEL_INVENTORY_CATALOG_PROFILE: Final[str] = "omo-runtime"
+MODEL_INVENTORY_CATALOG_PROFILE: Final[str] = "pi-family-runtime"
 
 LOCAL_MODEL_CATALOG_SCHEMA_VERSION: Final[str] = "local_model_catalog/v1"
 
 # The routing rule is ONE rule, defined in `model_routing` and imported here so
-# a locally-derived catalog and the built-in table cannot drift apart. These
-# aliases keep the omo-flavoured names that callers and tests already use; the
-# categories themselves are not omo-specific, they are how OMH routes.
-OMO_CATEGORY_ROLE_SOURCES: Final[dict[str, tuple[str, ...]]] = CATEGORY_ROLE_SOURCES
-OMO_CATEGORY_SCALE_SOURCES: Final[dict[str, tuple[str, ...]]] = CATEGORY_SCALE_SOURCES
+# a locally-derived catalog and the built-in table cannot drift apart.
 
-_OMO_AGENT_CONFIG_RELATIVE: Final[str] = ".config/opencode/oh-my-openagent.json"
+_RUNTIME_AGENT_CONFIG_RELATIVE: Final[str] = OPENCODE_RUNTIME_CONFIG_RELATIVE
 _OPENCODE_CONFIG_RELATIVE: Final[str] = ".config/opencode/opencode.json"
 _OPENCODE_AUTH_RELATIVE: Final[str] = ".local/share/opencode/auth.json"
 _PI_AUTH_RELATIVE: Final[str] = ".pi/agent/auth.json"
-_SENPI_AUTH_RELATIVE: Final[str] = ".senpi/agent/auth.json"
+_PI_DISTRIBUTION_AUTH_RELATIVE: Final[str] = f"{PI_DISTRIBUTION_HOME}/agent/auth.json"
 
 # Narrow by design (mirrors `_claude_marker`): a failure to read or parse a
 # config marks the source `unreadable` and nothing else — no broad except.
@@ -128,10 +130,10 @@ def local_model_inventory(
     """Return the metadata-only inventory of locally-activated coding models."""
     base = home if home is not None else Path.home()
     cli_presence = {command: shutil.which(command) is not None for command in CLI_PRESENCE_COMMANDS}
-    omo_source, omo_models, category_chains = _omo_agent_config_source(base / _OMO_AGENT_CONFIG_RELATIVE)
+    runtime_source, runtime_models, category_chains = _runtime_agent_config_source(base / _RUNTIME_AGENT_CONFIG_RELATIVE)
     provider_source = _top_level_key_source(base / _OPENCODE_CONFIG_RELATIVE, section="provider")
     auth_source = _top_level_key_source(base / _OPENCODE_AUTH_RELATIVE, section="")
-    senpi_auth_source = _top_level_key_source(base / _SENPI_AUTH_RELATIVE, section="")
+    pi_distribution_auth_source = _top_level_key_source(base / _PI_DISTRIBUTION_AUTH_RELATIVE, section="")
     pi_auth_source = _top_level_key_source(base / _PI_AUTH_RELATIVE, section="")
     auth_signals = executor_auth_signals(base)
     signal_profiles = auth_signals.get("profiles", {})
@@ -140,7 +142,7 @@ def local_model_inventory(
         for profile, entry in signal_profiles.items()
         if isinstance(entry, Mapping)
     }
-    available_models = _aggregated_models(omo_models)
+    available_models = _aggregated_models(runtime_models)
     families = sorted({str(entry["family"]) for entry in available_models if entry["family"]})
     discovery = (
         discover_local_models(base, limits=discovery_limits, clock=discovery_clock)
@@ -155,16 +157,16 @@ def local_model_inventory(
                 "status": "present" if any(cli_presence.values()) else "absent",
                 "commands": cli_presence,
             },
-            "omo_agent_config": omo_source,
+            "runtime_agent_config": runtime_source,
             "opencode_config_providers": provider_source,
             "opencode_auth_providers": auth_source,
             "pi_auth_providers": pi_auth_source,
-            "senpi_auth_providers": senpi_auth_source,
+            "pi_distribution_auth_providers": pi_distribution_auth_source,
             "executor_auth_signals": {"status": "present", "login_markers": login_markers},
         },
         "available_models": available_models,
         "families_present": families,
-        "omo_category_chains": {name: list(chain) for name, chain in sorted(category_chains.items())},
+        "runtime_category_chains": {name: list(chain) for name, chain in sorted(category_chains.items())},
         "domain_affinity_notes": [
             {
                 "domain": domain,
@@ -179,7 +181,7 @@ def local_model_inventory(
     }
 
 
-def _omo_agent_config_source(
+def _runtime_agent_config_source(
     path: Path,
 ) -> tuple[dict[str, object], list[tuple[str, str, str]], dict[str, list[dict[str, str]]]]:
     """Read (source payload, model entries, per-category ordered chains).
@@ -282,7 +284,7 @@ def _read_json(path: Path) -> dict[str, object] | None:
 
 
 def inventory_model_catalog(inventory: Mapping[str, object]) -> dict[str, object] | None:
-    """Derive the local model catalog for the OMO runtime from an inventory payload.
+    """Derive the local model catalog for the pi-family runtime from an inventory payload.
 
     Pure data transform (no I/O): callers observe the inventory once and pass
     it in, so the route resolver stays free of filesystem reads. Returns None
@@ -314,7 +316,7 @@ def inventory_model_catalog(inventory: Mapping[str, object]) -> dict[str, object
                 "reasoning_efforts": (),
             }
         )
-    category_chains = inventory.get("omo_category_chains", {})
+    category_chains = inventory.get("runtime_category_chains", {})
     chains: dict[str, tuple[dict[str, str], ...]] = {}
     category_catalog: dict[str, tuple[dict[str, str], ...]] = {}
     if isinstance(category_chains, Mapping):
@@ -322,20 +324,20 @@ def inventory_model_catalog(inventory: Mapping[str, object]) -> dict[str, object
             merged = merged_category_chain(category_chains, (category,))
             if merged:
                 category_catalog[category] = tuple(merged)
-        for role, source_categories in OMO_CATEGORY_ROLE_SOURCES.items():
+        for role, source_categories in CATEGORY_ROLE_SOURCES.items():
             merged = merged_category_chain(category_chains, source_categories)
             if merged:
                 chains[role] = tuple(merged)
         # `{role}:{scale}` chains, keyed exactly like the `research:{depth}`
         # entries the resolver already looks up, so the local path and the
         # built-in path answer the same question the same way.
-        for role in OMO_CATEGORY_ROLE_SOURCES:
+        for role in CATEGORY_ROLE_SOURCES:
             # `research` is excluded because the resolver skips the scale dial
             # for it in favour of depth; deriving `research:small` would be a
             # chain nothing can ever look up.
             if ":" in role or role == "research":
                 continue
-            for scale, source_categories in OMO_CATEGORY_SCALE_SOURCES.items():
+            for scale, source_categories in CATEGORY_SCALE_SOURCES.items():
                 merged = merged_category_chain(category_chains, source_categories)
                 if merged:
                     chains[f"{role}:{scale}"] = tuple(merged)
