@@ -66,9 +66,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # 522328 -> 522372 and the digest re-derived: the ru trigger pack, after
             # its review, moves sibling rows' trigger previews and `+N more`
             # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
-            # career row is unchanged.
+            # career row is unchanged. The digest moved again, not the total,
+            # when the pack kept one phrase of each nested held-back pair:
+            # six rows' `+N more` counts drop (code-review's by two) at the same width.
             (skill_capabilities, 522372, FULL_ROW_DELTA_CAP,
-             '29f587db13a801a914c73f909131354d31313bf8ce1437356e0b55568824f4b9',
+             '8970ab66a6a1b89655ddda4c69c9758baf66f78c52e0e8a19df17febb345f57f',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -137,7 +139,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # and role-slot wording); only model-setup moves versus main.
         # Re-derived for the ru trigger pack: the 49 bodies it covers gain
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
-        self.assertEqual(_digest(legacy_hashes), '3e33f8f5b26782a6bd9dc054ee30a69a54655cad08e2a2f7c0589feeba5ae189')
+        # Re-derived again when the pack dropped the shorter phrase of each
+        # nested held-back pair.
+        self.assertEqual(_digest(legacy_hashes), '918c71c67813e0a1333fea0f1e7e6c32f237e851e3364366213875490e1142f2')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

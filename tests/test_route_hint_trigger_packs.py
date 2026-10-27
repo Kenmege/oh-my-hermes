@@ -269,7 +269,10 @@ class RouteHintTriggerPackTests(TestCase):
 
 # A Cyrillic phrase: no ASCII token, no shipped cue, so on a later turn only the
 # user pack can arm the gate (#2284, reported with a Russian pack).
-CYRILLIC_PACK_PHRASE = "сделай ревью кода"
+# Not a phrase the shipped `ru` pack carries, so the user pack is the only
+# reason it routes: the shipped pack holds `ревью` and `кода` back, and a user
+# phrase it already ships adds nothing the gate could be measured on.
+CYRILLIC_PACK_PHRASE = "проверь диф перед слиянием"
 _CYRILLIC_PACK_DOCUMENT = {
     "schema_version": "trigger_language_pack/v1",
     "language": "ru",

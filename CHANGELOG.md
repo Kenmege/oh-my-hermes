@@ -246,14 +246,17 @@ All notable changes will be documented here.
 
 - **Russian ships as a trigger language pack, and a later turn in a
   user-installed pack's language re-arms the route hint (#2284).**
-  `src/routing/trigger_packs/ru.json`, contributed in #2284, carries 285
+  `src/routing/trigger_packs/ru.json`, contributed in #2284, carries 278
   phrases across 49 skills, such as `сделай ревью кода`, `найди баг`,
   `сделай лендинг` and `составь план реализации`. A Russian word scores on its
   own only when it is a software word (`баг`, `лендинг`, `рефакторинг`,
   `деплоя`); every other word scores only inside its phrase, so a phrase made
   of everyday words (`составь план`, `сборка упала`) asks one question instead
-  of dispatching, and phrases an everyday sentence contains (`починить`,
-  `по расписанию`, `в чём проблема`, `убедись`) are not in the pack.
+  of dispatching; where one such phrase contains another of the same skill
+  only the longer ships, so the two cannot add up to a dispatch; and phrases
+  an everyday sentence contains (`починить`, `по расписанию`,
+  `в чём проблема`, `убедись`) are not in the pack. A test re-derives the
+  pack's hold-back from its phrases and a reviewed list of software words.
   Cyrillic and Greek now get the word edges Latin has, so a phrase no longer
   matches inside a longer word: `ревью` inside `превью`, `выкати` inside
   `выкатил`. `ultrawork` carries no Russian phrase: its body would exceed the

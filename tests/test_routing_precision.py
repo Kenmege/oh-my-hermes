@@ -69,8 +69,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
         # The Russian trigger pack adds three negatives its held-back words guard,
-        # and its review twenty everyday Russian turns.
-        self.assertEqual(payload["summary"]["case_count"], 1138)
+        # and its review twenty-two everyday Russian turns.
+        self.assertEqual(payload["summary"]["case_count"], 1140)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -194,8 +194,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # two negatives that hold broad wording out (a red-team hiring
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
-        # The Russian trigger pack adds eleven interventions, and its review eight.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1150)
+        # The Russian trigger pack adds eleven interventions, and its review nine.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1151)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

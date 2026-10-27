@@ -880,8 +880,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # a pack word in its everyday sense or inside a longer word -- a
             # fence to fix, a lift that does not work, a film review, an app
             # preview, a past-tense remembered, a car rolled out of a garage,
-            # a family budget, an estate agent (+20).
-            expected=1138,
+            # a family budget, an estate agent (+20). Then two turns where a
+            # held-back phrase inside a longer one of the same skill scored
+            # twice and dispatched: a grandmother's "запомни это" and metro
+            # tokens (+2).
+            expected=1140,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1396,8 +1399,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # site accessibility, task graph, what agents do, save to memory;
             # same count), plus a screen-reader check, remember-this, a bug, a
             # landing page, a tech-debt audit, a commit message, the logs and
-            # IT-jargon research, which dispatch on a software word (+8).
-            expected=1150,
+            # IT-jargon research, which dispatch on a software word (+8). Then
+            # the nested-phrase fix: "сделай ревью кода" and "запомни это" ask
+            # instead of dispatching on a double count (same count), and a
+            # pull-request review dispatches on its own word (+1).
+            expected=1151,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

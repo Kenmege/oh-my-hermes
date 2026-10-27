@@ -2406,6 +2406,23 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "deploy-and-monitor",
     ),
+    # A phrase made of held-back words inside a longer phrase of the same
+    # skill scored twice, 6 + 6, and dispatched (#2301 review). The pack keeps
+    # only the longer of such a pair, so these ask at most.
+    RoutingPrecisionCase(
+        "russian-grandmother-remember-this-does-not-dispatch",
+        "A Russian grandmother's remember-this saying opens no workflow",
+        "Бабушка всегда говорила: запомни это на всю жизнь",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "russian-metro-tokens-do-not-dispatch",
+        "Russian metro tokens running out opens no workflow",
+        "Что жрёт токены в метро быстрее всего?",
+        "answer_clarification",
+        "",
+    ),
     RoutingPrecisionCase(
         "russian-public-services-site-down-is-not-a-live-incident",
         "A Russian public-services site being down stays out of incident response",
@@ -13369,10 +13386,23 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # Russian word scores on its own only when it is a software word; the
     # rest score inside their phrase, so a phrase made of everyday words
     # asks rather than dispatches.
+    # `ревью` is also a film or product review and `кода` a door code, so a
+    # code-review phrase of those words asks; a pull request names the job.
     RoutingInterventionCase(
-        "russian-code-review-request-dispatches",
-        "A Russian code-review request reaches code review",
+        "russian-code-review-request-clarifies",
+        "A Russian code-review request clarifies with code review named",
         "сделай ревью кода",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "code-review",
+        "medium",
+    ),
+    RoutingInterventionCase(
+        "russian-pull-request-review-dispatches",
+        "A Russian pull-request review reaches code review",
+        "ревью пул реквеста 2301",
         "dispatch",
         "code-review",
         "prepare_review_or_followup_handoff",
@@ -13489,8 +13519,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_live_incident_record",
         "live_incident_record",
     ),
-    # `память` is also a person's memory ("светлая память"), so saving to it
-    # asks; "remember this" said to the assistant dispatches, as in English.
+    # `память` is also a person's memory ("светлая память") and `запомни это`
+    # is what a grandmother says, so both ask.
     RoutingInterventionCase(
         "russian-save-to-memory-clarifies",
         "A Russian save-to-memory request clarifies with memory-new named",
@@ -13503,13 +13533,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "medium",
     ),
     RoutingInterventionCase(
-        "russian-remember-this-dispatches",
-        "A Russian remember-this request reaches memory-new",
+        "russian-remember-this-clarifies",
+        "A Russian remember-this request clarifies with memory-new named",
         "запомни это",
-        "dispatch",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "memory-new",
-        "prepare_memory_new",
-        "memory_candidate",
+        "medium",
     ),
     # Requests whose phrase carries a software word of its own dispatch.
     RoutingInterventionCase(
