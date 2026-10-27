@@ -80,15 +80,17 @@ _RENDERER_LEADS = frozenset({"hyperframes"})
 # product surface, never a state, so "of the login failure", "for the release
 # regression" and "showing the checkout hang" are not one.
 _ADJUNCT_PREPOSITIONS = frozenset({"about", "covering", "featuring", "for", "of", "showing", "with"})
+# `with` takes only a production track ("with subtitles", "with English
+# narration"); "with the sales team" is a meeting, not a brief.
+_WITH_NOUNS = frozenset({"captions", "music", "narration", "subtitles", "voiceover"})
 _ADJUNCT_DETERMINERS = frozenset({"a", "an", "the", "our", "my", "your", "their"})
 _ADJUNCT_NOUNS = frozenset({
-    "agents", "announcement", "api", "app", "audience", "beta", "board", "booth", "captions", "cli", "conference",
-    "customers",
+    "agents", "announcement", "api", "app", "audience", "beta", "board", "booth", "cli", "conference", "customers",
     "dashboard", "docs", "editor", "event", "extension", "feature", "features", "flow", "game", "hackathon",
     "hero", "homepage", "instagram", "integration", "investors", "keynote", "launch", "linkedin", "marketing",
-    "marketplace", "meetup", "music", "narration", "newsletter", "onboarding", "page", "pitch", "platform", "plugin", "product",
-    "readme", "release", "sales", "sdk", "site", "social", "submission", "subtitles", "system", "team", "tier",
-    "tiktok", "tool", "tui", "twitter", "ui", "users", "voiceover", "website", "wizard", "workflow", "youtube",
+    "marketplace", "meetup", "newsletter", "onboarding", "page", "pitch", "platform", "plugin", "product",
+    "readme", "release", "sales", "sdk", "site", "social", "submission", "system", "team", "tier", "tiktok",
+    "tool", "tui", "twitter", "ui", "users", "website", "wizard", "workflow", "youtube",
 })
 _ADJUNCT_MODIFIERS = frozenset({
     "agent", "app", "hackathon", "landing", "launch", "memory", "new", "next", "omh", "onboarding", "plugin",
@@ -100,6 +102,10 @@ _ADJUNCT_MODIFIERS = frozenset({
 # and neither may a longer one: "the 404 page" and "the v404 page" are faults.
 _VERSION = re.compile(r"v\d{1,2}")
 _WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
+# A closed form's sentence holds nothing `_WORD` would skip: letters, digits,
+# spaces, commas, colons, hyphens and apostrophes only, so a path, a domain,
+# "./run.sh" or an emoji cannot ride along unread.
+_CLOSED_SENTENCE = re.compile(r"(?:[^\W_]|[\s,:'\u2019-])*")
 _NOUN_PHRASES = tuple(sorted({tuple(_WORD.findall(phrase)) for phrase in SHOW_REEL_PHRASES}, key=len, reverse=True))
 _REEL_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _REEL_PHRASES)
 _RECORDING_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _RECORDING_PHRASES)
@@ -148,26 +154,30 @@ def _closed_adjuncts(rest: list[str]) -> int:
     while index < len(rest):
         if rest[index] not in _ADJUNCT_PREPOSITIONS:
             return -1
+        nouns = _WITH_NOUNS if rest[index] == "with" else _ADJUNCT_NOUNS
         index += 1
         if index < len(rest) and rest[index] in _ADJUNCT_DETERMINERS:
             index += 1
         start = index
         while index < len(rest) and (
-            rest[index] in _ADJUNCT_NOUNS or rest[index] in _ADJUNCT_MODIFIERS or _VERSION.fullmatch(rest[index])
+            rest[index] in nouns or rest[index] in _ADJUNCT_MODIFIERS or _VERSION.fullmatch(rest[index])
         ):
             index += 1
-        if not 0 < index - start <= 3 or rest[index - 1] not in _ADJUNCT_NOUNS:
+        if not 0 < index - start <= 3 or rest[index - 1] not in nouns:
             return -1
         count += 1
     return count
 
 
-def _english_production_lead(sentence: str, *, whole_message: bool) -> bool:
-    # `whole_message`: this sentence is all the message says, with nothing
-    # shielded from matching; the closed forms need it.
+def _english_production_lead(sentence: str, *, whole_message: bool) -> str:
+    """"reel" for main's open reel-noun form, "closed" for a closed form, "" when neither.
+
+    `whole_message`: this sentence is all the message says, with nothing
+    shielded from matching; the closed forms need it.
+    """
     words = _WORD.findall(sentence)
     if not words or (words[0] not in _REEL_LEAD_VERBS and words[0] not in _RENDERER_LEADS):
-        return False
+        return ""
     verbless = words[0] in _RENDERER_LEADS
     # A renderer lead is read again as the first modifier.
     index = 0 if verbless else 1
@@ -182,31 +192,30 @@ def _english_production_lead(sentence: str, *, whole_message: bool) -> bool:
                 if phrase not in _REEL_NOUNS or verbless:
                     adjuncts = _closed_adjuncts(rest)
                     least = 1 if verbless or phrase in _RECORDING_NOUNS else 0
-                    return whole_message and words[0] in _LEAD_VERBS | _RENDERER_LEADS and adjuncts >= least
+                    closed = (
+                        whole_message
+                        and words[0] in _LEAD_VERBS | _RENDERER_LEADS
+                        and adjuncts >= least
+                        and _CLOSED_SENTENCE.fullmatch(sentence) is not None
+                    )
+                    return "closed" if closed else ""
                 if rest and rest[0] not in {",", ":"} and rest[0] not in _FOLLOWERS:
-                    return False
-                return not any(
+                    return ""
+                chained = any(
                     word in _CHAIN_WORDS or (word == "and" and following in _CHAINED_VERBS)
                     for word, following in zip(rest, [*rest[1:], ""])
                 )
+                return "" if chained else "reel"
         if index + 1 < len(words) and words[index].isdigit() and words[index + 1] in _DURATION_UNITS:
             index += 2
             continue
         if index >= len(words) or not (words[index] in _MODIFIERS or _DURATION.fullmatch(words[index])):
-            return False
+            return ""
         index += 1
-    return False
+    return ""
 
 
-def show_reel_request_admitted(message: str, *, shielded: bool = False) -> bool:
-    """Admit only a request that leads with producing a show reel.
-
-    `shielded`: the caller removed quoted, code, link or relayed text from
-    `message` before passing it (`RoutingQuery.shielded`). Masked text reads as
-    nothing, so a backticked error or a linked issue after "for the app" would
-    leave a closed form looking whole; a closed form is refused when the caller
-    or this reader's own masking removed anything.
-    """
+def _admission(message: str, shielded: bool) -> str:
     regions = reference_regions(message)
     folded = _fold(regions.executable_text).strip()
     shielded = shielded or bool(regions.references or regions.masked_spans or regions.quoted_lines)
@@ -217,7 +226,28 @@ def show_reel_request_admitted(message: str, *, shielded: bool = False) -> bool:
     # a courtesy opener put it as a request ("can you make a show reel?").
     asked = bool(ending) and ending[0] in "?？" and text == folded
     whole_message = not shielded and (not ending or not ending[1].strip())
-    return (not asked and _english_production_lead(sentence, whole_message=whole_message)) or bool(_NATIVE_PRODUCTION.search(text))
+    lead = "" if asked else _english_production_lead(sentence, whole_message=whole_message)
+    return lead or ("reel" if _NATIVE_PRODUCTION.search(text) else "")
+
+
+def show_reel_request_admitted(message: str, *, shielded: bool = False, raw: str | None = None) -> bool:
+    """Admit only a request that leads with producing a show reel.
+
+    `shielded`: the caller removed quoted, code, link or relayed text from
+    `message` before passing it (`RoutingQuery.shielded`). Masked text reads as
+    nothing, so a backticked error or a linked issue after "for the app" would
+    leave a closed form looking whole; a closed form is refused when the caller
+    or this reader's own masking removed anything.
+
+    `raw`: the message as the user sent it, when `message` is a processed
+    form of it. A closed form must then be the closed shape in `raw` too, so
+    no stage that removes text before `message` (paths, status lines, reply
+    pointers) can hide what the clip would show.
+    """
+    verdict = _admission(message, shielded)
+    if verdict == "closed" and raw is not None and raw != message:
+        return _admission(raw, False) == "closed"
+    return bool(verdict)
 
 
 def show_reel_request_phrases(message: str, phrases: list[str]) -> list[str]:

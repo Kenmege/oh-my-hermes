@@ -59,6 +59,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_NATIVE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     host_command_turn,
+    host_context_removed,
     loop_timer_verdict,
     person_request_text,
     typed_loop_sets_goal,
@@ -1793,7 +1794,11 @@ def _enriched_route(
         source=source,
         min_confidence=min_confidence,
         context=active_design_direction_iteration,
-    ) or _clone_jsonish(_route_chat_message_cached(request, source, limit, min_confidence))
+    ) or _clone_jsonish(
+        _route_chat_message_cached(
+            request, source, limit, min_confidence, message.strip() if host_context_removed(message) else request
+        )
+    )
     _render_routing_prompt_from_turn(route, request, message)
     # Attach the input script here rather than at each ChatRouteDecision site so
     # every route -- fast path, catalog path, and full scoring -- reports it.
@@ -2170,6 +2175,7 @@ def _route_chat_message_cached(
     source: str,
     limit: int,
     min_confidence: str,
+    original: str = "",
 ) -> dict[str, object]:
     if host_command_turn(message):
         return _direct_answer_decision(
@@ -2212,7 +2218,9 @@ def _route_chat_message_cached(
         ).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
-    query = RoutingQuery.from_message(routing_message, shielded=executable_message != message)
+    query = RoutingQuery.from_message(
+        routing_message, shielded=executable_message != message, original=original or message
+    )
     # Positive evidence of work over many targets dispatches dag-ulw before any lane's fast path reads one of its
     # words ("upstream", "pytest", "stale"), so the route hint, which starts dag-ulw on the same reading, never
     # starts a run the router did not dispatch. A request that invokes a skill or the loop is that skill's ("use

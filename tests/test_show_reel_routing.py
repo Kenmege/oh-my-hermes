@@ -156,6 +156,12 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a demo video for the beta\n\n> panic: nil map",
             "Make a launch video for the release https://github.com/acme/app/pull/9",
             "hyperframes promo video for the launch 'stalls at 80%'",
+            # Text the router strips after masking, and an emoji.
+            "Make a demo video for the plugin src/cli/main.py:77",
+            "Make a demo video for the app ./bin/repro",
+            "Make a demo video for the beta \U0001F41B",
+            # `with` takes only a production track.
+            "Make a promo video with the sales team.",
             # Only v plus one or two digits is a version.
             "Make a demo video of the v503 page.",
             # `cut` and `edit` lead only a reel noun.
@@ -189,6 +195,20 @@ class ShowReelAdmissionTests(unittest.TestCase):
         self.assertFalse(show_reel_request_admitted("Make a demo video for the app", shielded=True))
         # main's reel nouns read as on main.
         self.assertTrue(show_reel_request_admitted("Create a launch film.", shielded=True))
+
+    def test_a_closed_form_must_hold_on_the_request_as_written(self):
+        from omh.plugin_bundle.omh.hermes_session_commands import host_context_removed
+
+        processed = "make a demo video for the app"
+        self.assertTrue(show_reel_request_admitted(processed, raw="Make a demo video for the app."))
+        self.assertFalse(show_reel_request_admitted(processed, raw="Make a demo video for the app lib/app.py:9"))
+        # main's reel nouns read as on main.
+        self.assertTrue(show_reel_request_admitted("create a launch film", raw="Create a launch film lib/app.py"))
+        turn = '[Replying to: "login loops back"]\n\nMake a demo video for the app'
+        self.assertTrue(host_context_removed(turn))
+        self.assertFalse(host_context_removed("Make a demo video for the app"))
+        self.assertNotEqual(route_chat_message(turn, source="discord").get("selected_skill"), "show-reel")
+        self.assertNotEqual(awareness_route_hint(turn)["primary_workflow"], "show-reel")
 
     def test_a_courtesy_opener_keeps_an_asked_request(self):
         self.assertTrue(show_reel_request_admitted("Can you make a show reel?"))

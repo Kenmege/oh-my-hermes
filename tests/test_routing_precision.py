@@ -70,7 +70,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Actor/objective follow-up adds seven employer contrasts.
         # The Russian trigger pack adds three negatives its held-back words guard,
         # and its review twenty-five everyday Russian turns.
-        self.assertEqual(payload["summary"]["case_count"], 1183)
+        self.assertEqual(payload["summary"]["case_count"], 1192)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

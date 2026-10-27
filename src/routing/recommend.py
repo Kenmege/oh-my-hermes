@@ -2552,7 +2552,7 @@ class _RawMessageKey:
     and a miss reuses the caller's prepared query when it handed one in.
     """
 
-    __slots__ = ("raw", "query", "shielded")
+    __slots__ = ("raw", "query", "shielded", "original")
 
     def __init__(self, raw: str, query: RoutingQuery | None = None) -> None:
         self.raw = raw
@@ -2560,12 +2560,19 @@ class _RawMessageKey:
         # A caller that masked the text before passing it says so on its
         # query; the same masked text unmasked by nobody is another entry.
         self.shielded = bool(query is not None and query.shielded)
+        # So is the same text cut from a different turn (`RoutingQuery.original`).
+        self.original = query.original if query is not None and query.original else raw
 
     def __hash__(self) -> int:
         return hash(self.raw)
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, _RawMessageKey) and other.raw == self.raw and other.shielded == self.shielded
+        return (
+            isinstance(other, _RawMessageKey)
+            and other.raw == self.raw
+            and other.shielded == self.shielded
+            and other.original == self.original
+        )
 
 
 def held_back_trigger_tokens(skill: str) -> frozenset[str]:
@@ -2649,6 +2656,7 @@ def _recommend_skills_cached(key: _RawMessageKey, apply_guardrails: bool) -> tup
         explicit_skill = None
     return _scored_field(
         q.raw,
+        raw_query=q.original,
         routing_query=q.scrubbed,
         routing_text=q.routing_text,
         normalized_query=q.normalized,
@@ -2687,6 +2695,7 @@ def scored_field_winner_without_explicit_invocation(query: str | RoutingQuery, c
     prepared_definitions = _prepared_routable_definitions()
     field = _scored_field(
         q.raw,
+        raw_query=q.original,
         routing_query=q.scrubbed,
         routing_text=q.routing_text,
         normalized_query=q.normalized,
@@ -2714,6 +2723,7 @@ def confident_scored_field_winner(query: str | RoutingQuery) -> str:
     prepared_definitions = _prepared_routable_definitions()
     field = _scored_field(
         q.raw,
+        raw_query=q.original,
         routing_query=q.scrubbed,
         routing_text=q.routing_text,
         normalized_query=q.normalized,
@@ -2742,6 +2752,7 @@ def _scored_field(
     name_credited_skill: str | None = None,
     loop_timer: str = LOOP_TIMER_NONE,
     shielded: bool = False,
+    raw_query: str = "",
 ) -> tuple[Recommendation, ...]:
     ecosystem_identity_connector_match = _ecosystem_identity_connector_explicit_match(normalized_query)
     domain_signal = specialist_domain_route_signal(routing_text.scoring_text)
@@ -2763,6 +2774,7 @@ def _scored_field(
             domain_operator_override=domain_operator_override,
             name_credited_skill=name_credited_skill,
             shielded=shielded,
+            raw_query=raw_query,
         )
         if recommendation is not None:
             scored.append(replace(recommendation, suggested_prompt=_suggested_prompt(recommendation.skill, query)))
@@ -4459,6 +4471,7 @@ def _score_definition(
     domain_operator_override: DomainOperatorOverride | None,
     name_credited_skill: str | None = None,
     shielded: bool = False,
+    raw_query: str = "",
 ) -> Recommendation | None:
     definition = prepared.definition
     policy = prepared.policy
@@ -4477,7 +4490,7 @@ def _score_definition(
     # eighth meant editing the function every skill is scored by. The rules
     # live in `_SKILL_OFFERS_ITSELF` at the foot of this module now: same
     # predicates, same evaluation order, one row per skill.
-    offers_itself = _offers_itself_predicate(definition.name, shielded=shielded)
+    offers_itself = _offers_itself_predicate(definition.name, shielded=shielded, raw=raw_query)
     if (
         offers_itself is not None
         and (
@@ -6109,6 +6122,24 @@ _SHIELDED_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
 }
 
 
-def _offers_itself_predicate(skill: str, *, shielded: bool) -> Callable[[str, set[str]], bool] | None:
-    """The offers-itself predicate for `skill`, the stricter one when the masker removed text from the message."""
+# A skill whose admission must also hold on the message as the user sent it.
+# Every stage between the raw text and `normalized_query` removes something
+# (masking, status-line scrubbing, path stripping, reply pointers), and only
+# the first reports it as `shielded`; a closed show-reel form is checked on
+# the raw text too, so no stage can hide the fault a clip would show.
+_RAW_TEXT_OFFERS_ITSELF: dict[str, Callable[[str, str, bool], bool]] = {
+    "show-reel": lambda normalized_query, raw, shielded: show_reel_request_admitted(
+        normalized_query, shielded=shielded, raw=raw
+    ),
+}
+
+
+def _offers_itself_predicate(skill: str, *, shielded: bool, raw: str = "") -> Callable[[str, set[str]], bool] | None:
+    """The offers-itself predicate for `skill`, the stricter one when the masker removed text from the message.
+
+    `raw`: the message as sent, for a skill in `_RAW_TEXT_OFFERS_ITSELF`.
+    """
+    raw_reader = _RAW_TEXT_OFFERS_ITSELF.get(skill) if raw else None
+    if raw_reader is not None:
+        return lambda normalized_query, query_tokens: raw_reader(normalized_query, raw, shielded)
     return (shielded and _SHIELDED_OFFERS_ITSELF.get(skill)) or _SKILL_OFFERS_ITSELF.get(skill)

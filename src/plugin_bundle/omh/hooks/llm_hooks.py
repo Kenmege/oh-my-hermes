@@ -34,7 +34,7 @@ from ..awareness_delivery import claim_route_guidance_delivery, record_awareness
 from ..context_budget_plan import context_budget_continuation, render_context_budget
 from ..dag_define_gate import note_turn as note_dag_define_turn
 from ..dag_define_gate import starts_dag_run
-from ..hermes_session_commands import host_command_turn, person_request_text
+from ..hermes_session_commands import host_command_turn, host_context_removed, person_request_text
 from ..host_context import record_active_main_agent_model
 from ..host_observation import observe_plugin_hook_call
 from ..installed_skills import installed_skill_names
@@ -635,7 +635,7 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     rendered_route_hint: dict[str, object] = {}
     if include_awareness:
         if is_first_turn:
-            route_hint_payload = awareness_route_hint(request_message)
+            route_hint_payload = awareness_route_hint(request_message, context_removed=host_context_removed(user_message))
             rendered_route_hint = _rendered_route_hint(route_hint_payload, installed_skills, delegated=delegated)
             route_hint_context = awareness_route_hint_context_from_payload(rendered_route_hint)
             message_matches_awareness = bool(route_hint_context)
@@ -654,7 +654,7 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
             if match_error:
                 degraded.append((COMPONENT_LOCALIZED_ROUTING_TEXT, match_error))
         if message_matches_awareness and route_hint_payload is None:
-            route_hint_payload = awareness_route_hint(request_message)
+            route_hint_payload = awareness_route_hint(request_message, context_removed=host_context_removed(user_message))
             rendered_route_hint = _rendered_route_hint(route_hint_payload, installed_skills, delegated=delegated)
             route_hint_context = awareness_route_hint_context_from_payload(rendered_route_hint)
         if route_hint_context:

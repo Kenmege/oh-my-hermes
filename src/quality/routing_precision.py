@@ -363,6 +363,21 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-long-version-page", "A demo video of a v-numbered error page is a fault recording", "Make a demo video of the v500 page.", "answer_clarification", "", "show-reel"),
     # A with-adjunct must end the sentence like any other.
     RoutingPrecisionCase("show-reel-with-music-default", "Making music the default is a setting", "Make a demo video with music the default.", "answer_clarification", "", "show-reel"),
+    # A closed form must hold on the request as written: a path, a file and
+    # line, a bare domain or a script the router strips after masking, a
+    # reply pointer or attachment note cut from the turn, and an emoji may
+    # each name the fault. `with` takes only a production track.
+    RoutingPrecisionCase("show-reel-raw-source-path", "A source path after a closed form is a fault pointer", "Make a demo video for the plugin, see src/plugin/loader.py", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-raw-file-line", "A file and line after a closed form is a fault pointer", "Make a demo video for the dashboard api/routes.py:118", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-raw-bare-domain", "A bare-domain incident link after a closed form is a fault", "Make a demo video for the app status.example.org/incidents/42", "answer_clarification", "", "show-reel"),
+    # main's model-selection shortlist already names show-reel here by word
+    # overlap after a declined dispatch; it is not a route or a card.
+    RoutingPrecisionCase("show-reel-raw-script", "A repro script after a closed form is a fault", "Make a demo video for the plugin ./scripts/repro.sh", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-reply-pointer-fault", "A closed form replying to a fault report is a recording", '[Replying to: "checkout freezes after the coupon step"]\n\nMake a demo video for the app', "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-attachment-note-fault", "A closed form under an attachment note may show what it shows", "[The user sent an image~ a stack trace in a terminal ~]\n\nMake a demo video for the plugin", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-emoji-tail", "An emoji after a closed form is unread text", "Make a demo video for the beta \U0001F4A5", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-with-customers", "A promo video with customers is a meeting, not a track", "Create a promo video with our customers.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-with-marketing-team", "A launch video with a team is a meeting, not a track", "Make a launch video with the marketing team.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
