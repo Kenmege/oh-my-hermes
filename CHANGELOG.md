@@ -4,6 +4,8 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 4.0.3 - 2026-10-27
+
 - **`plan` and `ralplan` name the goal beyond the request, the raw material,
   and an outside judge.** Before splitting tasks a plan states what should
   happen once the requested result exists and whether it aims there, and adds
