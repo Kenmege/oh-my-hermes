@@ -26,6 +26,20 @@ All notable changes will be documented here.
   `updated_at`, so a goal that ran across many turns is not read off the last
   turn's `✻` line. It is said once, sends nothing, and leaves the time out
   when either stamp is missing.
+- **The gateway-attach child no longer aborts when Hermes' gateway hangs up
+  first (#2327, reported and first fixed by @skihyeon in #2328).** Its
+  `omh-attach-stdin` thread read the TUI's input through `sys.stdin.buffer`
+  and so held that buffer's lock while it waited. When the owner's side of
+  the WebSocket ended before the TUI closed its input, interpreter
+  finalization closed stdin on the main thread, waited a second for that
+  lock and aborted the process (`Fatal Python error: _enter_buffered_busy`,
+  exit -6), on every Python from 3.11 to 3.14. The TUI then reported
+  `the Hermes gateway exited (code -6)` instead of the child's own code 1.
+  The thread now reads the stdin descriptor directly, which holds no lock,
+  and frames lines as before. The child exits with the code `main()`
+  computes, and normal shutdown still runs, including the atexit handlers
+  that Hermes' in-process stdio entry registers.
+
 - **GPT-6.1 Terra is onboarded.** OpenAI released it on 2026-10-26. The
   id now has an exact contract read from developers.openai.com: 1.05M
   context, 128K output, and a `none` to `max` effort ladder with `medium` as
