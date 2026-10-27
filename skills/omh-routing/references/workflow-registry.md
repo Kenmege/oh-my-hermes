@@ -111,7 +111,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `skill`: `skill`, `$skill`, `skills`, `manage skills`
 - `doctor`: `doctor`, `$doctor`, `diagnose omh`, `installation health`
 - `capability-toggle`: `capability-toggle`, `capability policy`, `disable memory`, `enable memory`, `disable coding orchestration`, `disable a capability family`, `enable a capability family`, `메모리 기능 꺼줘`, `메모리 기능 끄기`
-- `running-work-board`: `running-work-board`, `running work board`, `which units are running`, `what models are running`, `지금 뭐 돌고 있어`, `뭐가 돌고 있어`, `어떤 모델로 돌고 있어`, `실행 중인 작업 보여줘`
+- `running-work-board`: `running-work-board`, `running work board`, `which units are running`, `what models are running`, `지금 뭐 돌고 있어`, `뭐가 돌고 있어`, `어떤 모델로 돌고 있어`, `실행 중인 작업 보여줘`, `что делают агенты`
 - `todo-checklist`: `todo-checklist`, `$todo`, `plan checklist`, `todo checklist`, `phase checklist`, `declare a plan checklist`, `declare the plan todo`, `show the plan todo`, `clear the plan todo`
 - `model-setup`: `model-setup`, `hermes model setup`, `set up my models`, `set up my model`, `configure my models`, `configure model provider`, `connect my model provider`, `set up model role slots`, `switch my session model`
 - `parallel-tools`: `parallel-tools`, `parallel tools`, `hermes parallel tools setup`, `update hermes for parallel tools`, `check parallel tool support`, `enable parallel tool calls`, `verify parallel tools capability`, `check hermes version for parallel tools`, `헤르메스 업데이트 확인해줘`
@@ -136,7 +136,7 @@ When Hermes exposes installed skill descriptions to the model, use this registry
 - `data-share-review`: `data-share-review`, `data share review`, `pii redaction`, `redact pii`, `pseudonymize`, `de-identify`, `anonymize the dataset`, `residual pii`, `redact the pii`
 - `release-cut`: `release-cut`, `release cut`, `cut a release`, `cut the release`, `cut a new release`, `tag a release`, `tag the release`, `release candidate`, `what goes in the release`
 - `spend-gate`: `spend-gate`, `spend gate`, `pre-spend`, `pre-spend card`, `spend cap`, `spending cap`, `spend limit`, `spending limit`, `spend request`
-- `dag-ulw`: `dag-ulw`, `$dag-ulw`, `dag ulw`, `ulw dag`, `dag ultrawork`, `ultrawork dag`
+- `dag-ulw`: `dag-ulw`, `$dag-ulw`, `dag ulw`, `ulw dag`, `dag ultrawork`, `ultrawork dag`, `даг ультраворк`, `граф задач`, `задачи графом`
 - `decision-prototype`: `decision-prototype`, `$decision-prototype`, `decision prototype`, `prototype this uncertain choice before planning`, `prototype before planning`, `prototype the uncertain choice`, `run a small spike`, `small spike`, `spike solution`
 - `lifecycle-growth`: `lifecycle-growth`, `lifecycle growth`, `lifecycle marketing`, `lifecycle messaging`, `in-app journey`, `in-app message campaign`, `onboarding journey`, `onboarding nudge`, `activation campaign`
 - `market-research`: `market-research`, `market sizing`, `tam sam som`, `bottom up market sizing`, `market size sensitivity`, `customer evidence analysis`, `jtbd evidence matrix`, `competitor pricing profiles`, `competitive pricing analysis`
