@@ -66,6 +66,8 @@ class ParityTests(unittest.TestCase):
     # same reason: a machine-level chain override may still name them.
     _RECOGNITION_ONLY_ALIAS_FAMILIES: dict[str, tuple[str, ...]] = {
         "claude-mythos-5-1": ("ccapi", "anthropic", "openrouter"),
+        # Onboarded 2026-10-27 ahead of any chain placement.
+        "gpt-6.1-terra": ("openai-codex", "openai", "openrouter"),
         # Onboarded 2026-10-24; no shipped chain names the Highspeed tier.
         "kimi-k3.1-pro-highspeed": ("kimi-coding",),
         # Retired 2026-10-24 when Kimi K3.1 Pro took every K3 slot.

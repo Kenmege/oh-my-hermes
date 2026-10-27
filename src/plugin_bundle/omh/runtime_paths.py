@@ -286,14 +286,23 @@ def _standalone_configured_home(home: Path):
         return _MISSING
     except (OSError, UnicodeDecodeError):
         raise RuntimeBindingError("OMH profile configuration is unreadable or invalid") from None
-    found, value = omh_home_setting(text)
-    if not found:
-        return _MISSING
+    found, value = standalone_omh_home_setting(text)
+    return value if found else _MISSING
+
+
+def standalone_omh_home_setting(config_text: str) -> tuple[bool, str | None]:
+    """`omh_home_setting`, as a caller outside a Hermes host may take it: no variable but $HERMES_HOME or $HOME.
+
+    The value comes back unexpanded; `expand_path(value, hermes_home=home,
+    relative_to=home)` is the store it names. Raises `RuntimeBindingError` on
+    any other variable rather than read it out of this process's environment.
+    """
+    found, value = omh_home_setting(config_text)
     for match in _VARIABLE.finditer(value or ""):
         name = next(group for group in match.groups() if group is not None)
         if name not in _STANDALONE_SETTING_VARIABLES:
             raise RuntimeBindingError("OMH profile setting may reference only $HERMES_HOME or $HOME outside a Hermes host")
-    return value
+    return found, value
 
 
 def omh_home_setting(config_text: str) -> tuple[bool, str | None]:
@@ -328,6 +337,16 @@ def plugin_setting_text(config_text: str, name: str) -> str | None:
         if found:
             return value
     return None
+
+
+def config_scalar_text(config_text: str, key_path: tuple[str, ...]) -> str | None:
+    """The scalar a config text names at `key_path`, as `plugin_setting_text` reads one; None when unset.
+
+    For a reader of a Hermes setting outside the plugin's subtree, such as
+    `model.default`. Raises `RuntimeBindingError` on a shape the scan cannot
+    follow.
+    """
+    return _scan_block_setting(_LINE_BREAK.split(config_text), key_path, leaf=_leaf_text)[1]
 
 
 def _scan_block_setting(lines: list[str], key_path: tuple[str, ...], *, leaf=None) -> tuple[bool, str | None]:

@@ -389,6 +389,11 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     "kimi-k3": ("apitopia", "kimi-coding", "openrouter", "opencode"),
     "gpt-6-astra": ("openai-codex", "openai"),
     "gpt-6.1-sol": ("openai-codex", "openai"),
+    # Recognition-only until an owner places it (released 2026-10-26).
+    # Families observed serving the exact id on 2026-10-27: the Codex
+    # subscription route (a live one-shot on this maintainer host), the
+    # OpenAI API catalog, and OpenRouter (`openai/gpt-6.1-terra`).
+    "gpt-6.1-terra": ("openai-codex", "openai", "openrouter"),
     "gpt-6-luna": ("openai-codex", "openai"),
     "deepseek-flash": ("deepseek", "openrouter", "opencode"),
     # Recognition-only: the versioned spelling of the Flash pointer above
@@ -427,9 +432,9 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
 # stale provider/category metadata until its own rows are added here.
 EXACT_MODEL_CONTRACT_ALIASES: frozenset[str] = frozenset(
     {
-        "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "claude-opus-5-5", "claude-sonnet-5-5",
-        "claude-haiku-5-5", "deepseek-v4.1-flash", "kimi-k3.1-pro", "kimi-k3.1-pro-highspeed",
-        "jev-1.13.0",
+        "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna", "claude-opus-5-5",
+        "claude-sonnet-5-5", "claude-haiku-5-5", "deepseek-v4.1-flash", "kimi-k3.1-pro",
+        "kimi-k3.1-pro-highspeed", "jev-1.13.0",
     }
 )
 
@@ -445,6 +450,8 @@ DECLARED_MODEL_ALIAS_PROJECTIONS: dict[str, tuple[str, str, str]] = {
     "gpt-6-astra-pro-flex": ("gpt-6-astra", "pro", "flex"),
     # GPT-6.1 Sol's pro reasoning mode; no `-fast` / `-flex` row.
     "gpt-6.1-sol-pro": ("gpt-6.1-sol", "pro", "standard"),
+    # GPT-6.1 Terra's pro reasoning mode, on the same terms.
+    "gpt-6.1-terra-pro": ("gpt-6.1-terra", "pro", "standard"),
     # DeepSeek's first-party API names the current Flash generation
     # `deepseek-flash` (api-docs.deepseek.com, 2026-09-10); today that is
     # DeepSeek-V4.1-Flash. The pointer moves with the next Flash release, so
@@ -1333,6 +1340,12 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # inherits this one through its declared projection (pro mode bills at
     # the selected model's standard rates).
     "gpt-6.1-sol": (2.0, 10.0),
+    # OpenAI list price (developers.openai.com/api/docs/models/gpt-6.1-terra
+    # and /api/docs/pricing, read 2026-10-27): 1/5, no promotion mark; cached
+    # input 0.05 is 5% of input (APPROX_CACHE_READ_RATIO). Cache write,
+    # long-context, and service-tier rates stay documented in
+    # `src/coding/model_contracts.py`. GPT-5.6 Terra keeps its own 2/12 row.
+    "gpt-6.1-terra": (1.0, 5.0),
     # Anthropic first-party list prices (docs.claude.com pricing, 2026-09):
     # Opus 5 5/25, Sonnet 5 2/10, Fable 5 and 5.1 10/50; Mythos 5.1 shares
     # Fable 5.1's per-token price. Earlier entries here were stale.
@@ -1496,6 +1509,8 @@ APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # GPT-6.1 Sol: "Cached input tokens are priced at 5% of the uncached input
     # token rate" (developers.openai.com model page, read 2026-10-01).
     "gpt-6.1-sol": 0.05,
+    # GPT-6.1 Terra: the same 5% wording on its model page (read 2026-10-27).
+    "gpt-6.1-terra": 0.05,
 }
 _DEFAULT_CACHE_READ_RATIO = 0.1
 
