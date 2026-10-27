@@ -398,6 +398,13 @@ Rules that have held across every onboarding so far:
   effort it carried, because Sol's list price is at or below Terra's on
   every documented rate. Editorial and unmeasured; the `high` pair on
   `deep` confirms or reverses it.
+- A tier can skip a generation and come back. OpenAI shipped no GPT-6
+  Terra, then released GPT-6.1 Terra on 2026-10-26. It is onboarded as a
+  new exact contract with no slot of its own: GPT-5.6 Terra's slots already
+  went to GPT-6 Sol, and that retirement row stays as written. Re-adding a
+  Terra slot is a fresh placement decision, not an undo of the retirement.
+  Copy the ladder from the new model page, not from the sibling released
+  just before it. 6.1 Terra keeps `none` where 6.1 Sol dropped it.
 - A chain names the id the vendor's own API serves, not the spelling a
   gateway or a model card uses. DeepSeek serves `deepseek-flash` and
   rejects `deepseek-v4.1-flash` with HTTP 400, so the chain names the
