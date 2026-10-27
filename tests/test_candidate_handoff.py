@@ -44,12 +44,12 @@ class CandidateHandoffTests(unittest.TestCase):
         self.assertEqual(handoff["selector"], "hermes")
 
     def test_a_script_without_trigger_coverage_hands_over(self) -> None:
-        # Russian, not Japanese: this case used to use "ビルドが失敗した理由を教えて"
-        # back when Kana had no trigger table. Shipping `trigger_packs/ja.json`
-        # gave Japanese one, so the same sentence is now a covered script and
-        # would not exercise this path at all. What is being pinned is the
+        # Hindi, not Japanese or Russian: this case used to use "ビルドが失敗した理由を教えて"
+        # back when Kana had no trigger table, then a Russian sentence. Shipping
+        # `trigger_packs/ja.json` and then `ru.json` gave each script a table, so
+        # those sentences are now covered and would not exercise this path. What is being pinned is the
         # behavior for a script no pack covers, so the case has to move to one.
-        route = route_chat_message("почему сборка падает на main", source="generic", limit=3)
+        route = route_chat_message("main पर बिल्ड क्यों फेल हो रहा है", source="generic", limit=3)
         handoff = route["candidate_handoff"]
 
         self.assertIn(REASON_NO_TRIGGER_COVERAGE, handoff["reasons"])

@@ -229,7 +229,14 @@ class EfficiencyContractTests(unittest.TestCase):
         # says why it exists in its own words and points at its boundary with
         # Hermes' built-in `/plan`. Measured 81,390; the ceiling restores the
         # ~1.6k headroom this gate carried.
-        self.assertLess(core["skill_body"]["bytes"], 83_000)
+        # 83,000 -> 85,000: the Russian trigger pack's phrases join the
+        # routing-signal lines of three core bodies (`plan` +144,
+        # `executor-runtime-readiness` +155, `agent-ops-review` +145). Main
+        # measures 82,816 and this tree 83,260; the ceiling restores the
+        # ~1.6k headroom this gate carried. The pack's review (#2301) drops
+        # its everyday phrases and the tree measures 83,092, still over the old
+        # ceiling, so this one stands.
+        self.assertLess(core["skill_body"]["bytes"], 85_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
         # restore the ~10k headroom this gate is meant to carry rather than to

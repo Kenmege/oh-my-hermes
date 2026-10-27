@@ -6060,6 +6060,7 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
         or _spend_awareness_marked(raw_text)
         or _data_share_awareness_marked(raw_text)
         or show_reel_request_admitted(raw_text)
+        or _user_trigger_pack_hinted(message)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -8566,6 +8567,26 @@ def _user_trigger_pack_route_decision(message: str) -> dict[str, str]:
         except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
             return {}
     return user_trigger_pack_route_hint(message)
+
+
+def _user_trigger_pack_hinted(message: str) -> bool:
+    """Whether this OMH home's own trigger language pack earns the message a route hint (#2284).
+
+    The markers `awareness_context_matches_message` reads are shipped cues and
+    ASCII tokens, so a later turn written wholly in a pack's language (Cyrillic,
+    say) armed nothing and its route hint was never recomputed, while the same
+    message on a first turn was hinted. This asks the hint bridge itself rather
+    than whether a pack phrase appears: a phrase whose words the pack holds back
+    scores as a phrase only and never dispatches, and the bridge answers only a
+    dispatch, so arming on the phrase alone refreshed context for a turn that
+    had no hint to show. The bridge reads the phrase with the router's word
+    edges, so a phrase inside a longer word arms nothing either. With no user
+    pack installed the bridge answers from a cached empty tuple.
+
+    `_user_trigger_pack_route_decision` carries the deferred, doubly guarded
+    import; a standalone plugin host has no router to ask and arms nothing here.
+    """
+    return bool(_user_trigger_pack_route_decision(message))
 
 
 def _user_trigger_pack_route_hint(message: str) -> dict[str, object]:

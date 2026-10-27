@@ -68,6 +68,7 @@ def _clear_pack_and_route_caches() -> None:
     routing_recommend._recommend_skills_cached.cache_clear()
     routing_chat._route_chat_message_cached.cache_clear()
     awareness._awareness_route_hint_cached.cache_clear()
+    awareness._awareness_context_matches_message_cached.cache_clear()
 
 
 @contextmanager
@@ -264,6 +265,86 @@ class RouteHintTriggerPackTests(TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), "hinted dispatch")
+
+
+# A Cyrillic phrase: no ASCII token, no shipped cue, so on a later turn only the
+# user pack can arm the gate (#2284, reported with a Russian pack).
+# Not a phrase the shipped `ru` pack carries, so the user pack is the only
+# reason it routes: the shipped pack holds `ревью` and `кода` back, and a user
+# phrase it already ships adds nothing the gate could be measured on.
+CYRILLIC_PACK_PHRASE = "проверь диф перед слиянием"
+_CYRILLIC_PACK_DOCUMENT = {
+    "schema_version": "trigger_language_pack/v1",
+    "language": "ru",
+    "skills": {PACK_SKILL: [CYRILLIC_PACK_PHRASE]},
+}
+
+
+# Cyrillic words no shipped pack carries, so the user pack is the only reason
+# the router can score them.
+NEUTRAL_CYRILLIC_PACK_PHRASE = "особая проверочная тема"
+
+
+class LaterTurnUserPackTests(TestCase):
+    """A later turn in a pack's language re-arms the route hint, as its first turn does (#2284)."""
+
+    def _later_turn(self, message: str) -> dict[str, object] | None:
+        from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
+
+        with TemporaryDirectory() as hermes_home:
+            return pre_llm_call(
+                omh_home=os.environ["OMH_HOME"],
+                hermes_home=hermes_home,
+                user_message=message,
+                is_first_turn=False,
+            )
+
+    def test_a_pack_phrase_arms_the_later_turn_gate_and_its_hint(self) -> None:
+        with _omh_home(_CYRILLIC_PACK_DOCUMENT):
+            self.assertTrue(awareness.awareness_context_matches_message(CYRILLIC_PACK_PHRASE))
+            payload = self._later_turn(f"{CYRILLIC_PACK_PHRASE} в этом модуле")
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertIn("[OMH Route Hint]", payload["context"])
+        self.assertIn("selected=code-review", payload["context"])
+
+    def test_the_gate_stays_shut_without_the_pack_or_the_phrase(self) -> None:
+        with _omh_home(None):
+            self.assertFalse(awareness.awareness_context_matches_message(CYRILLIC_PACK_PHRASE))
+            self.assertIsNone(self._later_turn(CYRILLIC_PACK_PHRASE))
+        with _omh_home(_CYRILLIC_PACK_DOCUMENT):
+            self.assertFalse(awareness.awareness_context_matches_message("привет, как дела?"))
+            self.assertIsNone(self._later_turn("привет, как дела?"))
+
+    def test_a_host_without_the_router_arms_nothing_from_a_pack(self) -> None:
+        with _omh_home(_CYRILLIC_PACK_DOCUMENT):
+            with patch_modules({"omh.routing.chat": None}):
+                self.assertFalse(awareness._user_trigger_pack_hinted(CYRILLIC_PACK_PHRASE))
+
+    def test_a_pack_phrase_inside_a_longer_word_arms_nothing(self) -> None:
+        # The gate reads the phrase with the router's word edges: a Cyrillic
+        # phrase that starts mid-word is another word, so neither the router
+        # nor the gate may read it as the phrase.
+        with _omh_home(_pack_for(PACK_SKILL, NEUTRAL_CYRILLIC_PACK_PHRASE)):
+            self.assertTrue(awareness.awareness_context_matches_message(NEUTRAL_CYRILLIC_PACK_PHRASE))
+            glued = f"сверх{NEUTRAL_CYRILLIC_PACK_PHRASE}"
+            self.assertFalse(awareness.awareness_context_matches_message(glued))
+            self.assertEqual(awareness._user_trigger_pack_route_decision(glued), {})
+
+    def test_a_phrase_whose_words_are_all_held_back_arms_nothing(self) -> None:
+        # Held back, the words score only inside the phrase, and the phrase
+        # alone stays under the dispatch bar, so the bridge has no hint to give
+        # and the gate must not refresh context for one.
+        pack = {
+            **_pack_for(PACK_SKILL, NEUTRAL_CYRILLIC_PACK_PHRASE),
+            "whole_phrase_only_tokens": {PACK_SKILL: NEUTRAL_CYRILLIC_PACK_PHRASE.split()},
+        }
+        with _omh_home(pack):
+            self.assertEqual(routing_recommend.user_trigger_pack_phrase_match(NEUTRAL_CYRILLIC_PACK_PHRASE)[0], PACK_SKILL)
+            self.assertEqual(awareness._user_trigger_pack_route_decision(NEUTRAL_CYRILLIC_PACK_PHRASE), {})
+            self.assertFalse(awareness.awareness_context_matches_message(NEUTRAL_CYRILLIC_PACK_PHRASE))
+            self.assertIsNone(self._later_turn(NEUTRAL_CYRILLIC_PACK_PHRASE))
 
 
 # The reproduction in #2129 (reported by @fauzibrevy-hub) used an Indonesian

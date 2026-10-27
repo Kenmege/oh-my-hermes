@@ -65,7 +65,7 @@ from omh.routing.route_question import ROUTE_QUESTION_DECLINE_REASONS, message_d
 from omh.wrapper.contract import build_chat_interaction_payload  # noqa: E402
 from omh.wrapper.route_hints import build_chat_route_hint_payload  # noqa: E402
 
-UNDECIDABLE_MESSAGE = "почему сборка падает на main"
+UNDECIDABLE_MESSAGE = "main पर बिल्ड क्यों फेल हो रहा है"
 
 
 def _write_mode(omh_home: Path, content: str) -> None:
