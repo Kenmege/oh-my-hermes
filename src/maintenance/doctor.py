@@ -1183,13 +1183,16 @@ def _external_dir_ambiguity_checks(paths: OmhPaths, config_text: str) -> list[Ch
     a profile the primary home does not share.
     """
     current = managed_current_workflow_pack_dir()
-    entries = registered_managed_entries(config_text, managed_skill_dir_candidates(paths, current=current))
+    entries = registered_managed_entries(
+        config_text, managed_skill_dir_candidates(paths, current=current), current=current
+    )
     checks = [_ambiguity_check("external_dir_ambiguity", registration_home_label(paths.hermes_config_path), entries)]
     for name, profile_dir in hermes_profile_dirs(paths.hermes_home):
         profile_paths = _profile_paths(paths, profile_dir)
         profile_entries = registered_managed_entries(
             read_config(profile_paths.hermes_config_path),
             managed_skill_dir_candidates(profile_paths, current=current),
+            current=current,
         )
         if len(profile_entries) > 1:
             checks.append(

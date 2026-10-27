@@ -2775,7 +2775,7 @@ class HermesProfileSyncTests(unittest.TestCase):
         return profile
 
     @contextmanager
-    def _managed_install(self, current: Path):
+    def _managed_install(self, current: Path, *, pack: Path | None = None):
         """What a managed command install looks like to the setup module.
 
         Only the probes a test process cannot answer truthfully are stubbed
@@ -2789,7 +2789,10 @@ class HermesProfileSyncTests(unittest.TestCase):
         home pass (the first fix did exactly that). The self-update plan is
         pinned off because a managed runtime is exactly what would otherwise
         send `omh update` into the staged command package transaction, which
-        is not what these tests exercise.
+        is not what these tests exercise. `pack` is the running generation's
+        own pack when it is not the pointer itself, as on a real install,
+        where the pointer is `<root>/current/skills` and the pack
+        `<root>/generations/<id>/skills`.
         """
         with (
             mock.patch.object(
@@ -2798,7 +2801,7 @@ class HermesProfileSyncTests(unittest.TestCase):
             mock.patch.object(
                 sys.modules[resolve_paths.__module__],
                 "managed_workflow_pack_dir",
-                return_value=current,
+                return_value=pack or current,
             ),
             mock.patch.object(
                 _setup_module,
@@ -3084,6 +3087,109 @@ class HermesProfileSyncTests(unittest.TestCase):
                 external_dirs(config.read_text(encoding="utf-8")),
                 [own_dir, generation.as_posix()],
             )
+
+    def _generation_layout(self, root: Path) -> tuple[Path, Path, Path, Path]:
+        """The managed command root: the shared pointer and three generations' packs, one gone."""
+        managed = (root / "managed").resolve()
+        pointer = managed / "current" / "skills"
+        pointer.mkdir(parents=True)
+        first, second = (managed / "generations" / name / "skills" for name in ("20261025", "20261027"))
+        first.mkdir(parents=True)
+        second.mkdir(parents=True)
+        return pointer, first, second, managed / "generations" / "20260925" / "skills"
+
+    def test_setup_registers_the_pointer_and_never_the_running_generation(self) -> None:
+        # The targets step after the registration used to append
+        # `paths.skills_dir`, which on a managed command is the running
+        # generation's own pack. Beside the pointer that is the same files
+        # only until the next update moves the pointer; from then on every
+        # OMH skill resolves to two files and Hermes lists none of them.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._profile(root, "kami")
+            pointer, first, _second, _gone = self._generation_layout(root)
+
+            with self._managed_install(pointer, pack=first):
+                status, stdout, stderr = run_cli(self._base(root) + ["setup", "--json"], output_json=False)
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertFalse(json.loads(stdout)["steps"]["targets"]["config_changed"])
+            for config in (root / ".hermes" / "config.yaml", root / ".hermes" / "profiles" / "kami" / "config.yaml"):
+                self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix()], config)
+
+    def test_update_retires_every_generation_pack_beside_the_pointer(self) -> None:
+        # The shape a home carries after the old targets step ran across two
+        # updates: the pointer, the generation it pointed at then (still on
+        # disk), and one already garbage-collected. The next update from a
+        # newer generation leaves the pointer alone, in the primary home and
+        # in every bot profile, and keeps the directory the person added.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._profile(root, "kami")
+            pointer, first, second, gone = self._generation_layout(root)
+            with self._managed_install(pointer, pack=first):
+                status, _, stderr = run_cli(self._base(root) + ["setup"], output_json=False)
+            self.assertEqual(status, 0, stderr)
+            own_dir = (root / "my-skills").resolve().as_posix()
+            stale = [gone.as_posix(), f"{first.as_posix()}/"]
+            configs = (root / ".hermes" / "config.yaml", root / ".hermes" / "profiles" / "kami" / "config.yaml")
+            for config in configs:
+                listed = "".join(f"    - {entry}\n" for entry in (own_dir, pointer.as_posix(), *stale))
+                config.write_text(
+                    config.read_text(encoding="utf-8").replace(f"    - {pointer.as_posix()}\n", listed),
+                    encoding="utf-8",
+                    newline="",
+                )
+                self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [own_dir, pointer.as_posix(), *stale])
+
+            with self._managed_install(pointer, pack=second):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            for config in configs:
+                self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [own_dir, pointer.as_posix()], config)
+            self.assertIn("Bot profile kami: registration migrated from", stdout)
+            # The post-check re-reads every home and finds nothing to name.
+            self.assertNotIn("OMH-managed skills directories", stdout)
+
+    def test_a_profile_naming_only_an_older_generation_is_registered_not_opted_out(self) -> None:
+        # A generation's pack is an OMH-managed directory like the other
+        # two: a profile left on one is moved to the pointer, not frozen as
+        # the deliberate opt-out. Unregistering takes it out as well.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = self._profile(root, "kami")
+            pointer, first, second, _gone = self._generation_layout(root)
+            with self._managed_install(pointer, pack=first):
+                status, _, stderr = run_cli(self._base(root) + ["setup"], output_json=False)
+            self.assertEqual(status, 0, stderr)
+            config = profile / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(pointer.as_posix(), first.as_posix()),
+                encoding="utf-8",
+                newline="",
+            )
+
+            with self._managed_install(pointer, pack=second):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("Bot profiles: kami (refreshed)", stdout)
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix()])
+
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    f"    - {pointer.as_posix()}\n", f"    - {pointer.as_posix()}\n    - {first.as_posix()}\n"
+                ),
+                encoding="utf-8",
+                newline="",
+            )
+            with self._managed_install(pointer, pack=second):
+                status, _, stderr = run_cli(
+                    ["--omh-home", str(root / ".omh"), "--hermes-home", str(profile), "uninstall", "--registration-only"]
+                )
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [])
 
     @requires_symlinks
     def test_an_older_entry_spelled_through_a_link_is_retired_too(self) -> None:
