@@ -65,9 +65,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # Then the promo postmortem's visual-qa quality-bar rule grows that
             # sibling row: 522328 -> 523199.
             # 523199 -> 523200 and the digest re-derived: the show-reel row's
-            # trigger count went +5 -> +21 (+1); no other row moved.
+            # trigger count went +5 -> +13 (+1); no other row moved.
             (skill_capabilities, 523200, FULL_ROW_DELTA_CAP,
-             '751c0567023208630d53ffc7317fc4910e091ab8f141f21d1989b905b25cacd8',
+             '11f772aa00692e67a22b8f99463e2ef737b924e0e5336e1e6f284b8517fe72fa',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',

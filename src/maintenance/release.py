@@ -844,9 +844,9 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # fill (full-bleed minus the edge inset without subtitles, the body safe area
 # with them), logo clear space, decorative meta text and per-locale count
 # agreement are measured. No other row changed. Re-derived from the producer.
-# 526271 -> 526272: show-reel adds 16 promo/demo/launch/trailer triggers; its
+# 526271 -> 526272: show-reel adds 8 promo/launch/product video triggers; its
 # row only counts the ones past those it shows ("+5 more triggers" becomes
-# "+21 more triggers", +1). Re-derived from the producer.
+# "+13 more triggers", +1). Re-derived from the producer.
 FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 526272
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone

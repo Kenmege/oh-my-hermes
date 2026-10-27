@@ -315,6 +315,23 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-towed-trailer", "A bare trailer is also the one you tow", "Build a trailer for my boat.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-video-call", "A video call is not a film", "Make a video call to the client.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-renderer-install", "Installing the renderer is not a brief", "Install hyperframes on my laptop.", "answer_clarification", "", "show-reel"),
+    # A demo, product or explainer video of a fault is a recording for a
+    # report; it needs a production marker or a purpose adjunct to be a film.
+    RoutingPrecisionCase("show-reel-recording-frozen-screen", "A product video of a frozen screen is a fault recording", "Create a product video showing the frozen settings screen for the vendor.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-recording-repro-steps", "An explainer of how to reproduce a glitch is a fault recording", "Make an explainer video of how to reproduce the sync glitch.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-recording-timeout", "A demo video of a timeout is a fault recording", "Make a demo video of the login timeout.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-recording-flicker", "A demo video of a flicker for a designer is a fault recording", "Make a demo video showing the dropdown flicker for the designer.", "answer_clarification", "", "show-reel"),
+    # A renderer-led sentence is a brief only as the noun and a purpose
+    # adjunct; a statement about a render is not one.
+    RoutingPrecisionCase("show-reel-renderer-export-fault", "A renderer video that fails to export is a fault", "Hyperframes video for the pricing page fails to export.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-black-frames", "A renderer video from a past day rendering black is a fault", "HyperFrames launch video from Monday renders black frames.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-bare-noun", "The bare renderer noun is not a request", "hyperframes video", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-not-found", "A renderer video that is missing on a CDN is a fault", "hyperframes promo video is 404 on the CDN", "answer_clarification", "", "show-reel"),
+    # Editing or trimming an everyday video changes one; it does not author a
+    # film. `cut` and `edit` lead only a reel noun.
+    RoutingPrecisionCase("show-reel-edit-logo-timing", "Editing a product video's logo timing is an edit", "Edit a product video so the logo appears later.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-cut-down-promo", "Cutting a promo video down is a trim", "Cut a promo video down to ten seconds.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-edit-shorten-intro", "Shortening a launch video's intro is an edit", "Edit a launch video, just shorten the intro.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative

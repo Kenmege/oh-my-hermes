@@ -2843,7 +2843,7 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # Product/video/reel words alone must not acquire a motion-production owner.
     "show-reel": frozenset({
         "show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser",
-        "promo", "promotional", "clip", "demo", "explainer", "trailer", "sizzle", "hyperframes",
+        "promo", "promotional", "sizzle", "hyperframes",
     }),
     "geospatial-analysis": frozenset({"analysis", "overlay", "spatial", "intersection", "intersect", "layers", "compute", "overlap", "area"}),
     "biomedical-evidence": frozenset({"evidence", "reconciliation", "cross", "check", "variant", "matrix", "capture"}),

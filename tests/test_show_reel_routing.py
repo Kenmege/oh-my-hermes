@@ -59,6 +59,11 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a 2-minute launch film covering the three new features.",
             "Hey, create a cinematic launch film for the conference keynote.",
             "Create a showreel that introduces OMH.",
+            "Make a demo video for the launch.",
+            "Create a product video for our new homepage.",
+            "Make an animated demo video showing the setup wizard.",
+            "hyperframes teaser video for the beta",
+            "Edit a sizzle reel from our client projects.",
             "make a promo video of the omh TUI",
             "make a 30 second demo video of our terminal UI",
             "hyperframes promo video for the launch",
@@ -122,9 +127,41 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "HyperFrames rendering is slow on my laptop.",
             "hyperframes",
             "Make a promo code for 20% off.",
+            # A demo, product or explainer video with neither a production
+            # marker nor a purpose adjunct may be a recording of a fault.
+            "Make a demo video of the checkout failure for the issue tracker.",
+            "Make a demo video showing the stalled import for QA.",
+            "Create a product video of the outage for the postmortem.",
+            "Make an explainer video of how to reproduce the hang.",
+            "Make a demo video for the launch review regression.",
+            # A renderer lead with no verb is a brief only as the noun and a
+            # purpose adjunct, and nothing after it.
+            "Hyperframes video for the signup page does not load.",
+            "hyperframes promo video of the dashboard keeps flickering",
+            "HyperFrames teaser video from Friday is stuck at 70%.",
+            "hyperframes launch video for the release broke",
+            # `cut` and `edit` lead only a reel noun.
+            "Edit a promo video for the client, just drop the last scene.",
+            "Cut a launch video down to six seconds.",
+            "Edit a demo video for the launch.",
         ):
             with self.subTest(message=message):
                 self.assertFalse(show_reel_request_admitted(message))
+
+    def test_catalog_triggers_leave_other_skills_shortlist_words_alone(self):
+        # "demo", "clip", "explainer" and "trailer" belong to other skills'
+        # catalog text, so the phrases built from them are admission-only:
+        # as triggers they lowered those words' weight and dropped the
+        # media and connector lines for a request to consume a video.
+        from omh.plugin_bundle.omh.skill_shortlist import skill_candidates
+
+        listed = [name for name, _ in skill_candidates("Summarize this demo video for the team.")]
+        self.assertIn("omh-media-input", listed)
+        self.assertNotIn("omh-show-reel", [name for name, _ in skill_candidates("Make a short clip of the sprint review recording for the team.")])
+        triggers = set(skill_record("show-reel").definition.triggers)
+        for phrase in ("demo video", "product demo video", "promo clip", "explainer video", "launch trailer"):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, triggers)
 
     def test_a_courtesy_opener_keeps_an_asked_request(self):
         self.assertTrue(show_reel_request_admitted("Can you make a show reel?"))

@@ -876,7 +876,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # show-reel promo/demo/launch/trailer names: the same words as a
             # playback fault, an edit, an upload, a conversion, a chained post,
             # a towed trailer, a video call and a renderer install (+8).
-            expected=1123,
+            # The #2322 review classes: a demo, product or explainer video of
+            # a fault (4), a renderer-led statement about a render (4), and
+            # editing or trimming an everyday video (3) (+11).
+            expected=1134,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
