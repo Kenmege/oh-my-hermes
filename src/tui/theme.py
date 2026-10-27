@@ -61,10 +61,13 @@ a light one a light tint of that colour (`LIGHT_STATUS_SHARE`), so the bar
 belongs to a light screen instead of being a dark band across it. Its words
 are measured against that bar instead of the terminal's background. The
 menus (`menu`, `menu_current`: the completion menu, the pickers, choice
-prompts, the agent list and the bot board) take the same treatment: on a light
-background each band is its palette colour tinted toward the background
-(`LIGHT_MENU_SHARE`, the highlighted row less so), with the highlighted band's
-own dark hue as ink, lifted to 4.5:1 on each band. The
+prompts, the agent list, the delegation view and the bot board) have no bar
+and no fill (owner's pick of 2026-10-27, Claude Code's look): a row ends where
+its words do on every background, so a highlight is a pointer (`❯`) and the
+highlighted row's name bold in the skill hue (`menu_current`, the `slash`
+colour, so a command reads the same in the menu and in the composer), with
+every other row in the terminal's foreground (`menu`) and its details on
+`muted`. The
 info line under the composer and the sticky prompt over a running turn have
 no bar: their words and marks are measured against the terminal's background
 like any transcript row.
@@ -100,9 +103,6 @@ LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
 # A light background's status bar: the palette's status-bar colour moved this far toward the background.
 LIGHT_STATUS_SHARE = 0.85
-# A light background's menu rows and the highlighted one: the palette's menu colours moved this far toward it.
-LIGHT_MENU_SHARE = 0.88
-LIGHT_MENU_CURRENT_SHARE = 0.7
 # The delegation view's edge gradient, top to bottom, for a palette that names none of these tokens.
 DAG_EDGE_STOPS = {"dag_edge_start": "#8B5CF6", "dag_edge_mid": "#6366F1", "dag_edge_end": "#3B82F6"}
 DAG_EDGE_STEPS = 9  # an odd count, so the middle stop is a step of its own
@@ -205,6 +205,9 @@ LAUNCH_PALETTES: dict[str, tuple[LogoPalette, LogoPalette]] = {
                     whites=("#202429", "#2D3135", "#393E42", "#464B50", "#54595E", "#62676C"), spark="#008A8D"),
     ),
 }
+# A sent prompt's band: the launch look's card-edge colour moved this far toward the background (on a dark one, on a
+# light one), so the band is that look's tint at about 1.2-1.5:1 against the background.
+PROMPT_BAND_SHARE = (0.6, 0.8)
 LOGO_BLOCK = "█"
 # How far a drop-shadow glyph (the logo's box-drawing characters) is pulled from its face colour toward the background.
 LOGO_SHADOW_SHARE = 0.55
@@ -240,8 +243,8 @@ class Theme:
     syntax_number: Style
     syntax_comment: Style
     status: Style
-    menu: Style
-    menu_current: Style
+    menu: Style  # a menu or picker row's name, unhighlighted: the terminal's foreground, no fill
+    menu_current: Style  # the highlighted row's pointer and name: bold in the skill hue (`slash`), no fill
     hint: Style
     muted: Style
     mode_accept: Style
@@ -256,6 +259,7 @@ class Theme:
     slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
     aura: tuple[Style, ...] = ()  # a `dag-ulw` in the composer and the rules around it, bold, `AURA_STOPS` stepped
     aura_glint: tuple[Style, ...] = ()  # the same steps toward `AURA_GLINT`: the band that sweeps through them
+    prompt_band: Style = Style()  # behind a prompt you sent, edge to edge (`with_prompt_band`); none until set
 
 
 def aura_moves(theme: Theme) -> bool:
@@ -382,17 +386,6 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
         return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
 
-    if reported and light:
-        menu_bg = _mix(c["completion_menu_bg"], surface, LIGHT_MENU_SHARE)
-        current_bg = _mix(c["completion_menu_current_bg"], surface, LIGHT_MENU_CURRENT_SHARE)
-        menu = Style(fg=_lifted(c["completion_menu_current_bg"], BLACK, menu_bg, TEXT_CONTRAST), bg=menu_bg)
-        menu_current = Style(
-            fg=_lifted(c["completion_menu_current_bg"], BLACK, current_bg, TEXT_CONTRAST), bg=current_bg, bold=True,
-        )
-    else:
-        menu = Style(fg=c["banner_text"], bg=c["completion_menu_bg"])
-        menu_current = Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True)
-
     if not reported:
         ok_band = error_band = Style()
     elif light:
@@ -437,8 +430,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         syntax_number=Style(fg=read("syntax_number")),
         syntax_comment=Style(fg=read("syntax_comment"), italic=True),
         status=on_bar("status_bar_text"),
-        menu=menu,
-        menu_current=menu_current,
+        menu=Style(),
+        menu_current=Style(fg=hue("skill"), bold=True),
         hint=Style(fg=grey("faint", TEXT_CONTRAST)),
         muted=Style(fg=grey("muted", TEXT_CONTRAST)),
         mode_accept=Style(fg=read("ui_warn")),
@@ -467,6 +460,19 @@ def launch_palette(name: str, surface: str) -> LogoPalette:
     unknown name."""
     dark, light = LAUNCH_PALETTES.get(name, LAUNCH_PALETTES[DEFAULT_LAUNCH])
     return light if is_light(surface) else dark
+
+
+def with_prompt_band(theme: Theme, skin: SkinTheme, background: str | None, look: str) -> Theme:
+    """`theme` with the band behind a prompt you sent (`prompt_band`, owner's pick of 2026-10-27): launch look
+    `look`'s card-edge colour mixed most of the way into the background (`PROMPT_BAND_SHARE`), so each look tints it
+    its own way. None when the terminal reported no background, as with the outcome bands: a band guessed for a dark
+    screen would be a dark bar across a light one."""
+    surface = surface_for(skin, background)
+    if surface != background:
+        return replace(theme, prompt_band=Style())
+    side = 1 if is_light(surface) else 0
+    edge = launch_palette(look, surface).edge
+    return replace(theme, prompt_band=Style(bg=_mix(edge, surface, PROMPT_BAND_SHARE[side])))
 
 
 def _logo_hyphens(rows: list[str]) -> set[int]:
@@ -585,8 +591,8 @@ def on_band(theme: Theme, band: Style) -> Theme:
 
 def without_colour(theme: Theme) -> Theme:
     """`theme` painted at the `NO_COLOR` depth (no-color.org): every style keeps its bold, dim, italic, underline and
-    reverse, and the menu's current row and the pager's footer bar (`status`), which only their background told
-    apart, are reversed."""
+    reverse, and the pager's footer bar (`status`), which only its background told apart, is reversed. A menu's
+    highlighted row keeps its pointer and its bold."""
 
     def plain(value: object) -> object:
         if isinstance(value, Style):
@@ -596,8 +602,7 @@ def without_colour(theme: Theme) -> Theme:
         return value
 
     painted = replace(theme, **{field.name: plain(getattr(theme, field.name)) for field in fields(theme)})
-    return replace(painted, menu_current=replace(painted.menu_current, reverse=True),
-                   status=replace(painted.status, reverse=True))
+    return replace(painted, status=replace(painted.status, reverse=True))
 
 
 def theme_named(value: str, background: str | None = None) -> Theme:

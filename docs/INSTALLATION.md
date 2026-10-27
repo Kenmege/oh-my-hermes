@@ -428,7 +428,18 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer between two full-width rules as Claude Code draws it (`───`,
   then `❯ …` rows, then `───`, with no side edges or corners),
   one dim info line under it, and, while there are subagents, the agent view
-  under that, always expanded (below). On a terminal 6 rows tall the composer keeps its
+  under that, always expanded (below). The region's last row, from 30 rows,
+  holds the session directory's git branch on the left (`branch:<name> | !3
+  ?128`: tracked files changed, then untracked, each only when not zero; a
+  detached HEAD by its short sha; nothing outside a repository), read by
+  `git status` off the screen's thread after each tool, each turn and every
+  15 seconds, and `[ ⚚ OMH Native ]` on the right edge in the launch look's
+  colours. As the row narrows the branch name is cut to `…` first, then the
+  badge goes, then the counts. A blank row stands between the reply and
+  the working row, between the working row's tip and the plan, and between
+  the plan and the composer's top rule, wherever the terminal has a row to
+  spare for it. Your sent prompt runs on a band to the right edge, a quiet
+  tint of the launch look's card edge. On a terminal 6 rows tall the composer keeps its
   top rule and drops its bottom one, so the slot above it still gets its
   two rows; from 7 rows it has both, and under 6 rows (or 20
   columns) the composer is a bare `❯ …` row with no rule. A `/name` you type
@@ -1200,10 +1211,20 @@ profile archive, not the transcript, so the first `/export` says so and the
 next one runs it), and `/reload-skills` (Hermes re-scans its
 skills for this session and the TUI reads its command list again, so a skill
 installed since the start, by `omh update` or `/skills install`, runs as
-`/<name>` without a restart). Claude Code's `/cost` and `/permissions` run
-Hermes' `/usage` and `/approvals`.
+`/<name>` without a restart). Claude Code's `/cost`, `/permissions` and
+`/compact` run Hermes' `/usage`, `/approvals` and `/compress` (`here [N]`, a
+focus topic, or `--preview`; Hermes refuses a compression while a turn
+runs, and the TUI says to run it again once the turn ends). Hermes' shared gateway, which a Hermes from v0.22 runs,
+does not take `/compress`, `/branch`, `/retry`, `/undo`, `/stop`, `/bg`,
+`/btw`, `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` or
+`/config` as a typed command. The TUI runs each one through the gateway call
+Hermes' own Ink TUI uses for it, and `/branch` then opens the new session.
+Commands that only Hermes' classic CLI runs (`/handoff`, `/worktree`,
+`/snapshot`, `/import`, `/hatch`, `/palette`) are left out of completion, and
+`/help` names them on one line. Typed, they go to Hermes, which says where to
+run each one.
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
-`/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
+`/agents`, `/subscription`, `/save`, `/prompt`, ...) say so and name
 `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
 terminal, except that bare `/skills`, whose screen there is an overlay,
 prints the help of Hermes' skills command here instead of opening the skills
@@ -1368,10 +1389,11 @@ and every rule or mark 3:1 (on the pager's footer, against its bar: the
 theme's own bar colour on a dark background, a light tint of it on a light
 one; the info line under the composer and the sticky prompt have no bar),
 and
-on a light background the diff bands and the menu bands (the completion
-menu, the pickers, choice prompts, the agent list and the bot board) are light
-tints, their words at 4.5:1 on each. With no answer and no `COLORFGBG` that names one, the background is
-taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
+on a light background the diff bands are light tints, their words at 4.5:1 on
+each. The menus (the completion menu, the pickers, choice prompts, the agent
+list, the delegation view and the bot board) have no band on any background:
+the highlighted row is a `❯` and its name bold in the skill hue, at 4.5:1. With no answer and no `COLORFGBG` that names one, the background is
+taken as dark, and nothing that would depend on knowing it is painted: your sent prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows
 the terminal again, and each, like `/theme <name>`, redraws the screen in the
@@ -2852,8 +2874,23 @@ OMH-managed directories are retired; a directory you registered yourself
 stays where it is. A command that is not the installer-managed one (a
 checkout, a pip or uv tool install) registers its own `~/.omh/skills` and
 never retires the pointer, so it cannot move a machine backwards.
+
+A generation's own pack, `<managed root>/generations/<id>/skills`, is never
+registered: only the `current/skills` pointer is. An entry naming one (an
+older `omh setup` wrote the running generation's pack after the pointer) is
+the same files as the pointer on the day it is written and a second copy of
+every OMH skill once the next update moves the pointer, at which point
+Hermes lists no OMH skill at all. The installer-managed command's setup and
+update retire every such entry, from the primary home and every bot
+profile, whether the generation is still on disk or already collected, and
+a home naming only one is migrated to the pointer rather than read as the
+opt-out; `omh uninstall --registration-only` removes them too. Only
+absolute entries under the pointer's own managed root match: a `skills`
+directory under some other `generations/` directory, and any relative
+entry (Hermes anchors those at its own home), stay.
 `omh doctor` reports a home that still names two managed directories on
-disk as `external_dir_ambiguity` (one row per affected profile) and
+disk, an older generation's pack beside the pointer included, as
+`external_dir_ambiguity` (one row per affected profile) and
 promotes the row's `run \`omh update\`` to its headline next action; the
 update's own post-check re-reads every home after the write and warns in
 the same words, as a warning line only -- the update's exit code does not

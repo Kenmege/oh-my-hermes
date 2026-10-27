@@ -105,7 +105,7 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual(ids, (MAIN_ID, FIRST, SECOND))
         self.assertEqual(rows, [text.rstrip() for text in lines_text(expected)] + [AGENT_LIST_HINT])
         self.assertEqual(rows[0], "  ● main")
-        self.assertTrue(rows[1].startswith("▸ ⠋ find usages of old_api in src/"), rows[1])
+        self.assertTrue(rows[1].startswith("❯ ⠋ find usages of old_api in src/"), rows[1])
         self.assertTrue(rows[2].startswith("  ⠋ read the diff for risks"), rows[2])
         self.assertEqual(rows[-1], AGENT_LIST_HINT)
         self.assertEqual(client.calls, [])
@@ -191,7 +191,7 @@ class ListFocusTests(unittest.TestCase):
             seen.append(app.list_selected)
         self.assertEqual(seen, [SECOND, SECOND, SECOND, FIRST, MAIN_ID, MAIN_ID, MAIN_ID, FIRST])
         rows = under_the_frame(app)
-        self.assertEqual([row[:2] for row in rows[:3]], ["  ", "▸ ", "  "])
+        self.assertEqual([row[:2] for row in rows[:3]], ["  ", "❯ ", "  "])
 
     def test_the_list_shows_main_and_six_agents_and_scrolls_to_keep_the_highlight_in_view(self) -> None:
         app, _client = agent_app(rows=30)  # a quarter of 30 rows is past the view's usual seven
@@ -208,11 +208,11 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual(app.list_selected, extra[-1])
         rows = under_the_frame(app)
         self.assertEqual(len(rows), AGENT_VIEW_ROWS + 1)
-        self.assertTrue(rows[6].startswith("▸ ") and "task 6" in rows[6], rows[6])
+        self.assertTrue(rows[6].startswith("❯ ") and "task 6" in rows[6], rows[6])
         self.assertIn("task 0", rows[0])  # main and the two recorded agents scrolled off
         for _ in range(9):
             app._on_input(Key(UP))
-        self.assertEqual(under_the_frame(app)[0], "▸ ● main")
+        self.assertEqual(under_the_frame(app)[0], "❯ ● main")
 
     def test_a_short_terminal_shows_as_many_rows_as_it_can_spare(self) -> None:
         app, _client = agent_app(rows=10)
@@ -223,7 +223,7 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual(len(rows), agent_view_cap(10, 80, 11) + 1)  # what the view gets there, and the info line
         self.assertEqual(len(rows) - 1, before, "the list takes the view's rows, no more and no fewer")
         self.assertEqual(rows[-1], AGENT_LIST_HINT)
-        self.assertTrue(rows[1].startswith("▸ "), rows)
+        self.assertTrue(rows[1].startswith("❯ "), rows)
 
     def test_the_composer_is_blank_while_the_list_is_open_and_comes_back_on_its_row(self) -> None:
         app, _client = agent_app()
@@ -233,7 +233,8 @@ class ListFocusTests(unittest.TestCase):
         resting, status = composer_index(before), screen_info_index(app, before)
         app._on_input(Key(DOWN))
         during = drawn(app)
-        self.assertFalse([row for row in during if row.startswith("❯ ")], during)  # no composer
+        # No composer: the one `❯ ` row is the list's pointer on the highlighted agent.
+        self.assertEqual([row for row in during if row.startswith("❯ ") and "old_api" not in row], [], during)
         # Its rows stay: the rules, and the browsing hint where the prompt was.
         self.assertTrue(during[resting - 1].startswith(RULE_ROW) and during[resting + 1].startswith(RULE_ROW), during)
         self.assertEqual(during[resting].strip(), BROWSING_HINT)
@@ -260,7 +261,7 @@ class ListFocusTests(unittest.TestCase):
                 during = drawn(app)
                 self.assertEqual(screen_info_index(app, during), info, "the info line stays on its row")
                 self.assertEqual([row[2:] for row in during[info + 1 : info + 4]], [row[2:] for row in VIEW])
-                self.assertTrue(during[info + 2].startswith("▸ "), during)
+                self.assertTrue(during[info + 2].startswith("❯ "), during)
                 top = info + 1 + len(VIEW) - app.region.height
                 self.assertEqual(during[:top], before[:top])  # nothing above the region moved
                 working = [index for index, row in enumerate(before) if row.startswith("✻ Working")]
@@ -403,7 +404,7 @@ class ListLeaveTests(unittest.TestCase):
         self.assertEqual(app.list_selected, SECOND)
         app.roster.clear()
         agent_event(app, "start", FIRST)
-        self.assertEqual(under_the_frame(app)[0], "▸ ● main")
+        self.assertEqual(under_the_frame(app)[0], "❯ ● main")
         self.assertEqual(app.list_selected, MAIN_ID)
 
 
@@ -1257,17 +1258,17 @@ class AgentReplayTests(AppTestCase):
         rows = captures["list"]
         self.assertEqual(info_index(rows) - 3, status, "the list opens on the view's rows")
         self.assertEqual(rows[status + 1], "  ● main")
-        self.assertTrue(rows[status + 2].startswith("▸ ") and "find usages of old_api" in rows[status + 2], rows)
+        self.assertTrue(rows[status + 2].startswith("❯ ") and "find usages of old_api" in rows[status + 2], rows)
         # The list's keys, and on the right the effort the replayed config leaves unset (`default`).
         self.assertEqual(info_left(rows[status]), AGENT_LIST_HINT)
         self.assertTrue(rows[status].endswith("effort default"), rows[status])
         # While the list has the keys the composer's rules stay and its row says how to browse: no prompt to type in.
-        self.assertFalse([row for row in rows if row.startswith("❯ ")], rows)
+        self.assertEqual([row for row in rows if row.startswith("❯ ") and "old_api" not in row], [], rows)
         self.assertEqual([row.strip() for row in rows if BROWSING_HINT in row], [BROWSING_HINT])
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
         # Back on the second agent, the list's last row: the screen's last row that is not blank.
-        self.assertTrue(captures["back"][info_index(captures["back"])].startswith("▸ "), captures["back"])
+        self.assertTrue(captures["back"][info_index(captures["back"])].startswith("❯ "), captures["back"])
         calls = run.calls("subagent.tail")
         self.assertEqual(calls[0]["params"], {"session_id": LIVE_ID, "subagent_id": FIRST})
         self.assertLessEqual(len(calls), 2)

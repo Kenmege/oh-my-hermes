@@ -45,7 +45,7 @@ from _tui_gateway_replay import (
     replay_env,
     spans,
 )
-from _tui_lines import composer_text, INFO_INSET, line_text, RULE_ROW, rule_rows
+from _tui_lines import info_row_index, is_badge_row, composer_text, INFO_INSET, line_text, RULE_ROW, rule_rows
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
@@ -59,6 +59,7 @@ from omh.tui.app import (
     picker_key,
     run_model_chain_picker,
 )
+from omh.tui.layout import BADGE_MIN_ROWS
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import CLOSED_EXIT, FALLBACK_EXIT, FALLBACK_SENTINEL_ENV, SESSION_FILE_ENV
@@ -235,8 +236,9 @@ class ScriptedTerminal:
     # -- reading the screen --
 
     def info_row(self) -> str:
-        """The info line: the screen's last row that is not blank ("" on a blank screen)."""
-        rows = [line for line in self.screen.lines() if line]
+        """The info line: the screen's last row that is not blank and not the badge row under it ("" on a blank
+        screen)."""
+        rows = [line for line in self.screen.lines() if line and not is_badge_row(line)]
         return rows[-1] if rows else ""
 
     def history(self) -> str:
@@ -915,13 +917,14 @@ class SessionTests(AppTestCase):
                 self.assertEqual(sum(line.startswith(RULE_MARK) for line in screen), 2, screen)
                 # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
                 # fits the redraw) and the region (the launch card, refitted, then top edge, composer, bottom edge,
-                # info line), nothing else: one card, its boxes all closed.
+                # info line, the badge row), nothing else: one card, its boxes all closed.
                 logo = LOGO[:-1] if cols >= 100 else []
                 card = [line for line in drawn if line[:1] in ("╭", "│", "╰")]
                 self.assertEqual(sum(line.startswith("╭─ session") for line in screen), 1 if card else 0, screen)
                 self.assertEqual(sum(line.count("╭") for line in card), sum(line.count("╰") for line in card), screen)
                 self.assertEqual(drawn[: len(logo)], logo, screen)
-                self.assertEqual(len(drawn), 5 + len(logo) + len(card), screen)
+                badge = int(rows >= BADGE_MIN_ROWS)  # the badge row under the info line, from BADGE_MIN_ROWS rows
+                self.assertEqual(len(drawn), 5 + badge + len(logo) + len(card), screen)
                 self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -1696,7 +1699,7 @@ class OpeningTests(AppTestCase):
                 status = info_index(screen)
                 rule = status - 2 - UNDER_COMPOSER
                 self.assertIn(RULE_MARK, screen[rule], screen)
-                self.assertEqual(status, 33, screen)  # the info line on the last row, the composer right above it
+                self.assertEqual(status, 32, screen)  # the info line over the badge row on the last row, the composer above
         start = run.terminal.captures["start"]
         rule = info_index(start) - 2 - UNDER_COMPOSER
         self.assertTrue(start[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · ~/project"), start)
@@ -1763,7 +1766,7 @@ class OpeningTests(AppTestCase):
                 self.assertEqual(history[: LOGO_ROWS - 1], LOGO[:-1])  # scrolling up stops at the logo
                 self.assertEqual(first[: LOGO_ROWS - 1], LOGO[:-1])  # the logo opens the top row
                 self.assertEqual(rows["after"], rows["before"])
-                self.assertEqual(rows["before"], 33 - 1 - UNDER_COMPOSER)  # the bottom rows: composer, rule, info
+                self.assertEqual(rows["before"], 33 - 2 - UNDER_COMPOSER)  # the bottom rows: composer, rule, info, badge
                 writes = "".join(run.terminal.writes)
                 # The startup query, the push, ED 3 once, then the first frame. No ED 2: the push leaves only the
                 # cursor's own row on the screen, the top row, which the first frame paints over.
@@ -2105,7 +2108,11 @@ class LocalCommandTests(AppTestCase):
         # The recorded catalog's categories, without what the TUI runs itself, routes to Hermes' terminal or drops:
         # Session (/new /clear /redraw), Exit (/quit) and TUI (/density /logs /mouse) are left with nothing, and
         # /export is the TUI's (it says what Hermes exports before it runs).
-        self.assertIn("  Configuration: /import /config", pager)
+        # /import only runs in Hermes' classic CLI: /help names it on a line of its own instead.
+        self.assertIn("  Configuration: /config", pager)
+        self.assertIn("Only Hermes' classic CLI (`hermes --cli`) runs /handoff /worktree /snapshot /import /hatch "
+                      "/palette", pager)
+        self.assertIn("/compact       Compress this session's context", pager)
         self.assertIn("  Tools & Skills: /tools /toolsets /skills", pager)
         self.assertNotIn("Session:", pager)
         self.assertNotIn("skill commands available", pager)  # the recording lists none
@@ -2231,7 +2238,7 @@ def bracketed(text: str) -> bytes:
 
 def info_index(screen: list[str]) -> int:
     """The info line's row: the last that is not blank, since every row under the region is."""
-    return max(index for index, line in enumerate(screen) if line)
+    return info_row_index(screen)
 
 
 def info_row_of(screen: list[str]) -> str:
@@ -2523,8 +2530,8 @@ class KeyTests(AppTestCase):
         menu = terminal.captures["menu"]
         # The launch puts the composer on the bottom rows, so the menu opens above it, over its top rule.
         top = rule_rows(menu)[0]
-        self.assertTrue(menu[top - 2].startswith(" app.py"), menu)
-        self.assertTrue(menu[top - 1].startswith(" src/"), menu)
+        self.assertTrue(menu[top - 2].startswith("❯ app.py"), menu)  # the highlighted row has the pointer
+        self.assertTrue(menu[top - 1].startswith("  src/"), menu)
         self.assertIn("dir", menu[top - 1])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)

@@ -65,6 +65,7 @@ from .product_discovery_skill import DEFINITION as PRODUCT_DISCOVERY_DEFINITION
 from .sales_pipeline_skill import DEFINITION as SALES_PIPELINE_DEFINITION
 from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
 from .geospatial_analysis_skill import DEFINITION as GEOSPATIAL_ANALYSIS_DEFINITION
+from .sprite_forge_skill import DEFINITION as SPRITE_FORGE_DEFINITION
 from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINITION
 from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
 from .ai_job_search_skill import DEFINITION as AI_JOB_SEARCH_DEFINITION
@@ -133,6 +134,20 @@ _RALPLAN_IDEAL_STATE_BAR = (
     "End with a `Target-state coverage` check: a difference with no owning task or no verification scenario is added to the plan as its own task, unless the user excluded it, in which case the plan records it as a non-goal with that reason; a difference blocked on missing evidence stays in the evidence-gap record below instead.",
     "Never shrink scope on your own: plan an MVP or a first phase only when the user requested one, plan a split or phasing the user requested as given, and when the target state exceeds what was literally asked, state that in one sentence and plan the full target state.",
     "Size each task as one band, never as hours or days: `XS` (one small edit), `S` (one file and its test), `M` (several files in one module), `L` (several modules or one contract change), `XL` (crosses subsystems; split it into smaller tasks).",
+)
+
+# Shared by plan's and ralplan's quality_bar and ralplan's portable override,
+# so both planners read one rule set: the goal beyond the request (altitude),
+# raw material and an outside judge (depth), and verbs plus practitioner actions
+# rather than voices (range). Placed after each bar's first four items so the
+# capability rows (`_bounded_list(quality_bar, 4)`) do not move.
+_PLAN_AMBITION_BAR = (
+    "When the plan describes code changes, name the goal beyond the request before splitting tasks: one sentence on what should happen once the requested result exists, and whether the plan aims at that outcome or at the request as asked; when the two are the same, say so in one line. A plan aimed at the outcome adds, as its own tasks, the access the executor needs to work at that level unattended - failure logs, a reproduction environment, the raw data, the mapping from a released version to its commit.",
+    "When the plan describes code changes, name the raw material the work starts from instead of a digest of it - the failing log, trace, or data rather than the issue summary - and the methods and tools a leading practitioner of the field would use on it. Every verification step names an outside judge - a test, CI, a measurement, a human reviewer, or an external tool - never the planning model's or the executor's own reading of the result; a step with no outside judge is recorded as an evidence gap.",
+    "When the plan describes code changes, restate the deliverable once as the verbs it must accomplish rather than the noun it produces; when that brings in another field, write what a practitioner of that field does as a task (fuzz the parser, audit each completion claim against its evidence), never an instruction to write or speak like one.",
+)
+_PLAN_AMBITION_CHECK = (
+    "When the plan describes code changes, it names the goal beyond the request, the raw material, and an outside judge for each verification step, or records the missing judge as an evidence gap."
 )
 
 # Shared by ralplan's Hermes quality_bar, its portable override, and plan's
@@ -5305,6 +5320,7 @@ _DEFINITIONS = [
             "For a 3D or canvas scene, capture the first frame exactly as booted, each camera preset, and every time of day the scene advertises; a claim in its own title or HUD that its first frame does not show, a small animated object that does not read as what it is, and flat light are each one `differences` entry (`omh-frontend/references/rendered-scene-craft.md`).",
             "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
             "Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.",
+            "For animated or simulated output, verify motion continuity through `references/motion-continuity.md`: check entry/spawn position against the declared origin, per-frame displacement against the declared speed, force direction against observed motion (knockback sign), monotonic HP/resource bars, and re-run the full deploy/travel/engage flow in an independent simulation/replay with frames sampled per phase — never infer flow from cost/clear numbers, and record frame indices/timestamps as evidence; a technical pass (build/tests/metrics) is never visual approval.",
             "Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.",
             "A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.",
             f"On Hermes, when {native_tool_presence_clause('browser_vision', code=True)}, the session can take its own captures: each such render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; captures from the wrapper, executor, or user still count.",
@@ -5373,11 +5389,12 @@ _DEFINITIONS = [
                 "Bind each capture to its screenshot path, URL, the viewport width the page reported, and the target revision; an entry missing any of the four is not evidence.",
                 "Score a round from the captured image itself, never from another model's text description of it.",
                 "Set a viewport only through a tool that can, and read the width back before the capture; a width that reads back other than the one requested is not that viewport, and a width nothing could set is a named blocker unless a capture of it is supplied.",
+            "For animated or simulated output, verify motion continuity through `references/motion-continuity.md`: check entry/spawn position against the declared origin, per-frame displacement against the declared speed, force direction against observed motion (knockback sign), monotonic HP/resource bars, and re-run the full deploy/travel/engage flow in an independent simulation/replay with frames sampled per phase — never infer flow from cost/clear numbers, and record frame indices/timestamps as evidence; a technical pass (build/tests/metrics) is never visual approval.",
                 "Read the browser console after every navigation and every interaction in scope; a clean console read is console evidence only, never network, accessibility, or visual evidence.",
             ),
         },
         portable_override_shadows={
-            "quality_bar": "60c914d09d13976b67ab39a132d976a36a65db316bac0d6ca95f940b083fbf3b",
+            "quality_bar": "81937d4de19dd318cd02bbab0a7bf3cadfed56935452d49dbb4b0ba3efcda995",
         },
     ),
     SkillDefinition(
@@ -7080,6 +7097,7 @@ _DEFINITIONS = [
             "When the plan describes code changes, add a `Review Focus` section listing at most 5 inputs or failure modes the requirements imply that no planned test covers, likeliest first, each with its expected behavior and the owning task that will add the test; an input the requirements do not mention must still leave the result intact, and when the check turns up nothing the section says it found none.",
             "When the plan describes code changes, keep each step to a single action whose outcome can be checked - a named test and what it asserts, an exact signature and its file, or a command and the output that counts as passing; a step that leaves the choice open (`TBD`, `make it robust`) is a gap.",
             "When the plan describes code changes, run a proportion check before acceptance: if the plan text outgrows the code it leads to, or is mostly function bodies, implementation has leaked into it; reduce bodies to test names, assertions, and signatures.",
+            *_PLAN_AMBITION_BAR,
             PLAN_ACCEPTANCE_ANSWER_RULE,
             ENGINE_FIT_RECOMMENDATION_RULE,
             HermesReferenceLine(
@@ -7093,7 +7111,7 @@ _DEFINITIONS = [
             "and no implementation hidden inside the plan text."
         ),
         final_checklist=_CATEGORY_FINAL_CHECKLISTS["planning"]
-        + ("When the plan describes code changes, it has a `Review Focus` section with at most 5 uncovered inputs and their owning tasks, or one stating the check found none.",),
+        + ("When the plan describes code changes, it has a `Review Focus` section with at most 5 uncovered inputs and their owning tasks, or one stating the check found none.", _PLAN_AMBITION_CHECK),
         situations=(
             "how should we build this feature",
             "break this work into steps",
@@ -7150,6 +7168,7 @@ _DEFINITIONS = [
             "List every lane of the accepted plan in node-prompt shape - `TASK`, `DELIVERABLE`, `SCOPE`, `VERIFY`, `STOP WHEN` - with `depends_on` per lane, so `ultrawork` can prepare board rows from the plan without re-planning; planning itself stays a bounded in-session lane.",
             ADAPTATION_QUALITY_READ_RULE,
             *_RALPLAN_IDEAL_STATE_BAR,
+            *_PLAN_AMBITION_BAR,
             "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
             "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
             "Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.",
@@ -7187,6 +7206,7 @@ _DEFINITIONS = [
             "At least two options or one chosen option plus rejected alternatives are recorded.",
             "Risks, acceptance criteria, and verification commands are testable or explicitly blocked.",
             "Every target-state difference has a `Success criteria` row with a task and a verification scenario or is recorded as a user-excluded non-goal, and the `Target-state coverage` check left none unmapped.",
+            _PLAN_AMBITION_CHECK,
             "The plan exists as a recorded file-backed artifact, not only as chat narration.",
             "The implementation handoff is prepared only after plan acceptance and remains prepared_not_observed.",
             "The follow-on engine or executor path was started only after the user's explicit go-ahead in this conversation, never from plan acceptance alone.",
@@ -7225,6 +7245,7 @@ _DEFINITIONS = [
                 "Produce testable acceptance criteria and exact verification commands or explain why they are not yet knowable.",
                 ADAPTATION_QUALITY_READ_RULE.portable,
                 *_RALPLAN_IDEAL_STATE_BAR,
+                *_PLAN_AMBITION_BAR,
                 "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
                 "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
                 "Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.",
@@ -7241,7 +7262,7 @@ _DEFINITIONS = [
             "artifact_expectations": "a8eb07c3491b92fb1f72dc0bbd8bd5da29398f9b8aa6cae9b64b2b2c5aa3bae6",
             "safety_rules": "72126c765975b034ab683d27aa0349dbe84c564e45f29832f2b8424a1b3d28cc",
             "opening_steps": "f839a5ee9ecaca2834a76d29b601f18e03ca292e0abc0b2af5c92274b5fa4c7e",
-            "quality_bar": "5ec6152d25e922a25960189f30a3560e0b82ffedefa4f4181072f214271bf862",
+            "quality_bar": "8350281acd6839c81e5be9e9c79dc3f57c692b577ce110a00b4b3938a8ae5b13",
             "why_this_exists": "7c8d4e7c04114ed3e5fa532095f54cbd4f36aa5333d34f873c40d516f27c29e1",
         },
     ),
@@ -11803,6 +11824,7 @@ _DEFINITIONS.extend(
         SHOW_REEL_DEFINITION,
         REPRO_AUDIT_DEFINITION,
         GEOSPATIAL_ANALYSIS_DEFINITION,
+        SPRITE_FORGE_DEFINITION,
         BIOMEDICAL_EVIDENCE_DEFINITION,
         MOLECULAR_DOCKING_DEFINITION,
         AI_JOB_SEARCH_DEFINITION,

@@ -40,6 +40,7 @@ from omh.tui.layout import (
     choice_cap,
     compose,
     composer_cap,
+    max_height,
     slot_cap,
 )
 from omh.tui.style import Line, Span
@@ -262,6 +263,87 @@ class AllocateExampleTests(unittest.TestCase):
         self.assertEqual([composer_cap(rows) for rows in (1, 2, 3, 7, 8, 24, 80)], [0, 1, 1, 1, 2, 6, 20])
         self.assertEqual([slot_cap(rows, 80) for rows in (5, 6, 24, 80)], [0, 2, 8, 26])
         self.assertEqual(slot_cap(24, MIN_COLS - 1), 0)
+
+
+class GapTests(unittest.TestCase):
+    """The blank rows around the plan (the owner's spacing of 2026-10-27): only from rows nothing else wants."""
+
+    def test_a_tall_terminal_gives_both_gaps_and_the_frame_draws_them_around_the_slot(self) -> None:
+        budget = allocate(40, 80, sticky=False, tail_rows=10, slot_rows=4, composer_rows=1, gaps=(True, True),
+                          tail_floor=2, gap_reserve=2)
+        self.assertEqual((budget.gaps, budget.slot, budget.tail), ((1, 1), 4, 10))
+        slot = [(Span("[Plan]"),), (Span("[ ] a"),), (Span("[ ] b"),), (Span("[ ] c"),)]
+        frame = build_frame(cols=80, rows=40, composer=Composer(), info=(Span("info"),),
+                            tail=[(Span("tip"),)], slot=slot, gaps=(True, True))
+        rows = lines_text(list(frame.lines))
+        start = rows.index("[Plan]")
+        self.assertEqual((rows[start - 1], rows[start + 4]), ("", ""))
+        self.assertTrue(rows[start + 5].startswith("─"))
+
+    def test_the_gaps_give_way_before_the_slot_the_agent_view_or_the_working_rows(self) -> None:
+        for rows in range(MIN_ROWS, 30):
+            with self.subTest(rows=rows):
+                spaced = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=5, composer_rows=1,
+                                  agents_rows=7, tail_floor=2, gaps=(True, True), gap_reserve=2)
+                plain = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=5, composer_rows=1,
+                                 agents_rows=7, tail_floor=2, gap_reserve=2)
+                self.assertEqual((spaced.slot, spaced.agents, spaced.floor), (plain.slot, plain.agents, plain.floor))
+                self.assertEqual(spaced.composer_top - sum(spaced.gaps) - spaced.tail,
+                                 plain.composer_top - plain.tail)
+                self.assertLessEqual(spaced.total, max_height(rows))
+
+    def test_a_tail_that_ends_blank_is_its_own_gap_above_the_slot(self) -> None:
+        frame = build_frame(cols=80, rows=40, composer=Composer(), info=(Span("info"),),
+                            tail=[(Span("done"),), ()], slot=[(Span("[Plan]"),)], gaps=(True, True))
+        self.assertEqual(frame.budget.gaps, (0, 1))
+
+
+class GapsNeverCostALiveRowTests(unittest.TestCase):
+    """#2342 review, HIGH: the plan's blank rows and the spacer over the working row once took the place of the
+    running turn's tool rows on short terminals. Every tool row the layout without them showed is still shown."""
+
+    # (rows, cols, agents): the tool rows shown before the gaps existed, measured on origin/main dc007063f.
+    BEFORE = {(10, 40, False): 1, (15, 60, False): 2, (19, 80, True): 1, (20, 80, True): 2, (24, 80, False): 3,
+              (24, 80, True): 3, (30, 80, True): 3, (30, 80, False): 3}  # from 30 rows: the badge row too
+
+    def scene(self, rows: int, cols: int, agents: bool):
+        from omh.tui.gateway import Event
+        from omh.tui.panels import HudSnapshot
+        from test_tui_agent_view import STARTS, relay
+        from test_tui_modes import SID, make_app
+        from test_tui_panels import hud_payload, phased_plan
+
+        now = [100.0]
+        app, _client = make_app(rows=rows, cols=cols, clock=lambda: now[0])
+        app.background = "#0D1117"
+        app.theme = app._themed()
+        app.stored_id = "stored"
+        app.hud = HudSnapshot("stored", hud_payload(phased_plan(5, phases=2, active=2)), now[0])
+        for index in range(30):
+            app.transcript.add_notice(f"earlier line {index}")
+        app._submit_prompt("해당 프로젝트 description기반으로 작성해줘 " * 3)
+        app._on_event(Event("message.start", SID, {}))
+        for index in range(3):
+            now[0] += 0.2
+            app._on_event(Event("tool.start", SID, {"tool_id": f"t{index}", "name": "read_file",
+                                                    "context": f"f{index}.py"}))
+        if agents:
+            relay(app, STARTS)
+        app._render()
+        return app.terminal.screen.lines()
+
+    def test_every_tool_row_shown_before_the_gaps_is_still_shown(self) -> None:
+        for (rows, cols, agents), before in self.BEFORE.items():
+            with self.subTest(rows=rows, cols=cols, agents=agents):
+                screen = self.scene(rows, cols, agents)
+                shown = sum("read_file" in row for row in screen)
+                self.assertGreaterEqual(shown, before, "\n".join(screen))
+
+    def test_a_tall_terminal_still_gets_both_gaps_around_the_plan(self) -> None:
+        screen = self.scene(42, 150, True)
+        plan = next(index for index, row in enumerate(screen) if row.startswith("[Plan]"))
+        rule = next(index for index, row in enumerate(screen) if row.startswith("─") and index > plan)
+        self.assertEqual((screen[plan - 1], screen[rule - 1]), ("", ""), "\n".join(screen))
 
 
 class HiddenComposerBudgetTests(unittest.TestCase):

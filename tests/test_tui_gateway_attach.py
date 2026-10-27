@@ -701,6 +701,258 @@ class ImageTests(AdapterCase):
         self.assertIsNone(attach.image_mime(b"BM\0\0"))  # a bitmap: the owner refuses it
 
 
+SLASH_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "tui_gateway" / "canonical_slash_verbs.json"
+UNSUPPORTED = {"code": 4001, "message": "unsupported_command", "data": {"reason": "unsupported_command"}}
+
+
+class SlashVerbTests(AdapterCase):
+    """A command the owner's `slash.exec` refuses on a shared gateway (`unsupported_command`) and serves through a verb
+    of its own (Ink's way on a shared gateway) is answered through that verb, in `slash.exec`'s shape."""
+
+    def refused(self, adapter: Adapter, command: str) -> dict:
+        """`command` sent and the owner's `slash.exec` refusal answered: the child's next frame, with `to_client` set
+        when it answers the TUI rather than calling the owner."""
+        sent = self.own_call(adapter.from_client(_call(50, "slash.exec", {"command": command, "session_id": SID})),
+                             "slash.exec")
+        self.assertEqual(sent["params"], {"command": command, "session_id": SID})
+        [(target, frame)] = adapter.from_owner({"jsonrpc": "2.0", "id": sent["id"], "error": UNSUPPORTED})
+        return frame if target == TO_OWNER else {"to_client": frame}
+
+    def answered(self, adapter: Adapter, frame: dict, result: dict) -> dict:
+        [(target, answer)] = adapter.from_owner(_answer(frame["id"], result))
+        self.assertEqual((target, answer["id"]), (TO_CLIENT, 50))
+        self.assertFalse(adapter.waiting())
+        return answer["result"]
+
+    def read(self, adapter: Adapter, frame: dict, rows: list[dict], *, running: bool = False) -> dict:
+        """The owner's `session.resume` answered: the child's next frame, as `refused` gives it."""
+        self.assertEqual((frame["method"], frame["params"]), ("session.resume", {"session_id": SID}))
+        [(target, frame)] = adapter.from_owner(_answer(frame["id"], {
+            "session_id": SID, "subscription_id": "sub-1", "revision": 9, "execution_generation": 5,
+            "running": running, "messages": rows}))
+        return frame if target == TO_OWNER else {"to_client": frame}
+
+    @staticmethod
+    def rows(*contents: object) -> list[dict]:
+        """A transcript of one turn per content: the person's row, then the reply's."""
+        rows: list[dict] = []
+        for number, content in enumerate(contents):
+            rows += [{"role": "user", "row_id": 10 * number + 1, "content": content},
+                     {"role": "assistant", "row_id": 10 * number + 2, "content": "ok"}]
+        return rows
+
+    def test_the_recorded_shared_gateway_answers_each_command_as_recorded(self) -> None:
+        # Recorded from a real Hermes bf0203a794 (v0.22.5) shared gateway through this child: each owner call the
+        # child made is replayed with the owner's own answer. The child must make the same calls with the same
+        # parameters (the owner took each one) and give the TUI the same answer.
+        fixture = json.loads(SLASH_FIXTURE.read_text(encoding="utf-8"))
+        self.assertEqual(fixture["fixture"]["hermes"], "bf0203a794 (v0.22.5)")
+        for scenario in fixture["scenarios"]:
+            with self.subTest(command=scenario["command"]):
+                adapter = self.adapter()
+                session = scenario["owner"][0]["params"]["session_id"]
+                actions = adapter.from_client(_call(60, "slash.exec", {"command": scenario["command"],
+                                                                        "session_id": session}))
+                for step in scenario["owner"]:
+                    [(target, frame)] = actions
+                    self.assertEqual(target, TO_OWNER)
+                    params = dict(frame["params"])
+                    if frame["method"] == "session.mutate":
+                        params["request_id"] = "<request_id>"
+                    self.assertEqual((frame["method"], params), (step["method"], step["params"]))
+                    actions = adapter.from_owner({"jsonrpc": "2.0", "id": frame["id"], **step["reply"]})
+                [(target, answer)] = actions
+                self.assertEqual((target, answer["id"]), (TO_CLIENT, 60))
+                self.assertEqual({key: answer[key] for key in ("result", "error") if key in answer}, scenario["answer"])
+                self.assertFalse(adapter.waiting())
+        verbs = {attach.SLASH_VERBS.get(scenario["command"].split()[0]) for scenario in fixture["scenarios"]}
+        self.assertEqual(set(attach.SLASH_VERBS.values()) - verbs, {"tools"})  # its listing is too long to keep
+
+    def test_any_other_command_goes_as_sent_and_is_not_translated(self) -> None:
+        adapter = self.adapter()
+        for command in ("status", "usage", "goal ship it", "/compressor", ""):
+            with self.subTest(command=command):
+                frame = _call(51, "slash.exec", {"command": command, "session_id": SID})
+                self.assertEqual(adapter.from_client(frame), [(TO_OWNER, frame)])
+                self.assertFalse(adapter.waiting())
+
+    def test_an_owner_that_runs_the_command_itself_answers_it_and_nothing_else_is_sent(self) -> None:
+        for reply in ({"result": {"type": "exec", "output": "Compressed."}},
+                      {"error": {"code": 4001, "message": "session_busy", "data": {"reason": "session_busy"}}}):
+            with self.subTest(reply=reply):
+                adapter = self.adapter()
+                sent = self.own_call(adapter.from_client(_call(52, "slash.exec", {
+                    "command": "Compact", "session_id": SID})), "slash.exec")
+                [(target, answer)] = adapter.from_owner({"jsonrpc": "2.0", "id": sent["id"], **reply})
+                self.assertEqual((target, answer), (TO_CLIENT, {"jsonrpc": "2.0", "id": 52, **reply}))
+                self.assertFalse(adapter.waiting())
+
+    def test_compress_sends_its_argument_raw_and_reports_a_noop_without_a_tick(self) -> None:
+        adapter = self.adapter()
+        mutate = self.read(adapter, self.refused(adapter, "compact here 3"), [])
+        self.assertEqual(mutate["params"], {
+            "session_id": SID, "request_id": "id-1", "expected_revision": 9, "expected_generation": 5,
+            "operation": "compress", "payload": {"focus": "here 3"}})
+        result = self.answered(adapter, mutate, {"status": "noop", "summary": {
+            "headline": "No changes from compression: 6 messages", "token_line": "Approx request size: ~9 tokens"}})
+        self.assertEqual(result, {"type": "exec", "output":
+                                  "No changes from compression: 6 messages\n  Approx request size: ~9 tokens"})
+        adapter = self.adapter()
+        mutate = self.read(adapter, self.refused(adapter, "compress"), [])
+        self.assertEqual(mutate["params"]["payload"], {})
+
+    def test_undo_n_rewinds_to_the_nth_newest_turn_of_yours_and_prefills_it(self) -> None:
+        adapter = self.adapter()
+        rows = [*self.rows("one", "two", "three"), {"role": "user", "row_id": 40, "content": "[CONTEXT SUMMARY]: x"},
+                {"role": "user", "row_id": 41, "content": "shown", "display_kind": "notice"},
+                {"role": "user", "row_id": 42, "content": "gone", "archived": True}]
+        mutate = self.read(adapter, self.refused(adapter, "undo 2"), rows)
+        self.assertEqual((mutate["params"]["operation"], mutate["params"]["payload"]),
+                         ("rewind", {"target_message_id": 11}))
+        result = self.answered(adapter, mutate, {"rewound_count": 4, "target_message": {"content": "two"}})
+        self.assertEqual(result, {"type": "prefill", "message": "two", "notice":
+                                  "↶ Undid 2 turns (4 messages). Edit and resubmit, or send a new message."})
+
+    def test_a_turn_back_with_nothing_to_take_or_a_bad_count_edits_nothing(self) -> None:
+        image_turn = [{"type": "input_image", "image_url": "data:"}, {"type": "text", "text": "x"}]
+        for command, rows, said in (("undo", [], "Nothing to undo"), ("undo x", None, "/undo takes a number"),
+                                    ("retry", self.rows(image_turn), "/retry cannot send that turn again")):
+            with self.subTest(command=command):
+                adapter = self.adapter()
+                frame = self.refused(adapter, command)
+                if rows is not None:
+                    frame = self.read(adapter, frame, rows)
+                self.assertIn(said, frame["to_client"]["result"]["output"])
+                self.assertFalse(adapter.waiting())
+
+    def test_retry_sends_the_turn_it_took_back_again(self) -> None:
+        adapter = self.adapter()
+        mutate = self.read(adapter, self.refused(adapter, "retry"), self.rows("one", "two"))
+        self.assertEqual(mutate["params"]["payload"], {"target_message_id": 11})
+        result = self.answered(adapter, mutate, {"rewound_count": 2, "target_message": {"content": [
+            {"type": "input_text", "text": "two"}]}})
+        self.assertEqual(result, {"type": "send", "message": "two"})
+
+    def test_retry_text_is_only_what_has_a_text_replay(self) -> None:
+        self.assertEqual(attach.retry_text("again"), "again")
+        self.assertEqual(attach.retry_text([{"type": "text", "text": "a"}, "b"]), "ab")
+        self.assertEqual(attach.retry_text("   "), "")
+        for content in ([{"type": "input_image", "image_url": "x"}], [{"type": "text", "text": "a", "cache": 1}], None):
+            with self.subTest(content=content):
+                self.assertIsNone(attach.retry_text(content))
+
+    def test_branch_names_the_new_session_for_the_tui_to_open(self) -> None:
+        adapter = self.adapter()
+        mutate = self.read(adapter, self.refused(adapter, "fork side quest"), [])
+        self.assertEqual(mutate["params"]["payload"], {"title": "side quest"})
+        result = self.answered(adapter, mutate, {"operation": "branch", "branched_session_id": "local-child"})
+        self.assertEqual(result["branched_session_id"], "local-child")
+
+    def test_an_idle_stop_stops_the_sessions_processes_and_interrupts_nothing(self) -> None:
+        adapter = self.adapter()
+        stop = self.read(adapter, self.refused(adapter, "stop"), [])
+        self.assertEqual((stop["method"], stop["params"]), ("process.stop", {"session_id": SID}))
+        result = self.answered(adapter, stop, {"killed": 1, "delegations": 2})
+        self.assertEqual(result["output"], "Stopped 1 background process.\nInterrupted 2 background delegations.")
+
+    def test_a_stop_whose_interrupt_found_the_turn_settled_says_it_interrupted_nothing(self) -> None:
+        for reply, said in (({"execution_state": "idle", "execution_generation": 5}, False),
+                            ({"execution_state": "running", "execution_generation": 6}, False),
+                            ({"execution_state": "running", "execution_generation": 5}, True)):
+            with self.subTest(reply=reply):
+                adapter = self.adapter()
+                interrupt = self.read(adapter, self.refused(adapter, "stop"), [], running=True)
+                self.assertEqual((interrupt["method"], interrupt["params"]),
+                                 ("session.interrupt", {"session_id": SID, "execution_generation": 5}))
+                [(_, stop)] = adapter.from_owner(_answer(interrupt["id"], reply))
+                output = self.answered(adapter, stop, {"killed": 0, "delegations": 0})["output"]
+                self.assertEqual(output.startswith("Interrupted the running turn."), said)
+
+    def test_a_stop_whose_read_failed_still_stops_the_sessions_processes(self) -> None:
+        adapter = self.adapter()
+        read = self.refused(adapter, "stop")
+        [(target, stop)] = adapter.from_owner({"jsonrpc": "2.0", "id": read["id"],
+                                               "error": {"code": 4001, "message": "not_found"}})
+        self.assertEqual((target, stop["method"], stop["params"]), (TO_OWNER, "process.stop", {"session_id": SID}))
+        self.assertEqual(self.answered(adapter, stop, {"killed": 2})["output"], "Stopped 2 background processes.")
+
+    def test_bg_and_btw_start_a_side_agent_and_bare_say_how(self) -> None:
+        for command, method in (("background run the tests", "prompt.background"), ("btw why?", "prompt.btw")):
+            with self.subTest(command=command):
+                adapter = self.adapter()
+                frame = self.refused(adapter, command)
+                self.assertEqual((frame["method"], frame["params"]),
+                                 (method, {"session_id": SID, "text": command.split(None, 1)[1]}))
+                self.assertIn("t_1", self.answered(adapter, frame, {"task_id": "t_1"})["output"])
+        adapter = self.adapter()
+        usage = self.refused(adapter, "bg")["to_client"]
+        self.assertTrue(usage["result"]["output"].startswith("usage: /bg <prompt>"))
+        self.assertFalse(adapter.waiting())
+
+    def test_rollback_restore_takes_a_file_or_all_and_reports_what_it_kept(self) -> None:
+        for command, params in (("rollback 2 src/app.py", {"hash": "2", "file_path": "src/app.py"}),
+                                ("rollback 2 --all", {"hash": "2", "all": True}),
+                                # Ink and Hermes: `--all` only widens a whole-tree restore; with a file it is no path.
+                                ("rollback 2 src/app.py --all", {"hash": "2", "file_path": "src/app.py"}),
+                                ("rollback abc123", {"hash": "abc123"})):
+            with self.subTest(command=command):
+                adapter = self.adapter()
+                frame = self.refused(adapter, command)
+                self.assertEqual((frame["method"], frame["params"]),
+                                 ("rollback.restore", {"session_id": SID, **params}))
+        result = self.answered(adapter, frame, {"success": True, "restored_to": "abc123",
+                                                "skipped_user_edits": [f"f{n}" for n in range(7)],
+                                                "history_removed": 2})
+        self.assertEqual(result["output"].splitlines(), [
+            "↶ Restored the workspace: abc123", "Kept your own edits to f0, f1, f2, f3, f4 and 2 more.",
+            "The last turn went with it (2 messages)."])
+        adapter = self.adapter()
+        listed = self.answered(adapter, self.refused(adapter, "rollback ls"), {"enabled": True, "checkpoints": [
+            {"hash": "0123456789abcdef", "timestamp": "2026-10-28 09:00", "message": "before edit"}]})
+        self.assertEqual(listed["output"].splitlines()[0], "1. 0123456789  2026-10-28 09:00 · before edit")
+
+    def test_reload_mcp_reloads_only_when_confirmed(self) -> None:
+        for command, params in (("reload-mcp", {"session_id": SID}),
+                                ("reload_mcp now", {"session_id": SID, "confirm": True})):
+            with self.subTest(command=command):
+                adapter = self.adapter()
+                frame = self.refused(adapter, command)
+                self.assertEqual((frame["method"], frame["params"]), ("reload.mcp", params))
+
+    def test_tools_lists_this_sessions_tools_and_refuses_a_change_in_words(self) -> None:
+        adapter = self.adapter()
+        frame = self.refused(adapter, "tools")
+        self.assertEqual((frame["method"], frame["params"]), ("tools.show", {"session_id": SID}))
+        # The shape of Hermes bf0203a794's `tools.show` (`gateway/session_ancillary.py` show_tools).
+        result = self.answered(adapter, frame, {"total": 2, "sections": [
+            {"name": "file", "tools": [{"name": "read_file", "description": "Read a file."}]},
+            {"name": "empty", "tools": []},
+            {"name": "web", "tools": [{"name": "web_search", "description": ""}]}]})
+        self.assertEqual(result["output"], "[file]\n  read_file - Read a file.\n[web]\n  web_search\nTotal: 2 tools")
+        adapter = self.adapter()
+        said = self.refused(adapter, "tools disable web")["to_client"]
+        self.assertIn("cannot change this session's tools", said["result"]["output"])
+        self.assertFalse(adapter.waiting())
+
+    def test_bare_plugins_lists_what_the_gateway_loaded(self) -> None:
+        adapter = self.adapter()
+        frame = self.refused(adapter, "plugins")
+        self.assertEqual((frame["method"], frame["params"]), ("plugins.list", {}))
+        # The shape of Hermes bf0203a794's `plugins.list` (`gateway/session_discovery.py` list_plugins).
+        result = self.answered(adapter, frame, {"plugins": [
+            {"name": "omh", "key": "omh", "version": "4.0.2", "enabled": True, "tools": 9, "hooks": 1, "commands": 0,
+             "error": ""},
+            {"name": "disk-cleanup", "key": "disk-cleanup", "version": "2.0.0", "enabled": False, "tools": 0,
+             "hooks": 0, "commands": 0, "error": "not enabled"}], "toolsets": [], "portable_mcp_servers": []})
+        self.assertEqual(result["output"].splitlines(), [
+            "omh 4.0.2 (enabled; 9 tools, 1 hook, 0 commands)",
+            "disk-cleanup 2.0.0 (disabled; 0 tools, 0 hooks, 0 commands) — error: not enabled"])
+
+    def test_config_lines_join_nested_keys(self) -> None:
+        self.assertEqual(attach.config_lines({"display": {"compact": True, "skin": "x"}, "voice": {}, "n": 1}),
+                         ['display.compact: true', 'display.skin: "x"', "voice: {}", "n: 1"])
+
+
 # ── the script, run as gateway_spawn runs it ──
 
 FAKE_OWNER = '''

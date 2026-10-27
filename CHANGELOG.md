@@ -4,6 +4,96 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
+
+- **Character sprite sheets become aligned game frames (`sprite-forge`).**
+  An image model draws a character sheet whose frames differ in scale and
+  foot position, so the character swells and bobs in game. The new
+  `sprite-forge` skill keeps the sheet a grid on flat `#FF00FF` (never a 1xN
+  strip, wide effects in their own sheet) and ships an optional standalone
+  Pillow helper, `toolkit/scripts/forge.py`, that keys the background,
+  splits cells, applies one common scale and puts every body's feet on one
+  shared baseline. `qc.json` records `body_scale_cv` and `anchor_y_std`
+  against 0.08 and 0.05, and a `REGENERATE` verdict exits 3 so the sheet is
+  redrawn rather than patched. Without Pillow, `--help` still works and any
+  processing request exits nonzero with no output. OMH generates no images;
+  the host's own image tool draws the sheet. (#2335)
+- **`visual-qa` checks motion in animated and simulated output.** A new
+  `references/motion-continuity.md` checks spawn position against the
+  declared origin, per-frame displacement against the declared speed, force
+  direction against observed motion and monotonic HP bars, and it replays
+  the deploy, travel and engage flow independently instead of reading it
+  off cost or clear numbers. (#2335)
+- **`show-reel` captures reels from a running game.** `references/game-capture.md`
+  keeps events, sound cues and titles in one `timeline.json`, pins the game
+  build, holds a reel whose gameplay event has no sound cue, and records a
+  real voice's source URL, hash and excerpt; impersonating a real voice is
+  refused. (#2335)
+- **`deliverable-package` tracks `archived` and `published`.** A file is
+  archived only with its hash, version and catalog row read back, published
+  only when the destination's own URL resolves to the same hash, and the
+  final file is the one the person approved, never the newest mtime. (#2335)
+- **A generation's own skills pack is never registered, and a home left on
+  one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
+  the running generation's pack (`generations/<id>/skills`) beside the shared
+  `current/skills` pointer -- once the next update moved the pointer, every
+  OMH skill resolved to two files and Hermes listed none of them -- and
+  retires such entries from every home. `omh chat
+  --auto-apply-target-change`, the last writer of that path, now registers
+  the pointer too. A primary home naming only an older generation's pack is
+  migrated to the pointer the way a bot profile already was, instead of
+  being read as the opt-out and losing every OMH skill once the pack is
+  collected; only the installer-managed command, which retires the pack in
+  the same write, counts it as a registration. A relative entry, which
+  Hermes anchors at its own home, never matches.
+- **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
+  shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
+  the TUI said Hermes could not run it in a TUI session. The gateway child
+  now runs it, and `/branch`, `/retry`, `/undo`, `/stop`, `/bg`, `/btw`,
+  `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` and
+  `/config`, through the gateway call Hermes' own TUI uses. `/topup` goes to
+  Hermes, and the commands only Hermes' classic CLI runs leave completion.
+- **The OMH TUI no longer shows a blank screen when you switch to its
+  terminal and back.** A resize signal (a tab shown again, a split laid out
+  again) redraws the session from memory, and the erase that starts that
+  redraw was written on its own before the session was printed again, so
+  the screen went blank for a moment. The erase now goes out in the same
+  synchronized update as the frame drawn after it, so a terminal that holds
+  the update (DEC 2026) swaps the old screen for the new one in one step.
+- **The TUI's menus lose their bands, a sent prompt gains one, and the
+  bottom row names the branch.** The completion menu, the session, model,
+  rewind and launch-look pickers, the agent list, the delegation view and the
+  bot board's sessions draw no fill: the highlighted row is a `❯` and a bold
+  name in the skill hue, other commands keep that hue and their descriptions
+  are muted. A prompt you sent runs on a band to the right edge, tinted by
+  the launch look. From 30 rows the region's last row shows the session
+  directory's git branch with its changed and untracked counts, read off the
+  screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
+  plan and the composer get a blank row between them where the terminal has
+  one to spare.
+- **A long `/compress` is waited for, and side answers are not lost
+  silently.** The TUI waits 660 s for `/compress`, Hermes' own budget,
+  instead of 120 s, and past that says the compression may still land
+  rather than inviting a second one. A command Hermes refuses while it
+  compresses says so. `/stop` reports an interrupt only when it stopped a
+  turn, and stops the session's processes even when its read fails. A `/bg`
+  or `/btw` answer for a session left meanwhile names that session, and
+  leaving a session with one still running says it will not show.
+  `/topup` goes to Hermes only on a shared gateway.
+
+## 4.0.3 - 2026-10-27
+
+- **`plan` and `ralplan` name the goal beyond the request, the raw material,
+  and an outside judge.** Before splitting tasks a plan states what should
+  happen once the requested result exists and whether it aims there, and adds
+  the access an executor needs to work at that level unattended as its own
+  tasks; it starts from raw logs, traces or data rather than a digest, names
+  the methods a leading practitioner would use, and gives every verification
+  step a judge other than the planner or executor, recording a missing one as
+  an evidence gap; it restates the deliverable as verbs and brings other
+  fields in as practitioner actions, never as voices to imitate. The lines sit
+  after each bar's first four items, so capability rows do not move, and they
+  reach the portable projection.
 - **3D and canvas scenes have a craft and QA bar.** A user ran the same voxel
   pagoda garden prompt through two agents: both consoles were clean, and the
   OMH build was judged less colorful. Its first frame was flat noon under its
@@ -379,6 +469,19 @@ All notable changes will be documented here.
   ledger, and a symlinked ledger file is neither read nor replaced. Windows
   keeps the path-based write, where a parent swapped between the check and
   the write is still followed.
+
+- **Replies read like a person who did the work wrote them.** OMH now ships
+  a human-voice pass adapted from `blader/humanizer` (MIT, v3.1.0): the
+  always-on reply rule adds one sentence (result first, no chatbot openers or
+  closers, staged contrasts, or decoration), the common rail points every
+  skill at the new on-demand `omh-routing/references/human-voice.md` before
+  prose a person reads, and that reference covers the strongest English
+  tells plus Korean habits (번역투 nominalisation, register drift in a banmal
+  persona). The persona still owns the voice; the pass edits content and
+  structure only. `omh quality-evidence reply-lint` reports the
+  high-precision shapes as a new `ai_writing_tell` finding, skipping code and
+  quoted lines. The awareness primer budgets move 1440 -> 1560 and
+  3520 -> 3630 for the one sentence.
 
 ## 4.0.2 - 2026-10-24
 

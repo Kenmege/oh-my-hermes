@@ -300,6 +300,12 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "and import path Hermes' launcher handed the frontend, inside a foreground terminal the "
         "person launched; never reached from a prepared-handoff path."
     ),
+    "src/tui/git_status.py": (
+        "the OMH TUI's branch row: one fixed `git -c core.fsmonitor=false --no-optional-locks status "
+        "--porcelain=v2 --branch` in the session's own directory, on a thread of its own with a two-second "
+        "timeout, at start, after a tool or a turn completes and every 15 seconds; read-only and local, "
+        "never reached from a prepared-handoff path."
+    ),
     "src/tui/herdr.py": (
         "the OMH TUI's state report to herdr: `herdr pane report-agent` / `release-agent` with fixed "
         "verbs and flags; only the binary path and pane id come from herdr's pane env. Only inside a "
@@ -1987,6 +1993,12 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "identity is recorded against, so a later verification can tell the same tracked content apart "
         "from rewritten content; same single-purpose fsmonitor isolation as the HEAD call above; "
         "read-only local object lookup, names no remote"
+    ),
+    ("src/tui/git_status.py", ("core.fsmonitor=false", "status")): (
+        "`git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch` in the session's own "
+        "directory reads the branch and how many files changed for the OMH TUI's row under the info line; the "
+        "fsmonitor override keeps a read nobody asked for from running a repository-configured hook, and "
+        "`--no-optional-locks` keeps it off the index lock. Read-only, names no remote, writes nothing"
     ),
     ("src/maintenance/release_source_identity.py", ("core.fsmonitor=false", "status")): (
         "`git -c core.fsmonitor=false --no-optional-locks status --porcelain=v1 "

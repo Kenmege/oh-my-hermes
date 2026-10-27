@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from .composer import PROMPT
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
+from .prompts import CHOICE_MARK
 from .style import Line, Span
 from .theme import Theme
 from .width import cell_width, truncate, truncate_line
@@ -95,6 +96,26 @@ def filter_line(query: str, width: int, theme: Theme) -> Line:
     """A picker's last row: what typing filters it by, or how to start, after the composer's prompt glyph."""
     typed = Span(query, theme.text) if query else Span(FILTER_PLACEHOLDER, theme.hint)
     return truncate_line((Span(FILTER_PROMPT, theme.prompt), typed), width)
+
+
+def pointer(highlighted: bool, theme: Theme) -> Span:
+    """A menu or picker row's first column: `❯` on the highlighted row (the choice prompts' mark), blank on the rest."""
+    return Span(CHOICE_MARK if highlighted else " " * len(CHOICE_MARK), theme.menu_current)
+
+
+def picker_row(highlighted: bool, lead: str, label: str, meta: str, width: int, theme: Theme) -> Line:
+    """One picker row, with no fill (`theme.menu`): the pointer, `lead` (a mark or a number) and `label`, then `meta`
+    set right. The highlighted row's name is bold in the accent and its meta in the text colour; every other row's
+    meta is muted."""
+    name = theme.menu_current if highlighted else theme.menu
+    words = theme.text if highlighted else theme.muted
+    head = pointer(highlighted, theme)
+    meta = f" {meta} " if meta else " "
+    room = width - cell_width(head.text) - cell_width(lead) - cell_width(meta)
+    if room < 8:
+        return truncate_line((head, Span(lead + label, name)), width)
+    label = truncate(label, room)
+    return (head, Span(lead + label, name), Span(" " * (room - cell_width(label)) + meta, words))
 
 
 @dataclass(frozen=True)
@@ -196,14 +217,6 @@ class SessionPicker:
         return frame.lines
 
     def _row(self, row: SessionRow, highlighted: bool, width: int, theme: Theme, now: float) -> Line:
-        style = theme.menu_current if highlighted else theme.menu
         mark = CURRENT_MARK if row.id == self.current else " "
         meta = " · ".join(part for part in (age_text(row.started_at, now), _messages(row.message_count)) if part)
-        meta = f" {meta} "
-        lead = f" {mark} "
-        room = width - cell_width(lead) - cell_width(meta)
-        if room < 8:
-            return truncate_line((Span(lead + row.label, style),), width)
-        label = truncate(row.label, room)
-        gap = " " * (room - cell_width(label))
-        return (Span(lead + label + gap + meta, style),)
+        return picker_row(highlighted, f"{mark} ", row.label, meta, width, theme)

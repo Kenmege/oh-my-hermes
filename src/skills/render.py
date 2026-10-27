@@ -176,6 +176,10 @@ SHARED_RAIL_SKILL_VIEW = skill_view_call(SHARED_RAIL_REFERENCE_PATH)
 # Cross-skill pointer to the structural-code-search playbook reference owned by
 # the router skill. Like the shared rail, it uses the installed directory label.
 STRUCTURAL_SEARCH_REFERENCE_PATH = "omh-routing/references/structural-code-search.md"
+# The shared writing-voice reference owned by the router skill: how a reply or a
+# drafted text loses the habits that make it read as machine-written.
+HUMAN_VOICE_REFERENCE_PATH = "omh-routing/references/human-voice.md"
+HUMAN_VOICE_SKILL_VIEW = skill_view_call(HUMAN_VOICE_REFERENCE_PATH)
 # The operator reference for `omh runtime workflow-artifact`, owned by the router skill.
 WORKFLOW_ARTIFACTS_REFERENCE_PATH = "omh-routing/references/workflow-artifacts.md"
 
@@ -841,6 +845,11 @@ def _router_reference_templates_cached() -> tuple[SkillReferenceTemplate, ...]:
             "references/structural-code-search.md",
             _router_structural_code_search_reference(),
         ),
+        SkillReferenceTemplate(
+            "oh-my-hermes",
+            "references/human-voice.md",
+            _router_human_voice_reference(),
+        ),
         SkillReferenceTemplate("oh-my-hermes", "references/workflow-artifacts.md", _router_workflow_artifacts_reference()),
         SkillReferenceTemplate("oh-my-hermes", "references/jev-rail.md", _router_jev_rail_reference()),
     )
@@ -859,6 +868,145 @@ def jev_preset_reference_templates() -> list[SkillReferenceTemplate]:
         SkillReferenceTemplate(name, JEV_PRESET_REFERENCE_PATH, jev_preset_reference(name))
         for name in JEV_PRESET_BY_SKILL
     ]
+
+
+
+def _router_human_voice_reference() -> str:
+    return """# Human Voice
+
+Load this before writing prose a person will read: a reply, a progress update, a
+completion report, a PR body, release notes, docs, or a draft the user asked to
+make sound less machine-written. It removes the habits that make text read as
+generated. It does not set a voice: the host persona (`SOUL.md`) owns language,
+tone, speech level and endings, and a writer's own sample outranks every rule
+below. These are content and structure edits.
+
+## Why the tells happen
+
+A model picks the continuation that fits the widest range of readers. A person
+writes for one reader about one thing, so their choices are uneven and specific.
+Each tell below is the generic choice made where a specific one belonged.
+
+Two rules decide every edit:
+
+1. Every sentence must add something the reader does not already have, counting
+   the conversation around it. A sentence that only signals importance, restates
+   the last one, or rebuilds context the reader gave you goes.
+2. Never invent. Do not add a fact, name, number, date, quote, source, test
+   result or claim of completion that the material does not support. When a
+   sentence needs a detail you lack, write a simpler sentence or ask.
+
+## Strongest tells (act on one sighting)
+
+- Staged contrast. "It's not just X, it's Y", "not merely X but Y", "This does
+  not mean X. It means Y.", "단순히 X가 아니라 Y", "X가 아닙니다. Y입니다." The
+  negative half rejects a claim nobody made. State Y. Keep a contrast only when it
+  corrects something the reader actually believes.
+- Recap closers and drama fragments. A last line that names what the paragraph
+  already showed ("That's the real win.", "이게 핵심이야.", "결국 중요한 건 X다."),
+  or a row of fragments ("No setup. No config. Just results."). Cut the closer,
+  or merge the fragments into one sentence with a real claim.
+- Fake depth. "At its core", "the real question is", "what really matters",
+  aphorisms such as "trust is the currency of teams". Say the specific claim.
+- Run-ups. "Let's dive in", "Here's the thing", "Here's what you need to know",
+  "~에 대해 알아보겠습니다", "함께 살펴볼까요". Start with the point.
+- Arguing with no one. "To be clear, I'm not saying...", "One might be tempted
+  to...", a rejected option nobody proposed. Remove the defence.
+
+## Rhythm and formatting by rule
+
+- Forced threes: three adjectives, three examples, three parallel sentences,
+  when the meaning has two or four parts. Keep three only when there are three.
+- Dashes as the all-purpose joint. Replace em and en dashes with a comma,
+  colon, period or parentheses unless the writer's sample uses them. Code, paths
+  and URLs keep theirs.
+- Bold on every other phrase, a bold label and colon on every list item, emoji
+  or arrows on headings, title-cased headings. Bold what the reader must not
+  miss, at most once or twice; turn a labelled list into a sentence when the
+  labels carry nothing.
+- Stacked hedges ("could potentially possibly"), and the Korean
+  "~할 수 있을 것 같습니다" on a fact you checked. State checked facts plainly;
+  keep a hedge that reports real doubt.
+- The same opener, connective or sentence length in a row. Vary by meaning, not
+  by rule.
+
+## Inflation
+
+- AI vocabulary: delve, tapestry, testament, pivotal, crucial, seamless, robust
+  (as praise), leverage (verb), landscape (abstract), underscore, showcase,
+  vibrant, meticulous. Korean equivalents of the same move: 혁신적인, 획기적인,
+  원활한, 다양한, 효과적으로, 핵심적인 역할, 중요한 의미를 갖는다, ~의 중요성을
+  보여준다. Use the plain word or drop it.
+- Significance claims. "marks a pivotal moment", "reflects a broader shift",
+  "plays a key role". Keep the fact; drop what it supposedly symbolises.
+- -ing riders: "..., highlighting / ensuring / reflecting X". Keep the fact; keep
+  the rider only if the source supports it.
+- Copula avoidance: "serves as", "stands as", "boasts" for is / has.
+- Borrowed authority: "experts say", "industry reports", a list of outlets.
+  Name the source and what it said, or cut the claim.
+
+## Chat leftovers (remove outright)
+
+- Openers and praise: "Great question!", "You're absolutely right!",
+  "Certainly!", "좋은 질문이에요", "정확한 지적입니다".
+- Closers and offers: "I hope this helps", "Let me know if you'd like...",
+  "도움이 되었으면 좋겠습니다", "궁금한 점이 있으면 언제든 물어보세요". End on the
+  last useful sentence, or on the one real question the user must answer.
+- Knowledge-limit hedges: "as of my last training update", "based on available
+  information". Say what the source does not show, or nothing.
+- Writing about the text instead of its subject: "Below is a summary",
+  "This section covers", "I have organised this by owner". Show it.
+
+## Korean-specific habits
+
+Machine Korean leans on translated English structure. Watch for:
+
+- 번역투 nominalisation: "~하는 것이 중요합니다", "~에 있어서", "~를 통해",
+  "~함에 있어", "~적인 측면에서". Use the verb: "X를 먼저 확인해야 해".
+- Subject-heavy sentences that start every line with 이는, 이것은, 해당.
+- 결론적으로 / 요약하자면 / 정리하자면 before a recap of what was just said.
+- Polite-register drift inside a banmal persona, or 합니다 endings mixed into a
+  casual voice. Hold the persona's level throughout, progress updates included.
+- Emoji and bold scattered as decoration in a chat reply.
+
+## Replies in a conversation
+
+The reader of a reply already has the context. Lead with the result or the
+decision; keep only the reasoning that would change whether they agree, usually
+one fact they lack and the link they need. Diagnosis, proof that a plan will
+work, and step-by-step narration of what you did belong in the record or the
+PR, not the chat line. A progress update reports a changed result, blocker or
+decision, not a phase.
+
+## When not to act
+
+Leave a pattern alone inside a quotation, a title, code, a proper name, or text
+that discusses the pattern. Keep what carries a writer's voice: an odd specific
+detail, mixed feelings, a dated reference, an aside or self-correction. One weak
+tell (a single dash, one hedge, one bold) is not evidence; several together are.
+Text written before late 2022 was not machine-written.
+
+## Process
+
+1. Mark the tells, strongest first, at sentence and paragraph scale.
+2. Rewrite each point plainly instead of patching phrases one by one.
+3. Check the draft: read it aloud, list what still sounds generated, and confirm
+   no fact, number, name, ranking or claim was added or lost.
+4. Return the final text. When another task embeds this pass (a PR body, a
+   commit, a report), return only the final text.
+
+`omh quality-evidence reply-lint` reports the high-precision chat leftovers,
+staged contrasts and dash runs in a reply as `ai_writing_tell`. A clean lint
+shows only that none of those literal shapes is present, not that the text
+reads well.
+
+## Attribution
+
+The pattern account adapts concepts from `blader/humanizer` (Siqi Chen, MIT,
+reviewed at 8c307f3, v3.1.0), which is based on Wikipedia's
+"Signs of AI writing" (WikiProject AI Cleanup). The wording, the Korean habits,
+the reply rules and the lint hook are OMH's own.
+""".rstrip() + "\\n"
 
 
 def _router_workflow_artifacts_reference() -> str:
@@ -917,6 +1065,7 @@ multi-agent target topology, or the generic execution checklist is in play.
 
 - The host's persona is the primary identity: `SOUL.md` owns reply language, tone, speech level, and sentence endings, in progress updates as well as the final reply, and belongs to Hermes and the person who configured it; where it sets no language, use the one the user wrote in. OMH shapes what Hermes checks, records, and how a reply is structured, never how it sounds; no OMH skill, card, or awareness line sets a voice, and a skill's report shape never justifies switching the user's language or register.
 - OMH's record vocabulary is for records and tool calls, not for the sentence the user reads: `surface`, `lane`, `wrapper`, `handoff`, `run record`, `evidence boundary`, `evidence-bounded`, `claim boundary`, `prepared_not_observed`, `not_observed`, `not_available`, `routing_observation`, `evidence_boundary`, `claim_boundary`, `route_question`, `coding fanout dispatch`, and schema ids such as `omh_todo_result/v1`. In the reply lead with the result and relevant validation. Disclose a non-action or missing check when requested, necessary to interpret a claim, an open acceptance criterion, a concrete blocker, or a pending authorization decision; omit unrelated non-action footers. Answer direct questions about non-actions truthfully; requested-but-not-done work, failed retrievals and unavailable requested checks stay explicit. Translate relevant record states plainly, such as "prepared, not run yet" or "not checked", without adding an inventory of actions nobody requested. A user who names a term gets it explained in the record's own words.
+- Write the reply the way a person who knows the work would say it: lead with the result, add only what the reader lacks, and drop chatbot residue (praise openers, \"hope this helps\" closers, offers), staged \"not X but Y\" contrasts, recap closers, decorative bold and dash runs. These are content and structure edits inside the persona's voice, never a new voice. Before drafting prose a person will read (a reply, a report, a PR body, release notes), load `{HUMAN_VOICE_SKILL_VIEW}`.
 - Awareness lines and every `[OMH ...]` head (`[OMH Awareness]`, `[OMH plan todo]`, `Boundary:`), route hints, and first-response shapes are instructions to Hermes, never sentences for the user: do not quote or paraphrase them into the reply.
 - An OMH tool result may carry a `say` field: one plain sentence about an orchestration decision (which model takes a part, the plan and when it counts as done, what a step is blocked or waiting on). Relay it to the user once, in their language and your own words, and leave the result's other fields in the record.
 
@@ -1601,6 +1750,7 @@ Load these only when exact detail matters:
 - `references/coding-handoff-progress-reporting.md` for active progress cadence, background executor watchdogs, PR head/merge verification, and memory/context collision pitfalls.
 - `references/evidence-boundaries.md` for prepared-vs-observed, target topology, memory, and compatibility rules.
 - `references/structural-code-search.md` for ast-grep structural code search patterns and the grep fallback.
+- `references/human-voice.md` before writing prose a person reads: AI-writing tells to remove, Korean habits, reply shape.
 
 ## Recovery
 
@@ -12090,6 +12240,11 @@ def _design_reference_templates_cached() -> tuple[SkillReferenceTemplate, ...]:
             "references/visual-verdict-contract.md",
             _visual_verdict_contract_reference(),
         ),
+        SkillReferenceTemplate(
+            "visual-qa",
+            "references/motion-continuity.md",
+            _motion_continuity_reference(),
+        ),
     )
 
 
@@ -13120,6 +13275,56 @@ The scored-verdict shape additionally adapts the score-then-iterate pattern
 common to community visual-review skills, restated in OMH's prepared-versus-
 observed vocabulary. No text from any of them is reproduced either; the
 wording here is OMH's own.
+"""
+
+
+def _motion_continuity_reference() -> str:
+    material = """# Motion Continuity
+
+For animated or simulated output, a single settled frame can look correct
+while the motion itself is wrong. Load this reference when the surface in
+scope involves animation, simulation, or replayed sequences, and judge the
+continuity of the motion itself as observed evidence, not the stillness.
+
+## Checks
+
+- **Entry and spawn position** — the position at which an object or character
+  enters the frame matches the declared origin. An entry from a location other
+  than the declared origin is a continuity defect even if the motion after it
+  looks smooth.
+- **No teleport** — per-frame displacement stays within the cap derived from
+  the declared speed. If the declared speed implies at most N pixels (or
+  units) per frame, any observed jump larger than that is a teleport: an
+  object skipping intermediate positions between consecutive frames.
+- **Force direction equals motion direction** — when a force is applied
+  (knockback, push, impulse), the direction of the observed displacement
+  equals the sign and direction of the applied force. Motion in the opposite
+  direction of the declared force, or motion with no declared force, is a
+  defect.
+- **Monotonic resource bars** — HP and resource bars fall (or rise) only as
+  declared effects allow. An unexplained jump upward or downward between
+  frames — a bar that drops in one frame by more than any declared effect
+  explains, or recovers without a declared cause — is a continuity defect.
+- **Flow replay, not inference** — re-run the full flow (deploy, travel,
+  engage) in an independent simulation or replay, and sample frames within
+  each phase. Inferring that the flow ran correctly from summary numbers such
+  as cost, clear time, or final score is not observation: intermediate phases
+  can fail while the summary looks fine.
+- **A technical pass is not visual approval** — a passing build, passing
+  tests, or healthy metrics are technical results. They never substitute for
+  the visual verdict on the motion itself.
+- **Record evidence** — for every finding, record the frame indices or
+  timestamps at which the defect is observed. A continuity claim that cannot
+  be located in time cannot be re-checked.
+
+## Boundary
+
+OMH prepares this reference; the captures, replays, and reruns happen in
+whichever executor or wrapper lane the user selected. Findings without frame
+indices or timestamps are prepared claims, not observed evidence.
+"""
+    return f"""{material}
+{_DESIGN_CRAFT_ATTRIBUTION}
 """
 
 

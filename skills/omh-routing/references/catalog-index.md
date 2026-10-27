@@ -48,7 +48,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-decision-prototype`: [omh] Uncertain technical choice for a spike: bounded decision prototype workflow: resolve one uncertain interaction, API, performance, or integration choice with a disposable, isolated experiment whose observed result feeds planning.
 - `omh-decision-recall`: [omh] Previously rejected options to revisit: recall scoped reviewed rejected decisions without elevating them to approved memory.
 - `ulw-interview`: [omh] Vague, underspecified request: one-question-at-a-time clarification.
-- `omh-deliverable-package`: [omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.
+- `omh-deliverable-package`: [omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, attached, archived, and published states.
 - `omh-deploy-and-monitor`: [omh] Release rollout needing health signals: release checklist, deploy decision, health signals, rollback gate, and post-deploy status.
 - `omh-design-orchestration`: [omh] Entire product design problem to delegate: prepare a bounded design direction, existing-lane composition, and executor-neutral handoff.
 - `omh-design-quality-gate`: [omh] Deliverable demands premium polish: enforce superior content, design, layout, publishing, and visual QA gates.
@@ -141,6 +141,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-skill-scout`: [omh] Existing skills to reuse before authoring: prepare a metadata-only search-before-creation report for local, marketplace, GitHub, and web skill candidates with risk review and adoption options.
 - `omh-source-finder`: [omh] Gathering candidate papers, datasets, or repos: source candidate inventory - prepare typed source candidates and acquisition status before downstream work; use ulw-research to fetch and cite them, or research-brief to turn them into a decision-ready brief.
 - `omh-spend-gate`: [omh] Spending money on the user's behalf -- a card checkout, an HTTP 402 or pay-per-request call, a wallet transfer, a booking, a paid data endpoint: show a pre-spend card (payee, total with fees, cap, refund terms, approver) first, and call it done only on an observed receipt.
+- `omh-sprite-forge`: [omh] Character art to animate in a game: turn image-model sprite sheets into aligned, QC-gated frames with a fail-closed Pillow helper.
 - `omh-decide`: [omh] Team or business decision between options: tradeoffs, a recommendation, and a decision note you can act on.
 - `omh-support-operations`: [omh] Support ticket your team must answer or escalate: turn a support case into a clear customer reply, severity path, and owned next step.
 - `omh-tech-debt-audit`: [omh] Accumulated tech debt to rank: build the severity-by-effort debt ledger from observed repo evidence - orient, audit the named dimensions with file:line citations, rank fixes and quick wins - and reconcile RESOLVED/NEW/CARRIED against the previous ledger on rerun.

@@ -49,8 +49,10 @@ def ctrl_letters_named() -> set[str]:
 
 
 def observed(app: App, client: RecordingClient) -> tuple[object, ...]:
-    """Everything a key can change that a person or Hermes would notice."""
+    """Everything a key can change that a person or Hermes would notice, once the frame after it is drawn (a full
+    redraw's erase goes out with that frame)."""
     terminal: ScriptedTerminal = app.terminal  # type: ignore[assignment]
+    app._render()
     return (
         app.composer.text,
         app.composer.caret,

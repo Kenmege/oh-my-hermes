@@ -3386,6 +3386,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - For a 3D or canvas scene, capture the first frame exactly as booted, each camera preset, and every time of day the scene advertises; a claim in its own title or HUD that its first frame does not show, a small animated object that does not read as what it is, and flat light are each one `differences` entry (`omh-frontend/references/rendered-scene-craft.md`).
   - Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.
   - Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.
+  - For animated or simulated output, verify motion continuity through `references/motion-continuity.md`: check entry/spawn position against the declared origin, per-frame displacement against the declared speed, force direction against observed motion (knockback sign), monotonic HP/resource bars, and re-run the full deploy/travel/engage flow in an independent simulation/replay with frames sampled per phase — never infer flow from cost/clear numbers, and record frame indices/timestamps as evidence; a technical pass (build/tests/metrics) is never visual approval.
   - Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.
   - A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.
   - On Hermes, when `browser_vision` is in your tool list or tool_search finds it, the session can take its own captures: each such render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; captures from the wrapper, executor, or user still count.
@@ -4765,6 +4766,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - When the plan describes code changes, add a `Review Focus` section listing at most 5 inputs or failure modes the requirements imply that no planned test covers, likeliest first, each with its expected behavior and the owning task that will add the test; an input the requirements do not mention must still leave the result intact, and when the check turns up nothing the section says it found none.
   - When the plan describes code changes, keep each step to a single action whose outcome can be checked - a named test and what it asserts, an exact signature and its file, or a command and the output that counts as passing; a step that leaves the choice open (`TBD`, `make it robust`) is a gap.
   - When the plan describes code changes, run a proportion check before acceptance: if the plan text outgrows the code it leads to, or is mostly function bodies, implementation has leaked into it; reduce bodies to test names, assertions, and signatures.
+  - When the plan describes code changes, name the goal beyond the request before splitting tasks: one sentence on what should happen once the requested result exists, and whether the plan aims at that outcome or at the request as asked; when the two are the same, say so in one line. A plan aimed at the outcome adds, as its own tasks, the access the executor needs to work at that level unattended - failure logs, a reproduction environment, the raw data, the mapping from a released version to its commit.
+  - When the plan describes code changes, name the raw material the work starts from instead of a digest of it - the failing log, trace, or data rather than the issue summary - and the methods and tools a leading practitioner of the field would use on it. Every verification step names an outside judge - a test, CI, a measurement, a human reviewer, or an external tool - never the planning model's or the executor's own reading of the result; a step with no outside judge is recorded as an evidence gap.
+  - When the plan describes code changes, restate the deliverable once as the verbs it must accomplish rather than the noun it produces; when that brings in another field, write what a practitioner of that field does as a task (fuzz the parser, audit each completion claim against its evidence), never an instruction to write or speak like one.
   - Take plan acceptance only from the answer the user gave — the response status and value the question tool returns, or the user's own reply — never from the wording of the question you asked: when the acceptance question times out, is dismissed, or returns with no answer, the plan stays unaccepted, so record no acceptance, prepare no handoff, and start nothing; a missing answer is not a refusal either, so ask again later or report the plan as awaiting acceptance.
   - Plan acceptance approves the plan content, not execution: after acceptance, recommend the follow-on path that fits the work's shape — `ultrawork` durable checkpoints for progress that must survive sessions as a checkpointed ledger, `ultrawork` coordinated lanes for an accepted plan split into disjoint parallel lanes, `ultrawork` single-owner persistence for one already-scoped task with a single owner, `ultrawork` for one bounded delivery cycle, or a direct selected executor/runtime handoff for a single prepared coding change — state the fit reason in one line, and start it only after the user's explicit go-ahead.
   - Hermes' built-in `/plan` writes one plan file under `.hermes/plans/` in a turn of its own that opens `[/plan — plan mode]` and executes nothing; in that turn, follow its instructions. When the user later asks to review, accept, or hand off that file, it is this skill's draft, not a reason to write a second plan: load `references/hermes-plan-mode.md`.
@@ -4773,6 +4777,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Draft recommendations, accepted decisions, and executor handoffs are separate states.
   - Rejected options or unresolved tradeoffs are recorded before handoff.
   - When the plan describes code changes, it has a `Review Focus` section with at most 5 uncovered inputs and their owning tasks, or one stating the check found none.
+  - When the plan describes code changes, it names the goal beyond the request, the raw material, and an outside judge for each verification step, or records the missing judge as an evidence gap.
 - Recovery notes:
   - If acceptance criteria or verification are missing, route back to clarification before handoff.
   - If assumptions materially affect the plan, keep them visible and avoid treating the plan as accepted.
@@ -4839,6 +4844,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - End with a `Target-state coverage` check: a difference with no owning task or no verification scenario is added to the plan as its own task, unless the user excluded it, in which case the plan records it as a non-goal with that reason; a difference blocked on missing evidence stays in the evidence-gap record below instead.
   - Never shrink scope on your own: plan an MVP or a first phase only when the user requested one, plan a split or phasing the user requested as given, and when the target state exceeds what was literally asked, state that in one sentence and plan the full target state.
   - Size each task as one band, never as hours or days: `XS` (one small edit), `S` (one file and its test), `M` (several files in one module), `L` (several modules or one contract change), `XL` (crosses subsystems; split it into smaller tasks).
+  - When the plan describes code changes, name the goal beyond the request before splitting tasks: one sentence on what should happen once the requested result exists, and whether the plan aims at that outcome or at the request as asked; when the two are the same, say so in one line. A plan aimed at the outcome adds, as its own tasks, the access the executor needs to work at that level unattended - failure logs, a reproduction environment, the raw data, the mapping from a released version to its commit.
+  - When the plan describes code changes, name the raw material the work starts from instead of a digest of it - the failing log, trace, or data rather than the issue summary - and the methods and tools a leading practitioner of the field would use on it. Every verification step names an outside judge - a test, CI, a measurement, a human reviewer, or an external tool - never the planning model's or the executor's own reading of the result; a step with no outside judge is recorded as an evidence gap.
+  - When the plan describes code changes, restate the deliverable once as the verbs it must accomplish rather than the noun it produces; when that brings in another field, write what a practitioner of that field does as a task (fuzz the parser, audit each completion claim against its evidence), never an instruction to write or speak like one.
   - Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.
   - When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.
   - Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.
@@ -4852,6 +4860,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - At least two options or one chosen option plus rejected alternatives are recorded.
   - Risks, acceptance criteria, and verification commands are testable or explicitly blocked.
   - Every target-state difference has a `Success criteria` row with a task and a verification scenario or is recorded as a user-excluded non-goal, and the `Target-state coverage` check left none unmapped.
+  - When the plan describes code changes, it names the goal beyond the request, the raw material, and an outside judge for each verification step, or records the missing judge as an evidence gap.
   - The plan exists as a recorded file-backed artifact, not only as chat narration.
   - The implementation handoff is prepared only after plan acceptance and remains prepared_not_observed.
   - The follow-on engine or executor path was started only after the user's explicit go-ahead in this conversation, never from plan acceptance alone.
@@ -8532,6 +8541,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Read `references/brief-and-locales.md` and `references/storyboard-and-evidence.md` before proposing visuals. Recover objective, audience, channel, duration, aspect ratio, fps, size cap, source/brand permissions, and tool availability from supplied context; honor explicit format and duration, ask only for irretrievable hard facts, and label reversible creative assumptions. A shot of a UI that exists is drawn from that product's own renderer output, never a look-alike, and every product fact on screen is copied from its canonical source and cited.
   - Resolve content language from current explicit user/audience/channel instructions, then applicable stable preferences, then user language. Keep reply_language under host persona and separate content_locale, onscreen_text, subtitle_text, pronunciation_text, voice_policy, font_policy, and direction_policy; never replace literal IDs, commands, URLs, or trademarks.
   - Compare at least 3 genuinely distinct concept candidates before selection; record the rubric, winner, rejected alternatives, and per-segment art direction. Read `references/craft-workflow.md` (the full upstream production method), `toolkit/README.md` under the loaded skill directory with a file reader, then `references/renderer-adapter.md` before choosing tools; a missing renderer means HOLD on a requested video, not a completed delivery.
+  - If the reel is captured from a game or simulation instead of authored from static assets, read `references/game-capture.md` before capture and timeline authoring: run the simulate → capture → timeline.json → finish edit pipeline with `timeline.json` as the single source of truth for events, SFX cues and titles, pin and record the source game data version/build, map every gameplay event that needs SFX to a cue in timeline.json (an unmapped event is HOLD), apply the shorts defaults (1080x1920, black letterbox bars, centered white title, fade-in, tuned BGM start offset) only as brief-overridable defaults, and record voice provenance (source clip URL, sha256, excerpt range) for any real voice — never synthesizing an impersonation of a real voice actor or person and labeling timbre-alike or synthetic voice methods honestly in credits, with performer/IP permissions handled in the existing assets-and-rights flow.
 - Use when: Use when a user needs an authored time-based product or work showcase, from evidence and audience framing to rendered motion, localized variants, export inspection, and source delivery.
 - Do not use when:
   - Only a static infographic or summary card is needed; use `img-summary`.
@@ -8849,6 +8859,108 @@ These surfaces are generated command references, not installed Hermes workflow s
     - Output refs: `result GeoJSON`, `measured summary JSON`, `replay and provenance manifest`
     - Check IDs: `gis_output_check`, `gis_backend_check`
     - Instruction: Read back every promised artifact, check hashes and independent area/count expectations, and report observed results separately from public-world interpretation.
+
+### sprite-forge
+
+[omh] Character art to animate in a game: turn image-model sprite sheets into aligned, QC-gated frames with a fail-closed Pillow helper.
+
+- Category: `analysis`
+- Phase: `sprite-production`
+- Hermes role: `operator`
+- Quality tier: `execution-evidence-gated`
+- Reasoning demand: `heavy`
+- Exposure: `direct_skill`
+- Install visibility: `true`
+- Docs visibility: `primary_workflow_skill`
+- Compatibility alias: `false`
+- Lifecycle stage: `canonical`
+- Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
+- Handoff policy: Hermes retains art direction and QC interpretation. Raw sheets come from the host image tool; frames come only from the optional standalone helper within accepted file and execution scope. A prepared command is not observed frame processing.
+- Why this exists: Image models return character poses at drifting scales and offsets, so frames cut by hand jitter in play. This skill couples a grid-sheet contract to a fail-closed processor whose numeric QC decides whether to regenerate the source.
+- First steps:
+  - Read `toolkit/README.md` and `references/execution-and-qa.md` before executing `toolkit/scripts/forge.py`; installation and skill discovery never run it.
+  - Obtain the raw sheet from the host's own image tool as a grid on flat #FF00FF; OMH generates no images, and a 1xN strip is regenerated as a grid, never processed.
+  - Record identity elements, rejected drafts, cell size and baseline in `references/character-art-direction.md` form before cutting frames.
+- Use when: Use when a game character needs animation frames cut from an image-model grid sheet, with measured scale and baseline QC rather than hand-edited frames.
+- Do not use when:
+  - Create a product showcase video for a launch, with narration and subtitles; use `show-reel`.
+  - The task is judging already-rendered UI screenshots or layout captures; use `visual-qa`.
+  - The output is an image card or visual prompt card summarizing source material; use `img-summary`.
+- Strong routing signals: `sprite-forge`, `sprite sheet`, `pixel sprite`, `pixel art character`, `game sprite frames`, `2d sprite animation`, `도트 캐릭터`, `스프라이트 시트`, `도트 스프라이트`
+- Good example:
+  - Prompt: Make a pixel sprite sheet for my game character.
+  - Expected behavior: Get a 2x3 #FF00FF grid from the host image tool, record art direction, run the helper, then read back frames and qc.json and regenerate on a REGENERATE verdict.
+  - Why: Animation frames need measured scale and baseline consistency, not a single illustration.
+- Bad example:
+  - Prompt: Tighten the CSS pixel spacing on this sheet of settings cards.
+  - Expected behavior: Answer as a front-end styling question; do not run a sprite processor.
+  - Why: Pixel and sheet vocabulary alone does not establish game-character frames.
+- Quality bar:
+  - Require a grid sheet on flat #FF00FF with exact cell division; strips and packed wide effects are regenerated, not cropped.
+  - Record the real interpreter, Pillow version, command, exit and output hashes; QC numbers come from qc.json, not from inspection by eye.
+  - Gate on body_scale_cv <= 0.08 and anchor_y_std <= 0.05, and keep technical PASS distinct from art-direction approval.
+- Completion checklist:
+  - The source sheet is a host-generated grid on #FF00FF with a source record; real-person sources carry consent.
+  - The actual helper command and exit were observed; frames, sheet and qc.json were read back and hashed, or the blocker is stated.
+  - body_scale_cv and anchor_y_std are quoted from qc.json; a REGENERATE verdict led to a new sheet, not frame edits.
+- Recovery notes:
+  - If the sheet is a 1xN strip or packs a wide effect, ask the host image tool for a grid and a separate effect sheet; do not slice it by hand.
+  - If Pillow is missing, return the refusal and an explicit optional-environment setup recipe; never synthesize frames.
+  - If QC returns REGENERATE, regenerate the source with tighter pose and scale instructions and rerun into a new output directory.
+- Required inputs:
+  - grid sheet from the host image tool on flat #FF00FF
+  - declared rows x cols, cell size and feet baseline
+  - new output directory and execution budget
+- Expert clarification questions:
+  - `grid sheet from the host image tool on flat #FF00FF`
+    - English: Which host image tool produces the sheet, which grid (2x2, 2x3, ...) holds which pose, and is the background flat #FF00FF?
+    - Korean: Which host image tool produces the sheet, which grid (2x2, 2x3, ...) holds which pose, and is the background flat #FF00FF?
+  - `declared rows x cols, cell size and feet baseline`
+    - English: What cell size and feet baseline (for example 512px cell, y=430) and which frames map to which game-data timings?
+    - Korean: What cell size and feet baseline (for example 512px cell, y=430) and which frames map to which game-data timings?
+  - `new output directory and execution budget`
+    - English: Which new directory receives frames, is optional Pillow installed in a separate environment, and what host timeout bounds the run?
+    - Korean: Which new directory receives frames, is optional Pillow installed in a separate environment, and what host timeout bounds the run?
+- Expected outputs:
+  - aligned equal-size frames and sheet
+  - sprite_forge_qc/v1 receipt
+  - character art-direction record
+- Artifact expectations:
+  - Actual `frame_000.png`... equal-size RGBA frames with feet on one shared `baseline_y`, plus the re-composited aligned `sheet.png`.
+  - Authored `sprite_forge_qc/v1` in `qc.json`: frame count, grid, cell/frame size, per-frame bbox, body_scale_cv, anchor_y_std, thresholds, verdict, hashes and argv.
+  - A character art-direction record: identity elements, rejected drafts with reasons, cell size + baseline, and attack-frame timing tied to game data.
+- Safety rules:
+  - OMH generates no images: raw sheets come from the host's own image tool, and the helper only processes a supplied file.
+  - Never hand-patch, redraw or nudge produced frames to pass QC; a REGENERATE verdict sends the work back to a new source sheet.
+  - A real-person or photo source stays recognizable (no SD/chibi redraw) and requires that person's consent plus a source record before processing.
+  - Do not auto-install Pillow, import the companion on skill load, open a network connection or overwrite an existing output directory.
+  - No frame is observed until the helper exits and its files and qc.json are read back; refusal and timeout are not empty-animation findings.
+- Procedure checks:
+  - `sprite_input_check`
+    - Required result fields: `grid_layout`, `background_key`, `cell_division`, `source_record`
+    - Criterion: Refuse 1xN strips, inexact cell division, oversized files and wide effects packed into a character cell; put slashes and muzzle flashes on a separate sheet.
+  - `sprite_backend_check`
+    - Required result fields: `pillow_version`, `command`, `exit_code`, `script_sha256`
+    - Criterion: Name the real interpreter and Pillow version; missing Pillow, refusal exit 2 or timeout never yields guessed frames.
+  - `sprite_qc_check`
+    - Required result fields: `body_scale_cv`, `anchor_y_std`, `verdict`, `output_hashes`
+    - Criterion: Require body_scale_cv <= 0.08 and anchor_y_std <= 0.05; a REGENERATE verdict (exit 3) means a new source sheet, never hand-patched frames.
+- Procedure steps:
+  - `sprite_direct` (`analysis`)
+    - Input refs: `grid sheet from the host image tool on flat #FF00FF`, `declared rows x cols, cell size and feet baseline`
+    - Output refs: `character art-direction record`
+    - Check IDs: `sprite_input_check`
+    - Instruction: Write the character art-direction record: identity elements, rejected drafts with reasons, cell size, baseline and attack-frame timing linked to game data.
+  - `sprite_process` (`production`)
+    - Input refs: `grid sheet from the host image tool on flat #FF00FF`, `declared rows x cols, cell size and feet baseline`, `new output directory and execution budget`
+    - Output refs: `aligned equal-size frames and sheet`, `sprite_forge_qc/v1 receipt`, `character art-direction record`
+    - Check IDs: `sprite_input_check`, `sprite_backend_check`
+    - Instruction: Run the helper with a finite host timeout: chroma key, cell split, component cleanup, one common scale, feet-baseline alignment and nearest-neighbor resize.
+  - `sprite_verify` (`validation`)
+    - Input refs: `grid sheet from the host image tool on flat #FF00FF`, `declared rows x cols, cell size and feet baseline`, `new output directory and execution budget`
+    - Output refs: `aligned equal-size frames and sheet`, `sprite_forge_qc/v1 receipt`, `character art-direction record`
+    - Check IDs: `sprite_qc_check`, `sprite_backend_check`
+    - Instruction: Read back every frame, the aligned sheet and qc.json; recompute hashes and report observed metrics separately from art-quality judgement.
 
 ### biomedical-evidence
 
@@ -9872,7 +9984,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### deliverable-package
 
-[omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states.
+[omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, attached, archived, and published states.
 
 - Category: `deliverables`
 - Phase: `package-status`
@@ -9907,6 +10019,10 @@ These surfaces are generated command references, not installed Hermes workflow s
   - On Hermes, a rung taken from a bundled document skill is observed only from that skill's result for that exact file, judged by its field, not its exit code: `"rendered": false` or `"recalculated": false` exits 0 yet leaves that rung not observed, blocked on the missing tools it names; other observed evidence for a rung still counts.
   - On Hermes, the bundled skills give these rungs when available: `powerpoint` gives `slide_count` (`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py` into a fresh directory, its image count matching `slide_count`, since it lists every image already in that directory); `pdf` gives `page_count` (`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives `sheet_schema` (`xlsx_read.py --sheets`) and `formula_recalculation` (`xlsx_recalc.py --out <copy>`, since without `--out` it replaces the input and rungs or approvals already recorded were for other bytes, then the cached results read back with `xlsx_read.py --formulas`, where an error value or a formula with no cached value is a finding); `docx` gives `section_structure` and `required_clause_check` (`docx_read.py --structure` and `--text`) but no `page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package health, never rendering. Images that exist are not a render pass until each one has been inspected, and a producer's `"ok": true` is never the QA verdict.
   - A file is `generated` only from the producer's read-back of the written file, `approved` only from the person's answer, and `attached` only from the destination's own read-back, never from a reply that names the file.
+  - `archived` only after the archive entry records the content sha256, the version, a poster frame or thumbnail for media, and a catalog row read back from the archive.
+  - `published` only from the destination's own read-back - a URL resolving to the same content hash - never from an upload command's exit code.
+  - Never pick the final file by modification time: the person's approval names it.
+  - One work keeps one stable id, and each revision is a new version under it - never a new id and never an overwrite.
 - Completion checklist:
   - The deliverable type, audience, source inputs, QA ladder, and delivery boundary are named.
   - Prepared generation, generated file, render QA, approval, attachment, and delivery are separate states.

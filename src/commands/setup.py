@@ -54,6 +54,7 @@ from ..config_adapter import (
     plugin_omh_home_setting,
     read_config,
     remove_external_dir,
+    remove_external_dir_entries,
     update_config,
 )
 from ..install.compression_defaults import ensure_compression_defaults
@@ -76,6 +77,7 @@ from ..install.config_reversal import (
 from ..install.skill_registration import (
     ambiguous_registration_message,
     external_dir_key,
+    generation_pack_entries,
     hermes_profile_dirs,
     managed_skill_dir_candidates,
     migrate_managed_registration,
@@ -716,10 +718,7 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             clone = _profile_clone(args, primary, profile_dir)
             profile_paths = _paths(clone)
             config_text = read_config(profile_paths.hermes_config_path)
-            registered = any(
-                _external_dir_registered(config_text, candidate)
-                for candidate in _managed_workflow_dir_candidates(profile_paths)
-            )
+            registered = _home_names_managed_dir(config_text, profile_paths)
             if profile_paths.hermes_plugin_dir.is_dir() and not registered:
                 results.append(
                     {
@@ -1019,7 +1018,9 @@ def _registration_ambiguity_lines(args: argparse.Namespace) -> list[str]:
     for label, home_paths in homes:
         try:
             entries = registered_managed_entries(
-                read_config(home_paths.hermes_config_path), _managed_workflow_dir_candidates(home_paths)
+                read_config(home_paths.hermes_config_path),
+                _managed_workflow_dir_candidates(home_paths),
+                current=managed_current_workflow_pack_dir(),
             )
         except (OSError, UnicodeError, ValueError, OmhError) as exc:
             lines.append(f"{label}: could not inspect registration: {_bounded_command_error(str(exc))}")
@@ -1093,6 +1094,22 @@ def _managed_workflow_dir_candidates(paths: OmhPaths) -> list[Path]:
     return candidates
 
 
+def _home_names_managed_dir(config_text: str, paths: OmhPaths) -> bool:
+    """Whether a home is registered, for the primary home and every profile alike.
+
+    Any managed candidate counts (`_managed_workflow_dir_candidates`). A
+    generation's own pack counts too, but only for the command that retires
+    it: that command moves the home onto the pointer in the same write, while
+    an unmanaged command would add its own path beside the pack and leave a
+    working home with two managed directories.
+    """
+    if any(_external_dir_registered(config_text, candidate) for candidate in _managed_workflow_dir_candidates(paths)):
+        return True
+    if not _registration_retires_older_entries(_registered_workflow_dir(paths)):
+        return False
+    return bool(generation_pack_entries(config_text, managed_current_workflow_pack_dir()))
+
+
 def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigChange:
     """Strip every OMH-managed skills directory this home may carry.
 
@@ -1117,7 +1134,14 @@ def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigCh
             message = change.message
         elif not changed:
             message = change.message
-    return ConfigChange(changed, message, config_text)
+    # A generation's own pack is managed too, whichever generation it names.
+    change = remove_external_dir_entries(
+        config_text, generation_pack_entries(config_text, managed_current_workflow_pack_dir())
+    )
+    if change.changed and not changed:
+        changed = True
+        message = change.message
+    return ConfigChange(changed, message, change.text)
 
 
 def _managed_config_record(paths: OmhPaths) -> dict[str, object]:
@@ -1224,13 +1248,10 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
     """
     paths = _paths(args)
     config_text = read_config(paths.hermes_config_path)
-    # Same candidate set the profile sync reads: a primary home registered at
-    # the older managed path is registered, and must be carried forward
-    # rather than read as a deliberate unregistration.
-    if not any(
-        _external_dir_registered(config_text, candidate)
-        for candidate in _managed_workflow_dir_candidates(paths)
-    ):
+    # Same predicate the profile sync reads: a primary home registered at an
+    # older managed path is registered, and must be carried forward rather
+    # than read as a deliberate unregistration.
+    if not _home_names_managed_dir(config_text, paths):
         return {"display_release": _unregistered_display_release(paths, args)}
     return _apply_result(args)
 
@@ -2392,9 +2413,8 @@ def _apply_result(
     # command stays additive (see `_registration_retires_older_entries`). The
     # opt-out rule sits in the two callers that decide whether this home is
     # registered at all.
-    retire_candidates = (
-        _managed_workflow_dir_candidates(paths) if _registration_retires_older_entries(registered_dir) else []
-    )
+    retires = _registration_retires_older_entries(registered_dir)
+    retire_candidates = _managed_workflow_dir_candidates(paths) if retires else []
     # Read before the mutation: the reclaim below decides from it whether a
     # setting is OMH's, and the record this pass writes carries it forward.
     state_before, _state_error = read_state_result(paths)
@@ -2416,7 +2436,12 @@ def _apply_result(
         current = config_text
         # Re-derived on every pass of the mutation, so a retry reads the
         # other writer's file.
-        migration = migrate_managed_registration(current, registered_dir, retire_candidates)
+        migration = migrate_managed_registration(
+            current,
+            registered_dir,
+            retire_candidates,
+            current=managed_current_workflow_pack_dir() if retires else None,
+        )
         change = ConfigChange(migration.added, migration.message, migration.text)
         retired_external_dirs = list(migration.retired)
         compression = ensure_compression_defaults(migration.text)
@@ -3131,6 +3156,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
         source="setup",
         dry_run=args.dry_run,
         ensure_config=not args.skip_apply,
+        # The directory the apply step registered, never `paths.skills_dir`:
+        # on a managed command that is the running generation's own pack,
+        # which beside the pointer makes every OMH skill ambiguous after the
+        # next update moves the pointer.
+        registered_dir=_registered_workflow_dir(paths),
         setup_context={
             "apply_skipped": bool(args.skip_apply),
             "with_plugin": True,

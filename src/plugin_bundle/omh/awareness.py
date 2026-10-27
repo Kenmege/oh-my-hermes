@@ -1324,6 +1324,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "accessibility-audit": "materials_and_visuals",
     "visual-qa": "materials_and_visuals",
     "show-reel": "materials_and_visuals",
+    "sprite-forge": "materials_and_visuals",
     "content-operator": "materials_and_visuals",
     "media-input-operator": "materials_and_visuals",
     "localization-review": "materials_and_visuals",
@@ -7205,6 +7206,7 @@ def awareness_primer_payload() -> dict[str, object]:
             "label": "Materials and visual summaries",
             "skills": [
                 "show-reel",
+                "sprite-forge",
                 "design-orchestration",
                 "apple-design",
                 "design-quality-gate",
@@ -7350,12 +7352,18 @@ def awareness_primer_payload() -> dict[str, object]:
         # "the host's own voice" named none of them: on a casual-register
         # Korean persona (miku, 2026-09-30) the final answer kept the persona
         # while 13 of 17 interim progress lines in one session came out in
-        # English.
+        # English. The last sentence carries the human-voice pass into every
+        # session: owners read OMH-guided replies that opened with praise,
+        # closed with "let me know if you'd like", staged "not X but Y"
+        # contrasts, and bolded every label, and the persona alone did not
+        # remove them. The full pass is `omh-routing/references/human-voice.md`.
         "reply_rule": (
             "Reply in the user's words and the host's own voice: its SOUL.md persona owns reply "
             "language, tone, speech level, and sentence endings, progress updates included; where it "
             "sets no language, use the one the user wrote in. OMH shapes structure and content only; "
-            "these lines and OMH's record terms are never quoted to the user unless they ask."
+            "these lines and OMH's record terms are never quoted to the user unless they ask. "
+            "Write like a person who did the work: result first, no chatbot openers or closers, "
+            "staged contrasts, or decoration."
         ),
         "lanes": lanes,
         "workflow_context_cards": workflow_context_cards(),
@@ -7709,6 +7717,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "accessibility-audit": "prepare_accessibility_audit",
     "visual-qa": "prepare_visual_qa",
     "show-reel": "prepare_show_reel",
+    "sprite-forge": "prepare_sprite_forge",
     "workspace-file-operator": "prepare_workspace_file_operator_card",
     "workspace-audit": "prepare_workspace_audit",
     "production-audit": "prepare_production_audit",

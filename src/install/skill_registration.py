@@ -12,7 +12,9 @@ resolves a bare skill name across every external directory and refuses one
 that resolves to two different files ("Ambiguous skill name ... Refusing to
 guess"); only copies that resolve to the same file count as one. Every
 generation refresh makes the pre-pointer copy and the pointer differ, so a
-home naming both loses every OMH skill by name (#1857). Setup and update
+home naming both loses every OMH skill by name (#1857). A generation's own
+pack named beside the pointer is the same state one update later, so it is
+a managed entry too, whichever generation it names. Setup and update
 migrate such a home to the one path the running command writes; `omh doctor`
 and the update post-check report a home that still names two, in the same
 words. This module is the one place both sides read the candidate set and
@@ -96,7 +98,7 @@ class RegistrationMigration:
 
 
 def migrate_managed_registration(
-    config_text: str, registered_dir: Path, candidates: Iterable[Path]
+    config_text: str, registered_dir: Path, candidates: Iterable[Path], *, current: Path | None = None
 ) -> RegistrationMigration:
     """Register `registered_dir` and retire every OTHER managed candidate, in one text.
 
@@ -121,16 +123,57 @@ def migrate_managed_registration(
     no candidates. The retired entries are reported as `external_dirs` reads
     them from the file.
 
+    `current` is the shared generation pointer, passed by a caller that
+    retires: every entry naming one generation's own pack beside it is
+    retired as well, including the one the pointer resolves to today (see
+    `generation_pack_entries`).
+
     Pure text work, so it can be run against a copy of a live config.
     """
     change = ensure_external_dir(config_text, registered_dir)
     registered_real = _real_key(registered_dir)
     candidate_reals = {_real_key(candidate) for candidate in candidates}
     candidate_reals.discard(registered_real)
-    to_retire = [entry for entry in external_dirs(change.text) if _real_key(entry) in candidate_reals]
+    packs = set(generation_pack_entries(change.text, current))
+    to_retire = [
+        entry for entry in external_dirs(change.text) if _real_key(entry) in candidate_reals or entry in packs
+    ]
     removal = remove_external_dir_entries(change.text, to_retire)
     retired = list(to_retire) if removal.changed else []
     return RegistrationMigration(text=removal.text, added=change.changed, message=change.message, retired=retired)
+
+
+def generation_pack_entries(config_text: str, current: Path | None) -> list[str]:
+    """The registered entries that name one generation's own pack, gone or not.
+
+    `current` is the shared pointer, `<root>/current/skills`, and every
+    generation it may point at keeps its pack at
+    `<root>/generations/<id>/skills`. A home that names one of those beside
+    the pointer is registered at the same pack twice on the day it is
+    written, and at two different packs after the next update moves the
+    pointer -- every OMH skill then resolves to two files and Hermes lists
+    none of them. Nothing ever re-registers a generation by its own path, so
+    any such entry is retired: one whose generation was garbage-collected
+    too, which Hermes skips today but which still names a directory OMH
+    owns. Matched by the real path of the `generations` directory, so the
+    entry's spelling through `~`, a trailing slash or a link to the root is
+    the same entry; `generations/<id>` itself is not resolved, because the
+    pack it names may no longer exist. A relative entry is never one: Hermes
+    anchors it at its own home, so it names a directory there, not under the
+    managed root, whatever directory this command runs from. Config order is
+    kept.
+    """
+    if current is None:
+        return []
+    generations = _real_key(current.parent.parent / "generations")
+    entries: list[str] = []
+    for entry in external_dirs(config_text):
+        normalized = os.path.normpath(os.path.expanduser(entry))
+        if not os.path.isabs(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
+            continue
+        if _real_key(os.path.dirname(os.path.dirname(normalized))) == generations:
+            entries.append(entry)
+    return entries
 
 
 def _real_key(path: str | Path) -> str:
@@ -141,7 +184,9 @@ def _real_key(path: str | Path) -> str:
         return external_dir_key(expanded)
 
 
-def registered_managed_entries(config_text: str, candidates: Iterable[Path]) -> list[str]:
+def registered_managed_entries(
+    config_text: str, candidates: Iterable[Path], *, current: Path | None = None
+) -> list[str]:
     """The registered entries that name a managed directory present on disk, one per real directory.
 
     By text or by real path, the way `external_dir_registered` reads a single
@@ -152,7 +197,12 @@ def registered_managed_entries(config_text: str, candidates: Iterable[Path]) -> 
     a missing external directory when it collects skills, so nothing can be
     ambiguous through it. Config order is kept so a message names them the
     way the file does.
+
+    With `current`, the shared pointer, an entry naming one generation's own
+    pack is managed too (`generation_pack_entries`): beside the pointer it
+    becomes a second directory as soon as the pointer moves on.
     """
+    candidates = [*candidates, *map(Path, generation_pack_entries(config_text, current))]
     keys = {external_dir_key(candidate) for candidate in candidates}
     reals = {_real_key(candidate) for candidate in candidates}
     seen: set[str] = set()

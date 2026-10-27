@@ -216,7 +216,8 @@ class MenuColumnTests(unittest.TestCase):
         self.assertGreater(columns[0], MENU_NAME_CELLS)
 
     def test_short_names_keep_the_default_column(self) -> None:
-        self.assertEqual(set(self.summary_columns([("/help", "Show commands"), ("/new", "Start")])), {MENU_NAME_CELLS + 1})
+        # The pointer's column (`❯ `), the name column, and the space before the summary.
+        self.assertEqual(set(self.summary_columns([("/help", "Show commands"), ("/new", "Start")])), {MENU_NAME_CELLS + 2})
 
     def test_a_name_past_half_the_width_pushes_only_its_own_summary(self) -> None:
         long_label = "/" + "x" * 50

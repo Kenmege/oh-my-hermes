@@ -2,8 +2,10 @@
 
 Hermes' Ink app runs about sixty slash commands itself and sends the rest to
 the gateway. The gateway's `slash.exec` already answers most of them on its
-own (it runs a full Hermes CLI per session), so the OMH TUI only has to own
-four kinds:
+own, and the TUI's gateway child answers the ones a shared gateway's
+`slash.exec` refuses but serves through a verb of its own (`/compress`,
+`/undo`, `/stop`, ...: `attach/gateway_attach.py` SLASH_VERBS), so the OMH
+TUI only has to own five kinds:
 
 - `local`: commands about this terminal (help, quit, history, theme, the OMH
   model picker), the ones whose screen is the TUI's own (attaching an image,
@@ -18,7 +20,12 @@ four kinds:
   `/prompt`). The TUI names the Hermes door instead of half-supporting them.
 - `dropped`: Ink display preferences and debug widgets that mean nothing here.
 - `renamed`: Claude Code's name for a command Hermes has under another
-  (`/cost` is `/usage`); it runs Hermes' command under the name typed.
+  (`/cost` is `/usage`, `/compact` is `/compress`); it runs Hermes' command
+  under the name typed.
+- `classic`: Hermes commands that only its classic CLI runs (`hermes --cli`):
+  Hermes' shared gateway refuses them in a TUI session, with a pointer of
+  its own. They still go to Hermes as typed, so that pointer is what the
+  person reads, but completion and /help leave them out.
 
 Everything else goes to `slash.exec`, and a 4018 refusal from it falls back to
 `command.dispatch`, the order Ink uses. That includes `/yolo`, which turns off
@@ -40,6 +47,7 @@ LOCAL = "local"
 HERMES = "hermes"
 DROPPED = "dropped"
 RENAMED = "renamed"
+CLASSIC = "classic"
 
 HERMES_DOOR = "hermes --tui"
 PLAN_COMMAND = "plan"  # Hermes' one-turn plan prompt; the TUI's plan mode sends every prompt through it
@@ -79,7 +87,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("todos", LOCAL, "Show this session's whole plan"),
     SlashCommand("model", LOCAL, "Switch this session's model (a picker, or /model <name> [--provider <slug>])",
                  echo_bare=False),
-    SlashCommand("export", LOCAL, "Hermes' profile archive (config, skills, theme), not this transcript"),
+    SlashCommand("export", LOCAL,
+                 "Hermes' profile archive, not this transcript (`hermes profile export` on a shared gateway)"),
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
     SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter where it is a key)",
@@ -95,11 +104,15 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("theme", LOCAL, "Pick the launch look (a picker), or /theme <look|palette|auto|light|dark>",
                  echo_bare=False),
     SlashCommand("omh-model", LOCAL, "Pick OMH model chains"),
+    SlashCommand("topup", LOCAL, "Nous credit balance and the top-up link (Hermes' /topup)"),
     SlashCommand("reload-skills", LOCAL, "Re-scan Hermes' skills, so one installed since the start runs as /<name>",
                  ("reload_skills",)),
     # Claude Code's names for Hermes' commands.
     SlashCommand("cost", RENAMED, "Token usage and rate limits (Hermes' /usage)", target="usage"),
     SlashCommand("permissions", RENAMED, "Show or set the persistent approval mode (Hermes' /approvals)", target="approvals"),
+    SlashCommand("compact", RENAMED,
+                 "Compress this session's context: [here [N] | <focus> | --preview] (Hermes' /compress)",
+                 target="compress"),
     # Surfaces that only Hermes' own terminal has.
     SlashCommand("update", HERMES, "Update Hermes"),
     SlashCommand("voice", HERMES, "Voice mode"),
@@ -110,7 +123,6 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("replay", HERMES, "Replay a spawn tree"),
     SlashCommand("replay-diff", HERMES, "Diff two spawn trees"),
     SlashCommand("agents", HERMES, "Spawn-tree dashboard", ("tasks",)),
-    SlashCommand("topup", HERMES, "Add credits"),
     SlashCommand("subscription", HERMES, "Change plan", ("upgrade",)),
     SlashCommand("setup", HERMES, "Run Hermes setup"),
     SlashCommand("skin", HERMES, "Hermes skin (the OMH TUI uses /theme)"),
@@ -133,6 +145,14 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("dialog-test", DROPPED, "Demo widget"),
     SlashCommand("grid-test", DROPPED, "Demo widget"),
     SlashCommand("ticker", DROPPED, "Demo widget"),
+    SlashCommand("timestamps", DROPPED, "Transcript timestamps", ("ts",)),
+    # What only Hermes' classic CLI runs (`gateway/session_commands.py` REFUSAL_HINTS names the way to each).
+    SlashCommand("handoff", CLASSIC, "Hand the session to a messaging platform"),
+    SlashCommand("worktree", CLASSIC, "Start in a fresh git worktree"),
+    SlashCommand("snapshot", CLASSIC, "Back up or restore Hermes' state", ("snap",)),
+    SlashCommand("import", CLASSIC, "Import a profile archive"),
+    SlashCommand("hatch", CLASSIC, "Generate a pet", ("generate-pet",)),
+    SlashCommand("palette", CLASSIC, "Command palette"),
 )
 
 _BY_NAME: dict[str, SlashCommand] = {}

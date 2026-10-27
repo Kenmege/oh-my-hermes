@@ -137,7 +137,7 @@ DROPPED_NOTICE = "⋯ {earlier} no longer held"
 # longer has them.
 BLOCK_CAP = 2000
 
-USER_MARK = "❯ "  # the composer's mark (`composer.PROMPT`), dim, before your prompt's dim text, on no band
+USER_MARK = "❯ "  # the composer's mark (`composer.PROMPT`), dim, before your prompt's dim text, on its band
 FROM_QUEUE_TAG = "⧗ from queue"  # on a prompt the queue sent once the turn before it ended
 # A steer the person sent: SENT until Hermes answers, then QUEUED (Hermes took it: it reads it after its next
 # tool call, or sends it as the next prompt while compressing, and says the same for both) or REFUSED.
@@ -742,8 +742,11 @@ def _text_rows(
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
-    """Your prompt on a dim rail, behind a dim `❯`, in the muted colour on no band; a `/name` that resolved to a
-    command or skill bold in its colour (`slash_spans`); `⧗ from queue` when the queue sent it."""
+    """Your prompt on a dim rail, behind a dim `❯`, in the muted colour; a `/name` that resolved to a command or skill
+    bold in its colour (`slash_spans`); `⧗ from queue` when the queue sent it. Every row, a wrapped or blank one too,
+    runs on `theme.prompt_band` to the right edge, its words measured against the band (`on_band`)."""
+    band = theme.prompt_band
+    theme = on_band(theme, band) if band.bg is not None else theme
     inner = max(width - len(RAIL), 1)
     first, rest = (Span(USER_MARK, theme.dim),), (Span(" " * len(USER_MARK)),)
     rows: list[Line] = []
@@ -757,7 +760,8 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
         tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
         if line_width(rows[0]) + line_width(tag) <= inner:
             rows[0] = (*rows[0], *tag)
-    return [_within((*_rail(theme.dim), *row), width) for row in rows]
+    rows = [_within((*_rail(theme.dim), *row), width) for row in rows]
+    return _banded(rows, band) if band.bg is not None else rows
 
 
 def _awaits_answer(block: Block) -> bool:

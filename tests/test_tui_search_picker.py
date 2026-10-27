@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from _tui_lines import INFO_INSET, line_text, lines_text, RULE_ROW
+from _tui_lines import info_row_index, INFO_INSET, line_text, lines_text, RULE_ROW
 from test_tui_modes import make_app, type_text
 from omh.tui.history import SEARCH_HINT, SEARCH_LABEL, HistorySearch
 from omh.tui.keys import CHAR, ENTER, ESCAPE, LEFT, Key, Paste
@@ -62,7 +62,7 @@ class SearchStandsWhereTheComposerWasTests(unittest.TestCase):
         during = screen(app)
         # The query row is the search's last row, right above the info line: where the bottom edge was on the bottom
         # rows, and the composer's own row here, where the region follows the content and is one row shorter.
-        info = max(index for index, row in enumerate(during) if row)
+        info = info_row_index(during)
         self.assertTrue(during[info - 1].startswith(SEARCH_LABEL.rstrip()), during)
         self.assertEqual(info - 1, composer_row)
         app._on_input(Key(ESCAPE))

@@ -25,6 +25,7 @@ from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs, write_config
 from omh.install.skill_registration import (
     ambiguous_registration_message,
+    generation_pack_entries,
     managed_skill_dir_candidates,
     migrate_managed_registration,
     registered_managed_entries,
@@ -158,6 +159,119 @@ class MigrateManagedRegistrationTests(unittest.TestCase):
 
             self.assertEqual(external_dirs(migration.text), [(root / "mine").as_posix(), pointer.as_posix()])
             self.assertEqual((migration.added, migration.retired, migration.registration), (True, [], "added"))
+
+
+class GenerationPackEntriesTests(unittest.TestCase):
+    """A generation's own pack beside the shared pointer: retired, and named until it is."""
+
+    def _layout(self, root: Path) -> tuple[Path, Path, Path]:
+        pointer = root / "current" / "skills"
+        pointer.mkdir(parents=True)
+        older = root / "generations" / "20261025" / "skills"
+        older.mkdir(parents=True)
+        return pointer, older, root / "generations" / "20260925" / "skills"
+
+    def test_every_spelling_of_a_generation_pack_is_named_and_nothing_else(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, older, gone = self._layout(root)
+            # A `skills` directory under another root's `generations/` is the
+            # person's: only the pointer's own root matches, never the name.
+            foreign = [
+                root / "mine",
+                root / "generations" / "20261025" / "other",
+                root / "elsewhere" / "x" / "skills",
+                root / "elsewhere" / "generations" / "20261025" / "skills",
+            ]
+            relative = "generations/20261025/skills"
+            with mock.patch.dict(os.environ, {"HOME": str(root), "USERPROFILE": str(root)}):
+                text = (
+                    _config_naming(*foreign, pointer, gone)
+                    + f"    - {older.as_posix()}/\n    - ~/generations/x/skills\n    - {relative}\n"
+                )
+                # Run from the managed root: Hermes anchors a relative entry
+                # at its own home, so it is never a generation's pack.
+                cwd = os.getcwd()
+                os.chdir(root)
+                try:
+                    entries = generation_pack_entries(text, pointer)
+                finally:
+                    os.chdir(cwd)
+                self.assertEqual(entries, [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"])
+            self.assertEqual(generation_pack_entries(text, None), [])
+
+    def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:
+        # Including the pack the pointer resolves to today: it is the same
+        # files only until the next update moves the pointer.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, older, gone = self._layout(root)
+            paths = _managed_paths(root, older)
+            before = _config_naming(root / "mine", pointer, gone, older)
+            candidates = managed_skill_dir_candidates(paths, current=pointer)
+
+            migration = migrate_managed_registration(before, pointer, candidates, current=pointer)
+
+            self.assertEqual(external_dirs(migration.text), [(root / "mine").as_posix(), pointer.as_posix()])
+            self.assertEqual((migration.retired, migration.registration), ([gone.as_posix(), older.as_posix()], "migrated"))
+            # Without the pointer the caller stays additive about generations.
+            additive = migrate_managed_registration(before, pointer, [])
+            self.assertEqual((additive.text, additive.retired), (before, []))
+
+    def test_an_older_pack_on_disk_is_a_second_managed_entry_and_a_gone_one_is_not(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, older, gone = self._layout(root)
+            paths = _managed_paths(root, root / "generations" / "20261027" / "skills")
+            candidates = managed_skill_dir_candidates(paths, current=pointer)
+            text = _config_naming(pointer, gone, older)
+            self.assertEqual(registered_managed_entries(text, candidates), [pointer.as_posix()])
+            self.assertEqual(
+                registered_managed_entries(text, candidates, current=pointer), [pointer.as_posix(), older.as_posix()]
+            )
+
+    @requires_symlinks
+    def test_on_the_live_layout_the_older_pack_is_named_and_both_packs_are_retired(self) -> None:
+        # `current` links to the running generation and the previous one is
+        # kept for rollback. The running pack is one directory with the
+        # pointer, so it is not the ambiguity; it is still retired, since the
+        # next update makes it one.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            older, running = (root / "generations" / name / "skills" for name in ("older", "running"))
+            older.mkdir(parents=True)
+            running.mkdir(parents=True)
+            (root / "current").symlink_to(running.parent, target_is_directory=True)
+            pointer = root / "current" / "skills"
+            candidates = managed_skill_dir_candidates(_managed_paths(root, running), current=pointer)
+            text = _config_naming(pointer, older, running)
+
+            self.assertEqual(
+                registered_managed_entries(text, candidates, current=pointer), [pointer.as_posix(), older.as_posix()]
+            )
+            migration = migrate_managed_registration(text, pointer, candidates, current=pointer)
+            self.assertEqual(external_dirs(migration.text), [pointer.as_posix()])
+            self.assertEqual(migration.retired, [older.as_posix(), running.as_posix()])
+
+    def test_doctor_and_the_update_post_check_name_the_older_pack(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, older, gone = self._layout(root)
+            paths = _managed_paths(root, root / "generations" / "20261027" / "skills")
+            paths.hermes_home.mkdir()
+            write_config(paths.hermes_config_path, _config_naming(pointer, gone, older))
+            expected = [pointer.as_posix(), older.as_posix()]
+
+            with mock.patch.object(_doctor_module, "managed_current_workflow_pack_dir", return_value=pointer):
+                check = next(c for c in run_doctor(paths) if c.name == "external_dir_ambiguity")
+            args = argparse.Namespace(omh_home=str(paths.omh_home), hermes_home=str(paths.hermes_home))
+            with mock.patch.object(_setup_module, "managed_current_workflow_pack_dir", return_value=pointer):
+                lines = _setup_module._registration_ambiguity_lines(args)
+
+            self.assertEqual(check.severity, "warning")
+            self.assertEqual(check.message, ambiguous_registration_message(str(paths.hermes_config_path), expected))
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn(f"({expected[0]} and {expected[1]})", lines[0])
 
 
 class RegisteredManagedEntriesTests(unittest.TestCase):
