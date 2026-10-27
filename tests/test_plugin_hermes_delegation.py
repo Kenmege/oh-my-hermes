@@ -448,6 +448,31 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 with self.subTest(spelling=spelling, effort=effort):
                     self.assertEqual(mixture_category_for(spelling, effort, parent_model="gpt-6.1-sol"), "")
 
+    def test_gpt_61_terra_is_priced_and_provider_mapped_but_unchained(self):
+        # Onboarded 2026-10-27 ahead of any chain placement: an operator chain
+        # naming it costs out at OpenAI's list price and gets a provider
+        # verdict, and it borrows no category label from GPT-6.1 Sol.
+        cost = hermes_delegation_module._approximate_cost_usd
+        for spelling in ("gpt-6.1-terra", "openai/gpt-6.1-terra", "gpt-6.1-terra-pro"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(cost(spelling, 1_000_000, 1_000_000, 0), 6.0)
+                # Cached input is 5% of input, not the default tenth.
+                self.assertAlmostEqual(cost(spelling, 0, 1, 1_000_000), 0.05 + 5.0 / 1_000_000)
+        self.assertIs(provider_serves_alias("gpt-6.1-terra", "openai-codex"), True)
+        # The declared `-pro` projection inherits the base row's eligibility.
+        self.assertIs(provider_serves_alias("gpt-6.1-terra-pro", "openai-codex"), True)
+        self.assertIs(provider_serves_alias("openai/gpt-6.1-terra-pro", "zai"), False)
+        self.assertIs(provider_serves_alias("gpt-6.1-terra", "anthropic"), False)
+        self.assertIsNone(provider_serves_alias("openai/gpt-6.1-terra", "openrouter"))
+        for spelling in ("gpt-6.1-terra", "openai/gpt-6.1-terra", "gpt-6.1-terra-pro"):
+            for effort in ("low", "medium", "high", "max"):
+                with self.subTest(spelling=spelling, effort=effort):
+                    self.assertEqual(mixture_category_for(spelling, effort, parent_model="gpt-6.1-sol"), "")
+        chains = {"writing": (("gpt-6.1-terra", "medium"),)}
+        self.assertEqual(
+            mixture_category_for("gpt-6.1-terra", "medium", parent_model="gpt-6.1-sol", chains=chains), "writing"
+        )
+
     def test_the_served_ultrafast_tiers_are_priced_without_a_provider_claim(self):
         # Observed 2026-09-24 on the OpenGateway route: the V4.1 Flash and GLM
         # 5.3 generations are served through Ultrafast tiers next to the base ids
@@ -544,7 +569,9 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         # decision -- a non-generative model is never a chain member -- so it
         # is listed here rather than given invented chain metadata. Sonnet
         # 5.5 left this set on 2026-10-13, when the owner's table placed it.
-        unchained = {"jev-1.13.0"}
+        # GPT-6.1 Terra (onboarded 2026-10-27) is in no shipped chain yet; its
+        # own test above checks pricing, provider eligibility, and `-pro`.
+        unchained = {"jev-1.13.0", "gpt-6.1-terra"}
         for model_id in (*contracts, *expected):
             contract_id = expected.get(model_id, (model_id,))[0]
             if contract_id in unchained:
