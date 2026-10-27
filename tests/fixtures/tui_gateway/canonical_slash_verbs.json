@@ -1,0 +1,1062 @@
+{
+ "fixture": {
+  "hermes": "bf0203a794 (v0.22.5)",
+  "recorded": "2026-10-28",
+  "how": "a real shared gateway in a throwaway HERMES_HOME (fake provider) driven through the branch's gateway child; per /command: the owner calls the child made, the owner's replies (session.resume trimmed to the fields read and its last 4 rows; ids and paths sanitized), and the child's answer to the TUI"
+ },
+ "scenarios": [
+  {
+   "command": "compress keep the greetings",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "compress keep the greetings",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 12,
+       "execution_generation": 12,
+       "running": false,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "user",
+         "row_id": 21,
+         "content": "hello number 10"
+        },
+        {
+         "role": "assistant",
+         "row_id": 22,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 23,
+         "content": "hello number 11"
+        },
+        {
+         "role": "assistant",
+         "row_id": 24,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.mutate",
+     "params": {
+      "session_id": "local-session-1",
+      "request_id": "<request_id>",
+      "expected_revision": 12,
+      "expected_generation": 12,
+      "operation": "compress",
+      "payload": {
+       "focus": "keep the greetings"
+      }
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "revision": 13,
+       "execution_generation": 13,
+       "operation": "compress",
+       "target_session_id": "local-session-1",
+       "previous_target_session_id": "local-session-1",
+       "message_count": 12,
+       "summary": {
+        "noop": false,
+        "aborted": false,
+        "refused_would_grow": false,
+        "fallback_used": false,
+        "headline": "Compressed: 24 → 12 messages",
+        "token_line": "Approx request size: ~816 → ~1,040 tokens",
+        "note": "Note: fewer messages can still raise this estimate when compression rewrites the transcript into denser summaries."
+       }
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "✓ Compressed: 24 → 12 messages\n  Approx request size: ~816 → ~1,040 tokens\n  Note: fewer messages can still raise this estimate when compression rewrites the transcript into denser summaries."
+    }
+   }
+  },
+  {
+   "command": "compact --preview",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "compact --preview",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 13,
+       "execution_generation": 13,
+       "running": false,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "user",
+         "row_id": 33,
+         "content": "hello number 10"
+        },
+        {
+         "role": "assistant",
+         "row_id": 34,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 35,
+         "content": "hello number 11"
+        },
+        {
+         "role": "assistant",
+         "row_id": 36,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.mutate",
+     "params": {
+      "session_id": "local-session-1",
+      "request_id": "<request_id>",
+      "expected_revision": 13,
+      "expected_generation": 13,
+      "operation": "compress",
+      "payload": {
+       "focus": "--preview"
+      }
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "operation": "compress",
+       "status": "preview",
+       "lines": [
+        "Preview — no changes made.",
+        "Would compress 12 of 12 message(s) (~1,038 tokens currently in context).",
+        "Run the command again without --preview to apply."
+       ],
+       "head_count": 12,
+       "tail_count": 0,
+       "message_count": 12
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "Preview — no changes made.\nWould compress 12 of 12 message(s) (~1,038 tokens currently in context).\nRun the command again without --preview to apply."
+    }
+   }
+  },
+  {
+   "command": "undo",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "undo",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 13,
+       "execution_generation": 13,
+       "running": false,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "user",
+         "row_id": 33,
+         "content": "hello number 10"
+        },
+        {
+         "role": "assistant",
+         "row_id": 34,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 35,
+         "content": "hello number 11"
+        },
+        {
+         "role": "assistant",
+         "row_id": 36,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.mutate",
+     "params": {
+      "session_id": "local-session-1",
+      "request_id": "<request_id>",
+      "expected_revision": 13,
+      "expected_generation": 13,
+      "operation": "rewind",
+      "payload": {
+       "target_message_id": 35
+      }
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "revision": 14,
+       "execution_generation": 14,
+       "operation": "rewind",
+       "rewound_count": 2,
+       "target_message": {
+        "id": 35,
+        "session_id": "local-session-1",
+        "role": "user",
+        "content": "hello number 11",
+        "tool_call_id": null,
+        "tool_calls": null,
+        "tool_name": null,
+        "effect_disposition": null,
+        "timestamp": 1793113395.79513,
+        "token_count": null,
+        "finish_reason": null,
+        "reasoning": null,
+        "reasoning_content": null,
+        "reasoning_details": null,
+        "codex_reasoning_items": null,
+        "codex_message_items": null,
+        "platform_message_id": "b9d8a116d71f4d429c13ee0ec1df2d23",
+        "observed": 0,
+        "active": 1,
+        "compacted": 0,
+        "api_content": null,
+        "display_kind": null,
+        "display_metadata": {
+         "gateway_input_owner": "7a99a05e-9eb3-5162-8d00-7e916af9dfa0"
+        },
+        "message_uid": "77410c19fd41478fb9845572799c64b8",
+        "absorbed_message_uids": null,
+        "tool_call_uids": null,
+        "tool_call_uid": null
+       },
+       "new_head_id": 34,
+       "replacement_message_id": null
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "prefill",
+     "message": "hello number 11",
+     "notice": "↶ Undid 1 turn (2 messages). Edit and resubmit, or send a new message."
+    }
+   }
+  },
+  {
+   "command": "retry",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "retry",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 14,
+       "execution_generation": 14,
+       "running": false,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "user",
+         "row_id": 31,
+         "content": "hello number 9"
+        },
+        {
+         "role": "assistant",
+         "row_id": 32,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 33,
+         "content": "hello number 10"
+        },
+        {
+         "role": "assistant",
+         "row_id": 34,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.mutate",
+     "params": {
+      "session_id": "local-session-1",
+      "request_id": "<request_id>",
+      "expected_revision": 14,
+      "expected_generation": 14,
+      "operation": "rewind",
+      "payload": {
+       "target_message_id": 33
+      }
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "revision": 15,
+       "execution_generation": 15,
+       "operation": "rewind",
+       "rewound_count": 2,
+       "target_message": {
+        "id": 33,
+        "session_id": "local-session-1",
+        "role": "user",
+        "content": "hello number 10",
+        "tool_call_id": null,
+        "tool_calls": null,
+        "tool_name": null,
+        "effect_disposition": null,
+        "timestamp": 1793113395.72164,
+        "token_count": null,
+        "finish_reason": null,
+        "reasoning": null,
+        "reasoning_content": null,
+        "reasoning_details": null,
+        "codex_reasoning_items": null,
+        "codex_message_items": null,
+        "platform_message_id": "fd163aee73474d43b9c1afbb4cffd9a9",
+        "observed": 0,
+        "active": 1,
+        "compacted": 0,
+        "api_content": null,
+        "display_kind": null,
+        "display_metadata": {
+         "gateway_input_owner": "f0e75226-33df-51b9-b76a-46b60b4d9796"
+        },
+        "message_uid": "ad3243b373414eac9ae7b3e56022c717",
+        "absorbed_message_uids": null,
+        "tool_call_uids": null,
+        "tool_call_uid": null
+       },
+       "new_head_id": 32,
+       "replacement_message_id": null
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "send",
+     "message": "hello number 10"
+    }
+   }
+  },
+  {
+   "command": "compress",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "compress",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 15,
+       "execution_generation": 16,
+       "running": true,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "assistant",
+         "row_id": 30,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 31,
+         "content": "hello number 9"
+        },
+        {
+         "role": "assistant",
+         "row_id": 32,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 37,
+         "content": "slow prompt"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.mutate",
+     "params": {
+      "session_id": "local-session-1",
+      "request_id": "<request_id>",
+      "expected_revision": 15,
+      "expected_generation": 16,
+      "operation": "compress",
+      "payload": {}
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "session_busy",
+       "data": {
+        "reason": "session_busy"
+       }
+      }
+     }
+    }
+   ],
+   "answer": {
+    "error": {
+     "code": 4001,
+     "message": "session_busy",
+     "data": {
+      "reason": "session_busy"
+     }
+    }
+   }
+  },
+  {
+   "command": "stop",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "stop",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 15,
+       "execution_generation": 16,
+       "running": true,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "assistant",
+         "row_id": 30,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 31,
+         "content": "hello number 9"
+        },
+        {
+         "role": "assistant",
+         "row_id": 32,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 37,
+         "content": "slow prompt"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.interrupt",
+     "params": {
+      "session_id": "local-session-1",
+      "execution_generation": 16
+     },
+     "reply": {
+      "result": {
+       "ref": {
+        "profile_id": "<research>/run-record/hermes",
+        "session_id": "local-session-1"
+       },
+       "instance_id": "185f3060f60c4decb84e1a071102d941",
+       "authority_epoch": 1,
+       "revision": 15,
+       "execution_generation": 16,
+       "execution_state": "running"
+      }
+     }
+    },
+    {
+     "method": "process.stop",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "killed": 0,
+       "delegations": 0
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "Interrupted the running turn.\nStopped 0 background processes."
+    }
+   }
+  },
+  {
+   "command": "branch side quest",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "branch side quest",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "session.resume",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "subscription_id": "a4fe120a6c134d6c8df2cc4b2c721dce",
+       "revision": 16,
+       "execution_generation": 16,
+       "running": false,
+       "authority_epoch": 1,
+       "messages": [
+        {
+         "role": "user",
+         "row_id": 31,
+         "content": "hello number 9"
+        },
+        {
+         "role": "assistant",
+         "row_id": 32,
+         "content": "## Summary\nThe user said hello three times and got short replies."
+        },
+        {
+         "role": "user",
+         "row_id": 37,
+         "content": "slow prompt"
+        },
+        {
+         "role": "assistant",
+         "row_id": 38,
+         "content": "Your request was not processed. Send it again if you still want me to carry it out.",
+         "display_kind": "failed_turn"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "method": "session.mutate",
+     "params": {
+      "session_id": "local-session-1",
+      "request_id": "<request_id>",
+      "expected_revision": 16,
+      "expected_generation": 16,
+      "operation": "branch",
+      "payload": {
+       "title": "side quest"
+      }
+     },
+     "reply": {
+      "result": {
+       "session_id": "local-session-1",
+       "revision": 17,
+       "execution_generation": 16,
+       "operation": "branch",
+       "branched_session_id": "local-session-2",
+       "copied_messages": 10
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "⑂ Branched into session local-session-2.",
+     "branched_session_id": "local-session-2"
+    }
+   }
+  },
+  {
+   "command": "bg say hi",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "bg say hi",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "prompt.background",
+     "params": {
+      "session_id": "local-session-1",
+      "text": "say hi"
+     },
+     "reply": {
+      "result": {
+       "task_id": "bg_b7cdab"
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "Running in the background as bg_b7cdab; its answer appears here."
+    }
+   }
+  },
+  {
+   "command": "btw what did I say first?",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "btw what did I say first?",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "prompt.btw",
+     "params": {
+      "session_id": "local-session-1",
+      "text": "what did I say first?"
+     },
+     "reply": {
+      "result": {
+       "task_id": "btw_2173c8"
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "Asking on the side as btw_2173c8; the answer appears here."
+    }
+   }
+  },
+  {
+   "command": "rollback",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "rollback",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "rollback.list",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "enabled": true,
+       "checkpoints": []
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "No checkpoints yet."
+    }
+   }
+  },
+  {
+   "command": "rollback diff 1",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "rollback diff 1",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "rollback.diff",
+     "params": {
+      "session_id": "local-session-1",
+      "hash": "1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "invalid_checkpoint",
+       "data": {
+        "reason": "invalid_checkpoint"
+       }
+      }
+     }
+    }
+   ],
+   "answer": {
+    "error": {
+     "code": 4001,
+     "message": "invalid_checkpoint",
+     "data": {
+      "reason": "invalid_checkpoint"
+     }
+    }
+   }
+  },
+  {
+   "command": "reload",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "reload",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "reload.env",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "updated": 1
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "Reloaded .env: 1 variable changed."
+    }
+   }
+  },
+  {
+   "command": "reload-mcp",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "reload-mcp",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "reload.mcp",
+     "params": {
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "status": "confirm_required",
+       "message": "Reloading MCP refreshes every chat of this profile."
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "Reloading MCP refreshes every chat of this profile. /reload-mcp now reloads them."
+    }
+   }
+  },
+  {
+   "command": "plugins enable foo",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "plugins enable foo",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    }
+   ],
+   "answer": {
+    "error": {
+     "code": 4001,
+     "message": "unsupported_command",
+     "data": {
+      "reason": "unsupported_command"
+     }
+    }
+   }
+  },
+  {
+   "command": "config",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "config",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command"
+       }
+      }
+     }
+    },
+    {
+     "method": "config.get",
+     "params": {
+      "key": "full",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "result": {
+       "config": {
+        "approvals": {
+         "mode": false
+        },
+        "voice": {}
+       }
+      }
+     }
+    }
+   ],
+   "answer": {
+    "result": {
+     "type": "exec",
+     "output": "approvals.mode: false\nvoice: {}"
+    }
+   }
+  },
+  {
+   "command": "handoff",
+   "owner": [
+    {
+     "method": "slash.exec",
+     "params": {
+      "command": "handoff",
+      "session_id": "local-session-1"
+     },
+     "reply": {
+      "error": {
+       "code": 4001,
+       "message": "unsupported_command",
+       "data": {
+        "reason": "unsupported_command",
+        "detail": "Hand off from the classic CLI: `hermes --cli --resume <session>`, then /handoff <platform>."
+       }
+      }
+     }
+    }
+   ],
+   "answer": {
+    "error": {
+     "code": 4001,
+     "message": "unsupported_command",
+     "data": {
+      "reason": "unsupported_command",
+      "detail": "Hand off from the classic CLI: `hermes --cli --resume <session>`, then /handoff <platform>."
+     }
+    }
+   }
+  }
+ ]
+}

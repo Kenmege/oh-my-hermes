@@ -185,7 +185,7 @@ SUBAGENT_EVENTS = (
 APP_EVENTS = (
     "request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error",
     "notification.show", "notification.clear", "session.title", "todo.updated", "review.summary",
-    "session.control.update",
+    "session.control.update", "background.complete", "btw.complete",
 )
 TRANSCRIPT_EVENTS = (
     "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
@@ -196,8 +196,8 @@ HANDLED_EVENTS = frozenset((*APP_EVENTS, *TRANSCRIPT_EVENTS, *SUBAGENT_EVENTS))
 # The rest of the 77 event types Hermes 6c61c3e27d registers (`tui_gateway.contracts.registry.EVENTS`). The event
 # loop reads nothing from these; `gateway.ready` is read once, by the client at startup (`gateway.READY_EVENT`).
 UNREAD_EVENTS = frozenset({
-    "agent.terminal.output", "background.complete", "billing.step_up.verification", "bot_relay.outbox.pending",
-    "browser.controller.cancel", "browser.controller.command", "browser.progress", "btw.complete",
+    "agent.terminal.output", "billing.step_up.verification", "bot_relay.outbox.pending",
+    "browser.controller.cancel", "browser.controller.command", "browser.progress",
     "connection.update", "cron.changed", "display.install.done", "display.install.log", "display.lease",
     "display.status", "free_tier.challenge", "gateway.ready", "layout.apply", "message.reaction",
     "moa.aggregating", "notice",
@@ -218,11 +218,17 @@ UNREAD_EVENTS = frozenset({
 # `tool.complete` name the tool it reached, under the bridge call's own id.
 TOOL_CALL_BRIDGE = "tool_call"
 
-# Three kinds of output the gateway already writes to this client (`server._emit`), shown as Hermes' Ink TUI shows
+# The kinds of output the gateway already writes to this client (`server._emit`), shown as Hermes' Ink TUI shows
 # them (`ui-tui/src/app/createGatewayEventHandler.ts`); showing them sends nothing back.
 # `review.summary` (`contracts/events.py` ReviewSummaryPayload, `server.py` background_review_callback): `text`, what
 # the background review of the last turn saved to memory or skills, already worded by Hermes; a transcript line.
 REVIEW_SUMMARY_TEXT = "text"
+# `background.complete` / `btw.complete` (SideAgentCompletePayload, `gateway/session_tui_side.py`): the answer of a
+# `/bg` or `/btw` side agent, `text` (`error: <reason>` when it failed), its `task_id`, and for /btw the `question`.
+SIDE_ANSWER_EVENTS = frozenset({"background.complete", "btw.complete"})
+SIDE_ANSWER_TEXT = "text"
+SIDE_ANSWER_TASK = "task_id"
+SIDE_ANSWER_QUESTION = "question"
 # `session.control.update` (SessionControlUpdatePayload, `methods_session_control._publish_session_control_snapshot`):
 # `control` holds `goal`, `contracts/config_free_tier_control.py` GoalSnapshot or None. A goal row shows while its
 # `status` is one of GOAL_SHOWN_STATUSES (`ui-tui/src/app/goalStatus.ts::goalLine`), from `title`, `turns_used`,

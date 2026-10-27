@@ -43,10 +43,10 @@ class RouteTableTests(unittest.TestCase):
         names = [name for command in slash.COMMANDS for name in (command.name, *command.aliases)]
         self.assertEqual(len(names), len(set(names)))
 
-    def test_every_route_is_one_of_the_four_owned_kinds(self) -> None:
+    def test_every_route_is_one_of_the_five_owned_kinds(self) -> None:
         for command in slash.COMMANDS:
             with self.subTest(command=command.name):
-                self.assertIn(command.route, (slash.LOCAL, slash.HERMES, slash.DROPPED, slash.RENAMED))
+                self.assertIn(command.route, (slash.LOCAL, slash.HERMES, slash.DROPPED, slash.RENAMED, slash.CLASSIC))
                 # A renamed command names the Hermes command it runs, which goes to Hermes as typed.
                 self.assertEqual(bool(command.target), command.route == slash.RENAMED)
                 if command.target:
@@ -81,6 +81,36 @@ class RouteTableTests(unittest.TestCase):
 
     def test_the_network_widget_is_dropped(self) -> None:
         self.assertEqual(slash.parse_slash("/weather").command.route, slash.DROPPED)
+
+    def test_compact_is_claude_codes_name_for_hermes_compress(self) -> None:
+        invocation = slash.parse_slash("/compact here 2")
+        self.assertEqual((invocation.command.route, invocation.command.target), (slash.RENAMED, "compress"))
+        catalog = [("/compress", "Compress conversation context")]
+        offered = {c.name: c.summary for c in slash.completions("comp", catalog)}
+        self.assertEqual(list(offered), ["compact", "compress"])
+        self.assertIn("--preview", offered["compact"])
+
+    def test_what_hermes_shared_gateway_runs_in_a_tui_session_is_not_routed_away(self) -> None:
+        # Measured against Hermes bf0203a794's shared gateway: /topup is a read there (`_READ_COMMANDS`), so it goes
+        # to Hermes as typed; /config, /tools and the other verbs the gateway child answers are no commands of the
+        # TUI's.
+        for name in ("topup", "config", "tools", "plugins", "stop", "bg", "btw", "branch", "fork", "retry", "undo",
+                     "rollback", "reload", "reload-mcp", "compress"):
+            with self.subTest(name=name):
+                self.assertIsNone(slash.parse_slash(f"/{name}").command)
+
+    def test_what_only_hermes_classic_cli_runs_goes_as_typed_but_is_not_offered(self) -> None:
+        catalog = [(f"/{name}", name) for name in ("handoff", "worktree", "snapshot", "import", "hatch", "palette")]
+        for name in ("handoff", "worktree", "snapshot", "snap", "import", "hatch", "generate-pet", "palette"):
+            with self.subTest(name=name):
+                self.assertEqual(slash.parse_slash(f"/{name}").command.route, slash.CLASSIC)
+        self.assertEqual([c.name for c in slash.completions("", catalog) if c.name in dict(catalog)], [])
+        self.assertEqual(slash.catalog_categories({"categories": [{"name": "Session", "pairs": catalog}]}), [])
+
+    def test_ink_timestamps_are_a_dropped_display_setting(self) -> None:
+        for name in ("timestamps", "ts"):
+            with self.subTest(name=name):
+                self.assertEqual(slash.parse_slash(f"/{name} on").command.route, slash.DROPPED)
 
     def test_hermes_notice_names_the_hermes_door(self) -> None:
         notice = slash.hermes_notice(slash.parse_slash("/voice").command)

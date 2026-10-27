@@ -205,6 +205,7 @@ from .launch_picker import PICK as LAUNCH_PICK
 from .launch_picker import SUMMARIES as LAUNCH_SUMMARIES
 from .launch_picker import LaunchPicker
 from .slash import (
+    CLASSIC,
     COMMANDS,
     DROPPED,
     HERMES,
@@ -405,6 +406,11 @@ REFUSAL_SENTENCES = {
     ),
     "invalid_params": "Hermes did not take the arguments: /help lists what each command takes.",
     "nothing_to_compress": "There is nothing to compress yet: the session is still short.",
+    "invalid_checkpoint": "No checkpoint has that number or hash: /rollback lists them.",
+    "unsupported_terminal_backend": (
+        "This session runs its commands in a container, so Hermes' checkpoints of this machine's files do not apply."
+    ),
+    "mcp_servers_unavailable": "No MCP server Hermes reconciled could connect.",
     "unsupported_compress_options": (
         "Hermes' /compress does not take that option: use /compress, /compress <focus>, /compress here [N] "
         "or /compress --preview."
@@ -412,6 +418,13 @@ REFUSAL_SENTENCES = {
 }
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
 QUESTION_VIEW_TITLE = "the open question (q goes back to it)"  # Ctrl+O's pager while Hermes asks something
+# `/compress` (and `/compact`, its alias) while it runs: Hermes summarizes the older turns with a model call.
+COMPRESS_COMMANDS = frozenset({"compress", "compact"})
+COMPRESS_PREVIEW_FLAGS = frozenset({"--preview", "--dry-run"})
+COMPRESS_STARTED_NOTICE = "Compressing: Hermes summarizes the older turns with a model call, so this can take a while."
+# The new session a `/branch` answer names (the gateway child's answer, after the owner's `session.mutate branch`).
+BRANCHED_SESSION = "branched_session_id"
+BRANCHED_NOTICE = "⑂ Branched: this is a new session copied from {parent}; `/sessions {parent}` goes back."
 # Claude Code's /export saves the conversation; Hermes' writes a profile archive. Said once, then it runs.
 EXPORT_NOTE = (
     "Hermes' /export writes a profile archive (config, skills, theme), not this transcript; /export again runs it. "
@@ -645,6 +658,8 @@ YOLO_NOTE = (
     "Hermes commands go to Hermes as you type them, /yolo included: it turns off Hermes' approval prompts, "
     "so the OMH TUI then has none to show."
 )
+# The commands only Hermes' classic CLI runs, which completion leaves out (`slash.CLASSIC`).
+CLASSIC_HELP = "Only Hermes' classic CLI (`hermes --cli`) runs {names}; typed here, Hermes says where to run each."
 # The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
 HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
 SKILL_COMMANDS_NOTE = "{count} skill commands available: type / and part of a skill's name to find one."
@@ -893,6 +908,14 @@ def refusal_sentence(error: Mapping[str, Any]) -> str:
     data = error.get("data")
     detail = as_text(data.get("detail")).strip() if isinstance(data, Mapping) else ""
     return f"{sentence} {plain_sentence(detail)}" if sentence and detail else sentence
+
+
+def side_answer_line(kind: str, payload: Mapping[str, Any], text: str) -> str:
+    """A `/bg` or `/btw` answer as Ink shows it: `[bg <task>] <text>`, `[btw "<question>"] <text>`."""
+    if kind == "background.complete":
+        return f"[bg {as_text(payload.get(contract.SIDE_ANSWER_TASK))}] {text}"
+    question = clean_text(as_text(payload.get(contract.SIDE_ANSWER_QUESTION))).strip()
+    return f'[btw "{question}"] {text}' if question else f"[btw] {text}"
 
 
 @dataclass(frozen=True)
@@ -2357,6 +2380,12 @@ class App(ModesMixin, AgentViewMixin):
             text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
             if text:
                 self.transcript.add_aside(NoticeBlock(text))  # it can come during the next turn: it closes nothing
+        elif event.type in contract.SIDE_ANSWER_EVENTS:
+            # A whole agent's answer: its lines kept, each made safe to show.
+            text = "\n".join(clean_text(line) for line in as_text(payload.get(contract.SIDE_ANSWER_TEXT)).splitlines())
+            text = text.strip()
+            if text:
+                self.transcript.add_aside(NoticeBlock(side_answer_line(event.type, payload, text)))
         elif event.type == "session.control.update":
             control = payload.get(contract.SESSION_CONTROL)
             goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None
@@ -4077,6 +4106,9 @@ class App(ModesMixin, AgentViewMixin):
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
+            preview = bool(COMPRESS_PREVIEW_FLAGS & {word.lower() for word in invocation.arg.split()})
+            if invocation.name.lower() in COMPRESS_COMMANDS and not preview and not self._busy():
+                self.transcript.add_notice(COMPRESS_STARTED_NOTICE)  # under the echo, until Hermes' report
             self._request(
                 "slash.exec",
                 {"command": invocation.text, "session_id": self.sid},
@@ -4114,6 +4146,9 @@ class App(ModesMixin, AgentViewMixin):
         kind = as_text(result.get("type"))
         if kind in ("exec", "plugin"):
             self._show_output(f"/{invocation.text}", as_text(result.get("output")) or "(no output)")
+            child = as_text(result.get(BRANCHED_SESSION))
+            if child and self.sid:  # /branch made a new session: the TUI goes there, as Ink does
+                self._switch_session(child, BRANCHED_NOTICE.format(parent=self.stored_id))
             return
         if kind == "alias":
             target = as_text(result.get("target")).lstrip("/")
@@ -4207,7 +4242,7 @@ class App(ModesMixin, AgentViewMixin):
     def _help(self, arg: str) -> None:
         """The TUI's commands, Hermes' by category, how many skill commands there are and, in Hermes' words, which
         skills a built-in command's name takes; paged when long."""
-        local = [command for command in COMMANDS if command.route == LOCAL]
+        local = [command for command in COMMANDS if command.route in (LOCAL, RENAMED)]
         width = max(len(command.name) for command in local)
         rows = ["OMH TUI commands:"]
         rows += [f"/{command.name:<{width}} {command.summary}" for command in local]
@@ -4216,6 +4251,7 @@ class App(ModesMixin, AgentViewMixin):
             rows += [f"  {category}: {' '.join(names)}" for category, names in self.catalog_categories]
         else:
             rows.append("Hermes commands: none listed.")
+        rows.append(CLASSIC_HELP.format(names=" ".join(f"/{c.name}" for c in COMMANDS if c.route == CLASSIC)))
         if self.skill_count:
             rows.append(SKILL_COMMANDS_NOTE.format(count=self.skill_count))
         if self.catalog_collisions:
@@ -4352,19 +4388,20 @@ class App(ModesMixin, AgentViewMixin):
         if action.kind == PICK:
             self._switch_session(action.session_id)
 
-    def _switch_session(self, target: str) -> None:
-        """Resume `target` (a stored id or an exact title); the current session closes once that worked."""
+    def _switch_session(self, target: str, notice: str = "") -> None:
+        """Resume `target` (a stored id or an exact title); the current session closes once that worked, and `notice`
+        is said on the redrawn screen."""
         if target == self.stored_id:
             self.transcript.add_notice(f"Already in session {target}.")
             return
         self._request(
             "session.resume",
             {"session_id": target, "cols": self.size[0]},
-            lambda result: self._on_session_resumed(target, result),
+            lambda result: self._on_session_resumed(target, result, notice),
             lambda error: self._on_resume_refused(target, error),
         )
 
-    def _on_session_resumed(self, target: str, result: dict[str, Any]) -> None:
+    def _on_session_resumed(self, target: str, result: dict[str, Any], notice: str = "") -> None:
         """Leave the old session and redraw the screen as the resumed one.
 
         Hermes resolves a title or a compressed ancestor to the session
@@ -4380,6 +4417,8 @@ class App(ModesMixin, AgentViewMixin):
         self._notice_declined(declined)
         self.banner_record = self._banner_record(result, resumed=self.stored_id)
         self._full_redraw()
+        if notice:
+            self.transcript.add_notice(notice)
         self._redeliver(result.get("open_requests"))
         self._refresh_catalog()  # its workspace may hold project-local skills the last one did not
 
