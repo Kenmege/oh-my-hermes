@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "4513f745144db80c0b671bb2ad52e9226da7544e6f81983e62fe0f023f0482f7",
+  "catalog_revision": "369ecee7f2fab48a855935441972d4cf9f644bcf5ced22cd7c01c9c6dbf6fdb9",
   "files": {
     "omh-accessibility-audit/SKILL.md": "eb5011ae3f74d84dbe66bf2dcea9533c08ca407b246680b0bd686122f09b27fe",
     "omh-accessibility-audit/references/a11y-rules.md": "cd7e0404576923cfd3bcec9e055b1de7a78f3fc55971fd033598aac1043e4469",
@@ -181,7 +181,7 @@
     "omh-paper-learning/SKILL.md": "3570ec1b8c8eebfcc86899c3271bc56430f4ddf601ad3c8be4224e3e9e57a7ab",
     "omh-people-ops/SKILL.md": "b253ad5988f314b12a4add343353eb68e84d4dcc1d1b3f448636f29de9fcadf9",
     "omh-physical-device-readiness/SKILL.md": "1324c49b4b10b43fe408aeb8904b7edd4df74bab34f29c063039bd41128226a8",
-    "omh-plan/SKILL.md": "947fe1ab38cf04369fcc0a7c226f51ddc74ccffb58dc72695969fd74387ee23f",
+    "omh-plan/SKILL.md": "c83cfc272ed80a926780f7e8c1d32eb1f6b66b286c289cf4425a4a844dba425c",
     "omh-plan/references/project-constitution.md": "577991e718cf3e1d62ce93704d4a734f7e058a3d516b0722c636cc8cf7a519da",
     "omh-product-brief/SKILL.md": "3fce228b5da3c471d241cbe60787c1e4826be1143467a0f84a909f6cdfdebc27",
     "omh-product-discovery-validation/SKILL.md": "d81b2f489402b9eabfe33449828f2714c7ac7941c05b19e6ed498ad243ede19c",
@@ -301,7 +301,7 @@
     "ulw-loop/references/loop-design-review.md": "c56c960fae8793b2f7932703a824a1baeef9e8cdfaa4cea679da1e4b4735ed9c",
     "ulw-loop/references/measured-loop-discipline.md": "857c7918fd278e8fca1d420c57e9ab4b6e337e44f039dcc6eb5e14ae5204b4fb",
     "ulw-perf/SKILL.md": "dc30678d5e28b4f00b6706e4659245624331cd6753aad246d4222aded0c14ebc",
-    "ulw-plan/SKILL.md": "76c84d0aa8260a5a038b8bb79e7fccd9046cd918a81f1675ec08ae037ff04e03",
+    "ulw-plan/SKILL.md": "1ae38e6400d623a389add7dd6ac17f814b39eba7f072b2ec541e36c344fe3d08",
     "ulw-qa/SKILL.md": "a38eaa1b23a4a7cf4f1dfbfca4003de5e8e63ec2dd68ea2716906d7adf0c088b",
     "ulw-research/SKILL.md": "24f153fe4fb8fb7dde20b0a2f319f123547eacc9ec5bb52691029cd44b29948b",
     "ulw-research/references/briefing-format.md": "32c2fc92b8ff37877b623d30f79697a015c7be139121f60bac9de82f6bedfdcc",

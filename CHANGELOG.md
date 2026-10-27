@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`plan` and `ralplan` name the goal beyond the request, the raw material,
+  and an outside judge.** Before splitting tasks a plan states what should
+  happen once the requested result exists and whether it aims there, and adds
+  the access an executor needs to work at that level unattended as its own
+  tasks; it starts from raw logs, traces or data rather than a digest, names
+  the methods a leading practitioner would use, and gives every verification
+  step a judge other than the planner or executor, recording a missing one as
+  an evidence gap; it restates the deliverable as verbs and brings other
+  fields in as practitioner actions, never as voices to imitate. The lines sit
+  after each bar's first four items, so capability rows do not move, and they
+  reach the portable projection.
 - **3D and canvas scenes have a craft and QA bar.** A user ran the same voxel
   pagoda garden prompt through two agents: both consoles were clean, and the
   OMH build was judged less colorful. Its first frame was flat noon under its
