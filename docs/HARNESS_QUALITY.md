@@ -237,6 +237,7 @@ where it departs from those rules:
 | `awareness_line_quoted` | an `[OMH Awareness]`, `Boundary:`, or `Route hint:` line quoted into the reply |
 | `refusal_closer` | the closing paragraph declares what will not be done and offers no question |
 | `decision_without_question` | the closing paragraph names an approval or a decision the user owns and offers no question |
+| `ai_writing_tell` | a high-precision machine-writing habit from the human-voice pass (`omh-routing/references/human-voice.md`): praise openers, "hope this helps" closers and offers to expand, a staged "it's not just X, it's Y" contrast, the Korean equivalents (`좋은 질문이에요`, `도움이 되었으면`, `단순히 X가 아니라`), or three or more em/en dashes; code, inline code and `>` quoted lines are skipped |
 
 ```sh
 omh quality-evidence reply-lint --text-file reply.txt [--user-text-file asked.txt]

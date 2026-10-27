@@ -152,7 +152,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
         # Re-derived again for repro-audit: its own body joins the legacy set
         # (and again for its review's confirmation-wording fix).
-        self.assertEqual(_digest(legacy_hashes), '055021f66e10653f53baa63fa5bd7e01dd84882116802e1f7c32cdcf104a79f3')
+        # Re-derived for the human-voice pass: the router body gains one
+        # Progressive Disclosure pointer to `references/human-voice.md`;
+        # removing that line alone restores the previous digest (055021f6...).
+        self.assertEqual(_digest(legacy_hashes), '9eabccb3cc2f34c56ad7e3fa9883518a179793a46c7f7ba57efa2382bf304e17')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
@@ -176,9 +179,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
             'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
-            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
-            'awareness_primer_markdown_chars': 3520,
-            'awareness_primer_context_chars': 1440,
+            'pre_llm_call_context_fallback_chars_max': 7338,  # The same rename (+6), then the human-voice primer sentence (+116).
+            'awareness_primer_markdown_chars': 3630,  # Human-voice reply sentence (+110).
+            'awareness_primer_context_chars': 1560,  # The same sentence (+120).
             'awareness_workflow_context_chars_max': 1500,
             'role_context_chars_max': 2600,
             'full_capability_skill_item_chars_max': 9000,
