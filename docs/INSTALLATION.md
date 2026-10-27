@@ -1212,15 +1212,54 @@ the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 
 The bot board (Ctrl+S or `/bots`) shows this machine's Hermes bots, full
-screen, and changes nothing. Its first page lists the Hermes home the TUI runs
-under and every named profile beside it (`<root>/profiles/<name>/`), each with
-its gateway as `gateway_state.json` records it (state, pid, running agents and
-each platform's state), its stored sessions counted by source, how many were
-active in the last 24 hours, and when the last one was. Enter opens a
-profile's sessions, newest activity first (delegated subagent sessions are
-counted on the first page, not listed), and Enter again a session's last 40
-messages; ← or Esc goes back, q closes it from the first page, and r reads
-again at once. It reads again every 5 s by itself, off the screen's own thread.
+screen, and changes nothing. Every region on it is a rounded box, in the
+launch card's style, its columns divided by lines that meet the edges in
+joints. Its first page opens with a box of what every profile adds up to
+(gateways up, agents running, and the active sessions' tokens and cost), then
+lists the Hermes home the TUI runs under and every named profile beside it
+(`<root>/profiles/<name>/`), each in a full-width card, one to a row, every
+card's columns lined up with the next. A card's top edge carries
+its gateway's state as a coloured mark, the bot's name (with the display name
+Hermes keeps in `profile.yaml`, when it set one) and, on the right, the running
+gateway's uptime, agents and resident memory; its bottom edge carries what the
+gateway says when it is not plainly running, each platform as a chip coloured
+by its state (`!` when it needs attention or failed, `○` when the gateway that
+recorded it has since stopped or restarted) and a restart Hermes was asked
+for. Inside, at the left, is a small face drawn from the bot's name alone,
+the same on every run, then the bot's fields, in two columns where the
+terminal is about 117 columns or wider and stacked in one below that:
+`model`, the default
+model its `config.yaml` names (and the model its newest session ran, when that
+differs); `now`, its newest session but delegated children, its title cut to
+fit and its source and age at the right; `24 h`, a sparkline of the active sessions' tokens by the hour each
+was last active, how many were active, and how many are stored; `tokens`,
+their input, output and cache-read tokens; `cost`; `memory` and `user`, Hermes'
+`MEMORY.md` and `USER.md` as gauges against the limits its `config.yaml` sets
+(green below 70%, amber to 90%, red past it); and `OMH`, the record count of
+the OMH store its `config.yaml` names. The highlighted bot's card takes the
+theme's accent colour. Tokens and cost are each
+session's lifetime totals, since Hermes records no time per call, and the board
+labels them `lifetime` wherever it shows them; a cost
+appears only where Hermes priced it (`~` marks an estimate); sessions it did
+not price are counted as unpriced, never as $0. A store, config or memory
+file it cannot read is named as such, and a store without the token columns
+shows neither tokens nor a sparkline. A narrow terminal gives up the least
+important figures first (the top edge's figures, then the last chips and the
+face) and never wraps a row. Enter opens a profile's
+sessions under that profile's box, drawn as on the first page and holding
+the gateway record in full (state, pid, how old it is), each platform's error,
+each memory target's gauge with its exact entries and characters, and the
+sessions by source, a narrow box giving up whole fields rather than cutting
+words; the sessions follow in a table box of their own, newest activity
+first, under a header row and a rule: title, then, past one divider, model,
+input and output tokens, cost, source, last activity and message count,
+numbers right-aligned, the highlighted row banded from edge to edge; a narrow
+terminal gives up source, then
+cost, then tokens before the title runs short (delegated subagent sessions
+are counted on the first page, not listed), and Enter again a session's last 40 messages
+in a box beneath the session's own (its source, messages, age, model, tokens
+and cost), each message's time and role in a column of their own; ← or Esc goes back, q closes it from the
+first page, and r reads again at once. It reads again every 5 s by itself, off the screen's own thread.
 It counts sessions active in the last 24 hours rather than open ones, because a
 messaging gateway leaves every chat it served open, so a Slack bot idle for weeks
 would still show dozens. A gateway shows as running only while the process its
@@ -1228,8 +1267,10 @@ record names still runs and is the one that wrote the record (its start time
 is compared as Hermes compares it); a platform's state from a gateway that has
 since stopped or restarted shows as what was last recorded. Each `state.db` is
 opened read-only (and immutable when no connection has it open, so SQLite
-creates no file beside it), the only signal it sends is the signal-0 liveness
-probe, and it calls nothing in Hermes' gateway.
+creates no file beside it), `config.yaml` and the memory files are read only up
+to 1 MiB each (a larger one is reported by size), the OMH store's records are
+counted from its directory listing, the only signal it sends is the signal-0
+liveness probe, and it calls nothing in Hermes' gateway.
 
 When the OMH TUI cannot start, `omh` says why in one line on stderr and opens
 Hermes instead, so you lose the OMH screen, never the session. For a reason
@@ -1327,7 +1368,9 @@ and every rule or mark 3:1 (on the pager's footer, against its bar: the
 theme's own bar colour on a dark background, a light tint of it on a light
 one; the info line under the composer and the sticky prompt have no bar),
 and
-on a light background the diff bands are light tints. With no answer and no `COLORFGBG` that names one, the background is
+on a light background the diff bands and the menu bands (the completion
+menu, the pickers, choice prompts, the agent list and the bot board) are light
+tints, their words at 4.5:1 on each. With no answer and no `COLORFGBG` that names one, the background is
 taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows

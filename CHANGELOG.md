@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **GPT-6.1 Terra is onboarded.** OpenAI released it on 2026-10-26. The
+  id now has an exact contract read from developers.openai.com: 1.05M
+  context, 128K output, and a `none` to `max` effort ladder with `medium` as
+  the default. That is GPT-6 Luna's shape, so `none` is sent as is and only
+  `minimal` is raised to `low` on record. Before this, OMH passed every rung
+  through unadjudicated. `gpt-6.1-terra-pro` and dated snapshots project
+  onto it. Cost estimates use the 1/5 list price with 0.05 cached input.
+  Provider checks know that Codex, the OpenAI API, and OpenRouter serve it.
+  The `gpt` family calibration applies unchanged, and no shipped chain names
+  it. To try it now, use
+  `omh model-chains set <category> "gpt-6.1-terra:medium, ..."`. On the
+  live-model-tools corpus at `high`, Terra passed the same 18 / 30 instances
+  as GPT-6.1 Sol with about 5% fewer tokens, at half the list price.
+  Hermes through origin/main `a382af23f4` clamps its `max` to `xhigh` on the
+  Codex route.
+
 - **The OMH TUI shows up in herdr's agent list.** herdr lists each pane's
   agent as idle, working or blocked, but reads Hermes' state from Hermes' own
   title and screen, which the OMH TUI does not draw, so a pane running `omh`
