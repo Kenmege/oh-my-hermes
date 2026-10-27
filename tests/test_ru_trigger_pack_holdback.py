@@ -15,7 +15,7 @@ from __future__ import annotations
 import unittest
 
 from omh.routing.localization import normalized_phrase, phrase_is_spoken, routing_tokens
-from omh.routing.recommend import builtin_definitions
+from omh.routing.recommend import builtin_definitions, recommend_skills
 from omh.routing.trigger_language_packs import shipped_trigger_language_packs
 
 # The words each skill may score on their own, as written. Each is a software
@@ -138,6 +138,54 @@ class RuHoldbackDerivationTests(unittest.TestCase):
             and phrase_is_spoken(normalized_phrase(longer), normalized_phrase(shorter))
         ]
         self.assertEqual(nested, [])
+
+
+class HeldBackPhraseCreditTests(unittest.TestCase):
+    """At most one held-back pack phrase scores per skill per message (#2301).
+
+    Two of them in one sentence, overlapping ("месячный отчёт для начальства"
+    holds two) or apart, scored 6 + 6 and dispatched an everyday sentence.
+    The pack cannot prevent that the way it prevents nesting, because any two
+    of a skill's phrases can be said together; the scorer has to.
+    """
+
+    def _held_back_phrases(self) -> dict[str, list[str]]:
+        pack = _ru_pack()
+        stored = {skill: _folded(tokens) for skill, tokens in pack.whole_phrase_only_tokens}
+        return {
+            skill: [
+                phrase
+                for phrase in phrases
+                # An ASCII word is never held back here, so a phrase with one
+                # scores that word too and is not a held-back phrase.
+                if (words := routing_tokens(phrase)) and words <= stored.get(skill, set())
+            ]
+            for skill, phrases in pack.skills
+        }
+
+    def _held_back_credits(self, message: str, skill: str, phrases: list[str]) -> int:
+        labels = {f"trigger:{normalized_phrase(phrase)}" for phrase in phrases}
+        rows = [row for row in recommend_skills(message, limit=200) if row["skill"] == skill]
+        return len(labels & set(rows[0]["matched"])) if rows else 0
+
+    def test_two_held_back_phrases_said_together_credit_once(self) -> None:
+        doubled = [
+            f"{skill}: {first!r} + {second!r}"
+            for skill, phrases in self._held_back_phrases().items()
+            for index, first in enumerate(phrases)
+            for second in phrases[index + 1:]
+            if self._held_back_credits(f"{first}, а потом {second}", skill, phrases) > 1
+        ]
+        self.assertEqual(doubled, [])
+
+    def test_overlapping_held_back_phrases_credit_once(self) -> None:
+        phrases = self._held_back_phrases()["report-package"]
+        message = "ежемесячный отчёт для начальства"
+        self.assertTrue(
+            {"ежемесячный отчёт", "отчёт для начальства"} <= set(phrases),
+            "the overlap this case pins needs both phrases in the pack",
+        )
+        self.assertEqual(self._held_back_credits(message, "report-package", phrases), 1)
 
 
 if __name__ == "__main__":

@@ -883,8 +883,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # a family budget, an estate agent (+20). Then two turns where a
             # held-back phrase inside a longer one of the same skill scored
             # twice and dispatched: a grandmother's "запомни это" and metro
-            # tokens (+2).
-            expected=1140,
+            # tokens (+2). Then three turns where two held-back phrases of one
+            # skill, overlapping or apart, summed to a dispatch: reports to the
+            # bosses already handed in, a secretary's weekly report, a vague
+            # geometry problem (+3).
+            expected=1143,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1402,7 +1405,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # IT-jargon research, which dispatch on a software word (+8). Then
             # the nested-phrase fix: "сделай ревью кода" and "запомни это" ask
             # instead of dispatching on a double count (same count), and a
-            # pull-request review dispatches on its own word (+1).
+            # pull-request review dispatches on its own word (+1). A skill now
+            # credits one held-back pack phrase per message, so a build failure
+            # with a compile error and an implementation plan ask instead of
+            # dispatching (same count).
             expected=1151,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.

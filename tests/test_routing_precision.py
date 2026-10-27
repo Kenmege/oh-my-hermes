@@ -69,8 +69,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
         # The Russian trigger pack adds three negatives its held-back words guard,
-        # and its review twenty-two everyday Russian turns.
-        self.assertEqual(payload["summary"]["case_count"], 1140)
+        # and its review twenty-five everyday Russian turns.
+        self.assertEqual(payload["summary"]["case_count"], 1143)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

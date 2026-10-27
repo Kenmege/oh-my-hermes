@@ -1041,6 +1041,9 @@ class _PreparedDefinition:
     # The skill's own name when it is a single word, else "". See
     # `_one_word_self_name`.
     one_word_self_name: str
+    # Trigger-pack phrases every word of which is held back. See
+    # `_held_back_pack_phrases`.
+    held_back_pack_phrases: frozenset[str] = frozenset()
 
 
 _DEFAULT_POLICY = RecommendationPolicy(
@@ -4241,6 +4244,32 @@ def _shipped_latin_pack_phrases() -> dict[str, frozenset[str]]:
     }
 
 
+def _held_back_pack_phrases(name: str, holdback: frozenset[str]) -> frozenset[str]:
+    """`name`'s trigger-pack phrases whose every word is held back, normalized.
+
+    Such a phrase is evidence only as a whole, worth one phrase credit and
+    nothing else, so it asks rather than dispatches. Two of them in one
+    message are still one piece of evidence: the words of "monthly report for
+    the bosses" and "report to management" overlap, and an everyday sentence
+    can say both, so crediting each one summed two everyday phrases into a
+    dispatch (#2301). Scoring credits at most one of these per skill per
+    message. Only pack phrases are read here, so the English catalog's
+    triggers score exactly as before.
+    """
+    phrases = {
+        normalized_phrase(phrase)
+        for pack in _trigger_pack_packs()
+        for skill, pack_phrases in pack.skills
+        if skill == name
+        for phrase in pack_phrases
+    }
+    return frozenset(
+        phrase
+        for phrase in phrases
+        if (words := routing_tokens(phrase, stopwords=_STOPWORDS)) and words <= holdback
+    )
+
+
 def shipped_latin_pack_phrases(skill: str) -> frozenset[str]:
     """`skill`'s shipped pack phrases that score only as whole phrases."""
     return _shipped_latin_pack_phrases().get(skill, frozenset())
@@ -4384,6 +4413,7 @@ def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:
     metadata_tokens = frozenset(
         _tokens(" ".join((definition.name, definition.description, definition.use_when)))
     ) - _SIBLING_POINTER_METADATA_TOKENS.get(definition.name, frozenset())
+    holdback = _trigger_token_holdback_for(definition.name)
     return _PreparedDefinition(
         definition=definition,
         policy=_policy_for(definition),
@@ -4391,7 +4421,7 @@ def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:
         command_trigger_phrases=tuple(trigger for trigger in trigger_phrases if trigger in _COMMAND_TRIGGER_PHRASES),
         plain_trigger_phrases=tuple(trigger for trigger in trigger_phrases if trigger and trigger not in _COMMAND_TRIGGER_PHRASES),
         trigger_tokens=frozenset(_tokens(" ".join(trigger for trigger in triggers if trigger not in phrase_only)))
-        - _trigger_token_holdback_for(definition.name),
+        - holdback,
         name_phrase=normalized_phrase(definition.name),
         description_phrase=normalized_phrase(definition.description),
         use_when_phrase=normalized_phrase(definition.use_when),
@@ -4399,6 +4429,7 @@ def _prepare_definition(definition: SkillDefinition) -> _PreparedDefinition:
         phase_phrase=normalized_phrase(definition.phase),
         metadata_tokens=metadata_tokens,
         one_word_self_name=_one_word_self_name(definition),
+        held_back_pack_phrases=_held_back_pack_phrases(definition.name, holdback),
     )
 
 
@@ -4475,10 +4506,16 @@ def _score_definition(
     if definition.name == "spend-gate":
         trigger_text = _spend_gate_clause(normalized_query)
         query_tokens = _tokens(trigger_text)
+    held_back_pack_phrase_scored = False
     for trigger_phrase in prepared.plain_trigger_phrases:
         if trigger_phrase == self_name:
             continue
         if _trigger_phrase_match(trigger_text, trigger_phrase):
+            # One held-back pack phrase per skill: see `_held_back_pack_phrases`.
+            if trigger_phrase in prepared.held_back_pack_phrases:
+                if held_back_pack_phrase_scored:
+                    continue
+                held_back_pack_phrase_scored = True
             score += 6
             matched.add(f"trigger:{trigger_phrase}")
 

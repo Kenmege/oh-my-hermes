@@ -2423,6 +2423,29 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # Two held-back phrases of one skill in one sentence, overlapping or
+    # apart, summed 6 + 6 and dispatched; a skill now credits one of them.
+    RoutingPrecisionCase(
+        "russian-reports-already-handed-in-do-not-dispatch",
+        "Russian reports to the bosses that were already handed in open no workflow",
+        "Ежемесячный отчёт для начальства уже сдали, отчёт руководству за неделю тоже отправили.",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "russian-secretary-writes-the-weekly-report-does-not-dispatch",
+        "A Russian secretary writing the weekly report opens no workflow",
+        "Еженедельный отчёт руководству у нас всегда пишет секретарь.",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "russian-vague-geometry-homework-does-not-dispatch",
+        "A vague Russian geometry homework problem opens no workflow",
+        "Размытая задача по геометрии, сынок, задай уточняющие вопросы учителю на уроке.",
+        "answer_clarification",
+        "",
+    ),
     RoutingPrecisionCase(
         "russian-public-services-site-down-is-not-a-live-incident",
         "A Russian public-services site being down stays out of incident response",
@@ -13422,23 +13445,31 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "build-failure-triage",
         "medium",
     ),
+    # Two build phrases made of everyday words are still one piece of
+    # evidence: a skill credits one held-back pack phrase per message.
     RoutingInterventionCase(
-        "russian-build-failed-compile-error-dispatches",
-        "A Russian build failure with a compile error reaches build triage",
+        "russian-build-failed-compile-error-clarifies",
+        "A Russian build failure with a compile error clarifies with build triage named",
         "сборка упала, помоги исправить ошибку компиляции",
-        "dispatch",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "build-failure-triage",
-        "prepare_build_failure_triage",
-        "build_failure_triage",
+        "medium",
     ),
+    # `составь план` and `план реализации` overlap and both say a kitchen
+    # renovation plan as well, so together they still ask.
     RoutingInterventionCase(
-        "russian-implementation-plan-dispatches",
-        "A Russian implementation-plan request reaches plan",
+        "russian-implementation-plan-clarifies",
+        "A Russian implementation-plan request clarifies with plan named",
         "составь план реализации",
-        "dispatch",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
         "plan",
-        "forward_plan_to_selected_workflow",
-        "plan",
+        "medium",
     ),
     RoutingInterventionCase(
         "russian-bare-make-a-plan-clarifies",
