@@ -158,7 +158,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived for the human-voice pass: the router body gains one
         # Progressive Disclosure pointer to `references/human-voice.md`;
         # removing that line alone restores main's digest (db2c9bd4...).
-        self.assertEqual(_digest(legacy_hashes), 'fe22e204bc7dce41000e62b618af0d5edb6bface3231c1e501c304fa286a3083')
+        # Re-derived for the plan-ambition lines: only plan and ralplan move.
+        self.assertEqual(_digest(legacy_hashes), 'e59229fc0ec6908f699bf6f86a1df9c14a7e16d67a0a3168bee64e30a9bec4a4')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
