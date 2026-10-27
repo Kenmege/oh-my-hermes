@@ -4244,6 +4244,13 @@ def _shipped_latin_pack_phrases() -> dict[str, frozenset[str]]:
     }
 
 
+# Trigger-pack languages whose held-back phrases credit once per skill per
+# message (see `_held_back_pack_phrases`). An explicit opt-in: a pack built on
+# the rule that every everyday word is held back belongs here, and one whose
+# held-back phrases are meant to sum does not.
+_ONE_HELD_BACK_PHRASE_PACK_LANGUAGES = frozenset({"ru"})
+
+
 def _held_back_pack_phrases(name: str, holdback: frozenset[str]) -> frozenset[str]:
     """`name`'s trigger-pack phrases whose every word is held back, normalized.
 
@@ -4253,12 +4260,16 @@ def _held_back_pack_phrases(name: str, holdback: frozenset[str]) -> frozenset[st
     the bosses" and "report to management" overlap, and an everyday sentence
     can say both, so crediting each one summed two everyday phrases into a
     dispatch (#2301). Scoring credits at most one of these per skill per
-    message. Only pack phrases are read here, so the English catalog's
-    triggers score exactly as before.
+    message, for the packs named in `_ONE_HELD_BACK_PHRASE_PACK_LANGUAGES`
+    only. The Korean pack was written the other way: its nested and paired
+    phrases (`차트 스타일링` holding `스타일링`'s words, `모델 서빙` beside
+    `서빙 벤치마크`) are meant to add up, so it keeps scoring every phrase,
+    and so does the English catalog.
     """
     phrases = {
         normalized_phrase(phrase)
         for pack in _trigger_pack_packs()
+        if pack.language in _ONE_HELD_BACK_PHRASE_PACK_LANGUAGES
         for skill, pack_phrases in pack.skills
         if skill == name
         for phrase in pack_phrases

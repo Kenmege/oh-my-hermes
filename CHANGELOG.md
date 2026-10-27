@@ -284,8 +284,9 @@ All notable changes will be documented here.
   own only when it is a software word (`баг`, `лендинг`, `рефакторинг`,
   `деплоя`); every other word scores only inside its phrase, so a phrase made
   of everyday words (`составь план`, `сборка упала`) asks one question instead
-  of dispatching; a skill credits at most one such pack phrase per message,
-  so two of them in one sentence, overlapping or apart, ask as one; and phrases
+  of dispatching; a skill credits at most one such Russian phrase per message,
+  so two of them in one sentence, overlapping or apart, ask as one (the Korean
+  pack's phrases still add up, as they were written to); and phrases
   an everyday sentence contains (`починить`, `по расписанию`,
   `в чём проблема`, `убедись`) are not in the pack. A test re-derives the
   pack's hold-back from its phrases and a reviewed list of software words.

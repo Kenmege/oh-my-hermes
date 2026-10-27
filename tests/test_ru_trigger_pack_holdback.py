@@ -27,6 +27,7 @@ SOFTWARE_WORDS: dict[str, frozenset[str]] = {
     "accessibility-audit": frozenset({"скринридера"}),
     "adversarial-consensus": frozenset({"адверсариальное"}),
     "app-debugging": frozenset({"баг", "флаки"}),
+    "build-failure-triage": frozenset({"компиляции"}),
     "code-review": frozenset({"баги", "реквеста"}),
     "codebase-onboarding": frozenset({"репо", "репозитории", "репозитория"}),
     "commit-pr-authoring": frozenset({"коммит", "коммита", "реквеста"}),

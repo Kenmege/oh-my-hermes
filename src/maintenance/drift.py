@@ -1406,10 +1406,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the nested-phrase fix: "сделай ревью кода" and "запомни это" ask
             # instead of dispatching on a double count (same count), and a
             # pull-request review dispatches on its own word (+1). A skill now
-            # credits one held-back pack phrase per message, so a build failure
-            # with a compile error and an implementation plan ask instead of
-            # dispatching (same count).
-            expected=1151,
+            # credits one held-back pack phrase per message, so an
+            # implementation plan asks instead of dispatching (same count);
+            # `компиляции` is a software word, so the build failure with a
+            # compile error still dispatches. That credit is the ru pack's
+            # only: three Korean requests whose held-back phrases add up on
+            # purpose (chart styling, an architecture diagram with the code
+            # structure, model serving with a serving benchmark) still
+            # dispatch (+3).
+            expected=1154,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

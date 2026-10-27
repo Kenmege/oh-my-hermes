@@ -13405,6 +13405,36 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_visual_qa",
         "visual_qa",
     ),
+    # Korean. The ko pack's held-back phrases are meant to add up -- a nested
+    # phrase, or two of one skill in a sentence -- so the ru pack's
+    # one-held-back-phrase-per-skill credit must not reach them (#2301).
+    RoutingInterventionCase(
+        "korean-chart-styling-request-dispatches",
+        "A Korean chart-styling request reaches frontend on its nested phrases",
+        "차트 스타일링 좀 다듬어줘, 대시보드 막대 색이 너무 칙칙해",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "korean-architecture-diagram-and-code-structure-dispatches",
+        "A Korean architecture diagram plus code-structure picture reaches codebase-uml",
+        "아키텍처 다이어그램이랑 코드 구조 그림을 같이 그려줘",
+        "dispatch",
+        "codebase-uml",
+        "prepare_codebase_uml",
+        "codebase_uml",
+    ),
+    RoutingInterventionCase(
+        "korean-model-serving-and-benchmark-dispatches",
+        "A Korean model-serving setup with a serving benchmark reaches inference serving",
+        "모델 서빙 세팅하고 서빙 벤치마크까지 돌려줘",
+        "dispatch",
+        "inference-serving",
+        "prepare_inference_serving",
+        "inference_serving",
+    ),
     # Russian. Every case here fell back before the `ru` pack shipped. A
     # Russian word scores on its own only when it is a software word; the
     # rest score inside their phrase, so a phrase made of everyday words
@@ -13445,18 +13475,16 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "build-failure-triage",
         "medium",
     ),
-    # Two build phrases made of everyday words are still one piece of
-    # evidence: a skill credits one held-back pack phrase per message.
+    # `компиляции` is a software word, so the compile error carries the
+    # build failure to dispatch.
     RoutingInterventionCase(
-        "russian-build-failed-compile-error-clarifies",
-        "A Russian build failure with a compile error clarifies with build triage named",
+        "russian-build-failed-compile-error-dispatches",
+        "A Russian build failure with a compile error reaches build triage",
         "сборка упала, помоги исправить ошибку компиляции",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
+        "dispatch",
         "build-failure-triage",
-        "medium",
+        "prepare_build_failure_triage",
+        "build_failure_triage",
     ),
     # `составь план` and `план реализации` overlap and both say a kitchen
     # renovation plan as well, so together they still ask.

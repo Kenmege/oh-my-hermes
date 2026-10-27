@@ -194,8 +194,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # two negatives that hold broad wording out (a red-team hiring
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
-        # The Russian trigger pack adds eleven interventions, and its review nine.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1151)
+        # The Russian trigger pack adds eleven interventions, its review nine,
+        # and three Korean ones that pin its scoring rule to Russian.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1154)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
