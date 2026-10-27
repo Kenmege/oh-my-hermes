@@ -16,6 +16,39 @@ All notable changes will be documented here.
   plan and the composer get a blank row between them where the terminal has
   one to spare.
 
+- **`plan` and `ralplan` name the goal beyond the request, the raw material,
+  and an outside judge.** Before splitting tasks a plan states what should
+  happen once the requested result exists and whether it aims there, and adds
+  the access an executor needs to work at that level unattended as its own
+  tasks; it starts from raw logs, traces or data rather than a digest, names
+  the methods a leading practitioner would use, and gives every verification
+  step a judge other than the planner or executor, recording a missing one as
+  an evidence gap; it restates the deliverable as verbs and brings other
+  fields in as practitioner actions, never as voices to imitate. The lines sit
+  after each bar's first four items, so capability rows do not move, and they
+  reach the portable projection.
+- **3D and canvas scenes have a craft and QA bar.** A user ran the same voxel
+  pagoda garden prompt through two agents: both consoles were clean, and the
+  OMH build was judged less colorful. Its first frame was flat noon under its
+  own "golden hour" subtitle, and its birds read as floating black cubes, and
+  nothing in the catalog named a 3D scene, so neither the build nor its own
+  visual review checked for either. `frontend` gains
+  `references/rendered-scene-craft.md` (the first frame keeps the scene's own
+  promise; a warm-or-cool key light, a sky fill, explicit tone mapping,
+  shadows and fog before more geometry; small animated objects read as what
+  they are; the capture matrix), one body line pointing at it, and the
+  phrases `three.js scene`, `threejs scene`, `webgl scene`, `voxel scene` and
+  `voxel art scene`, with `scene`, `voxel`, `art` and `three` held back to
+  whole phrases. `visual-qa` captures a scene's booted first frame, its
+  camera presets and each advertised time of day, and records a claim the
+  frame does not show, an unreadable small object, or flat light as a
+  difference.
+- **A finished `/goal` leaves its whole time in the OMH TUI.** When a goal
+  shown above the composer turns done, the transcript keeps `✓ goal done ·
+  46m 2s · 7/20 turns · <title>`, timed from the goal's own `created_at` to
+  `updated_at`, so a goal that ran across many turns is not read off the last
+  turn's `✻` line. It is said once, sends nothing, and leaves the time out
+  when either stamp is missing.
 - **The gateway-attach child no longer aborts when Hermes' gateway hangs up
   first (#2327, reported and first fixed by @skihyeon in #2328).** Its
   `omh-attach-stdin` thread read the TUI's input through `sys.stdin.buffer`
@@ -219,7 +252,6 @@ All notable changes will be documented here.
   keeping the session's model is the first choice and the one selected, and
   only "switch anyway" sends the switch again with Hermes' confirmation.
 
-
 - **Byte-identical managed plugin files no longer block setup or update
   (#2300).** A managed plugin file whose current bytes match the incoming
   bundle no longer needs `--force` merely because its hash differs from an
@@ -369,6 +401,19 @@ All notable changes will be documented here.
   ledger, and a symlinked ledger file is neither read nor replaced. Windows
   keeps the path-based write, where a parent swapped between the check and
   the write is still followed.
+
+- **Replies read like a person who did the work wrote them.** OMH now ships
+  a human-voice pass adapted from `blader/humanizer` (MIT, v3.1.0): the
+  always-on reply rule adds one sentence (result first, no chatbot openers or
+  closers, staged contrasts, or decoration), the common rail points every
+  skill at the new on-demand `omh-routing/references/human-voice.md` before
+  prose a person reads, and that reference covers the strongest English
+  tells plus Korean habits (번역투 nominalisation, register drift in a banmal
+  persona). The persona still owns the voice; the pass edits content and
+  structure only. `omh quality-evidence reply-lint` reports the
+  high-precision shapes as a new `ai_writing_tell` finding, skipping code and
+  quoted lines. The awareness primer budgets move 1440 -> 1560 and
+  3520 -> 3630 for the one sentence.
 
 ## 4.0.2 - 2026-10-24
 
@@ -5720,7 +5765,6 @@ All notable changes will be documented here.
   and a historical capture stay separate classes. The skill line also names
   a spent retrieval budget as a gap reason. OMH still fetches nothing. (#1527)
 
-
 - **`agent-debug` produces a bounded, cited incident report, and sharing it
   is a separate reviewed action.** `omh quality-evidence agent-debug` now
   selects one session by full id, `latest`, or a prefix that names exactly
@@ -7342,7 +7386,6 @@ Highlights of this major release (details in the entries below):
   OMH workflow". The per-skill byte ceiling moves 26,000 -> 26,500 for
   `ultrawork`, with the reason at the entry.
 
-
 - **A Hermes child now receives its prompt.** `omh coding hermes-child
   dispatch` spawned `hermes --oneshot -` and wrote the prompt to stdin, but
   Hermes' `-z/--oneshot` takes the prompt as its positional value and reads no
@@ -7391,7 +7434,6 @@ Highlights of this major release (details in the entries below):
   as invalid JSON. Kanban records are excluded from that padding, which is what
   the padding was always for: diffs, not structured results.
 
-
 - **An engagement nudge now counts what a tool call did, not that it was
   made.** The counters behind the plan and delegation nudges were incremented
   from the fact of a watched tool call, so a write that the host refused, a
@@ -7412,7 +7454,6 @@ Highlights of this major release (details in the entries below):
   while `transform_tool_result` still fires inside it, so a design that watched
   only the post hook would have seen nothing for exactly the calls a delegation
   nudge is about.
-
 
 - **Accepted native work can be resumed from a bounded scope checkpoint, with
   durable verification, review and QA declarations.** `omh_todo` adds
@@ -7967,7 +8008,6 @@ Highlights of this major release (details in the entries below):
   `PROVIDED_TOOLS`, so an install that has not run `omh update` will report the
   new tool as missing until it does.
 
-
 - **The cases that gate OMH's router are now questions anything can answer, so
   a second opinion can be measured on the same ground.** `omh chat
   route-questions export` projects both shipped routing corpora into typed
@@ -8073,7 +8113,6 @@ Highlights of this major release (details in the entries below):
   documented answer keys before it is persisted. No live arm has been run, and
   running one is an operator's call.
 
-
 - **`omh doctor` now says which Jev-class plugins a machine holds, and what
   each one's catalog entry declares.** Jev (TypeSafe System One) is a
   non-generative decision model: it answers typed questions and cannot write
@@ -8139,7 +8178,6 @@ Highlights of this major release (details in the entries below):
   `detail` payload, `None` for every check that carries no structured
   finding, so `observed` keeps its one meaning as a boolean.
 
-
 - **OMH now recognizes a model class it cannot route coding work to, and
   refuses that work by name instead of preparing it.** TypeSafe's Jev answers
   a typed Choice, Score, or Noul over options the caller supplies and its own
@@ -8200,7 +8238,6 @@ Highlights of this major release (details in the entries below):
   the generic discipline applies rather than claiming a model that takes no
   prompt was calibrated.
 
-
 - **The HUD route label drops its parent-equality token.** A lane the tool
   routed to the model the parent session itself runs rendered as
   `category:deep(deepseek-flash:high =parent)`. The token said the dispatch
@@ -8215,7 +8252,6 @@ Highlights of this major release (details in the entries below):
   that was always the model name itself. The `read_omh_hud` payload still
   reports `same_as_parent` for a caller that holds both models; the widget no
   longer reads it, and the widget-pack gate now pins that absence.
-
 
 - **A planning run that starts editing now asks the person first, instead of
   being told not to.** Give `ralplan` a prompt with implementation intent

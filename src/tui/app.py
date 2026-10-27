@@ -838,6 +838,34 @@ def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line 
     return truncate_line(line, width)
 
 
+def goal_done_text(before: Mapping[str, Any] | None, goal: Mapping[str, Any] | None) -> str:
+    """`goal done · 1h 20m · 7/20 turns · <title>` when a shown goal has just turned done, else "".
+
+    The time is the goal's whole wall clock, from Hermes' own `created_at` to
+    `updated_at`, so a goal that ran across many turns is not read off the
+    last turn's `✻` line; it is left out when either stamp is missing or they
+    run backwards. A goal first seen done (a resumed session) says nothing.
+    """
+    if not isinstance(before, Mapping) or before.get(contract.GOAL_STATUS) not in contract.GOAL_SHOWN_STATUSES:
+        return ""
+    if not isinstance(goal, Mapping) or goal.get(contract.GOAL_STATUS) != contract.GOAL_DONE:
+        return ""
+
+    def whole(key: str) -> int:
+        value = goal.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    def stamp(key: str) -> float:
+        value = goal.get(key)
+        return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
+
+    started, ended = stamp(contract.GOAL_CREATED_AT), stamp(contract.GOAL_UPDATED_AT)
+    took = elapsed_text(ended - started) if started > 0 and ended >= started else ""
+    turns = f"{whole(contract.GOAL_TURNS_USED)}/{whole(contract.GOAL_MAX_TURNS)} turns"
+    title = " ".join(clean_text(as_text(goal.get(contract.GOAL_TITLE))).split())
+    return " · ".join(part for part in ("goal done", took, turns, title) if part)
+
+
 def attention_sequence(environ: Mapping[str, str], message: str) -> str:
     """What asks for the person's attention on this terminal: OSC 9, OSC 777, or the bell, by its name."""
     text = clean_text(message)
@@ -2356,6 +2384,9 @@ class App(ModesMixin, AgentViewMixin):
         elif event.type == "session.control.update":
             control = payload.get(contract.SESSION_CONTROL)
             goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None
+            done = goal_done_text(self.goal, goal if isinstance(goal, Mapping) else None)
+            if done:
+                self.transcript.add_aside(NoticeBlock(done, NOTICE_OK))  # the row goes; its total stays in the scrollback
             self.goal = goal if isinstance(goal, Mapping) else None
         elif event.type == "todo.updated":
             # Hermes' plan changed: the OMH plugin projected it into the session's record as the tool finished

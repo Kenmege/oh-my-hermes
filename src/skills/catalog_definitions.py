@@ -135,6 +135,20 @@ _RALPLAN_IDEAL_STATE_BAR = (
     "Size each task as one band, never as hours or days: `XS` (one small edit), `S` (one file and its test), `M` (several files in one module), `L` (several modules or one contract change), `XL` (crosses subsystems; split it into smaller tasks).",
 )
 
+# Shared by plan's and ralplan's quality_bar and ralplan's portable override,
+# so both planners read one rule set: the goal beyond the request (altitude),
+# raw material and an outside judge (depth), and verbs plus practitioner actions
+# rather than voices (range). Placed after each bar's first four items so the
+# capability rows (`_bounded_list(quality_bar, 4)`) do not move.
+_PLAN_AMBITION_BAR = (
+    "When the plan describes code changes, name the goal beyond the request before splitting tasks: one sentence on what should happen once the requested result exists, and whether the plan aims at that outcome or at the request as asked; when the two are the same, say so in one line. A plan aimed at the outcome adds, as its own tasks, the access the executor needs to work at that level unattended - failure logs, a reproduction environment, the raw data, the mapping from a released version to its commit.",
+    "When the plan describes code changes, name the raw material the work starts from instead of a digest of it - the failing log, trace, or data rather than the issue summary - and the methods and tools a leading practitioner of the field would use on it. Every verification step names an outside judge - a test, CI, a measurement, a human reviewer, or an external tool - never the planning model's or the executor's own reading of the result; a step with no outside judge is recorded as an evidence gap.",
+    "When the plan describes code changes, restate the deliverable once as the verbs it must accomplish rather than the noun it produces; when that brings in another field, write what a practitioner of that field does as a task (fuzz the parser, audit each completion claim against its evidence), never an instruction to write or speak like one.",
+)
+_PLAN_AMBITION_CHECK = (
+    "When the plan describes code changes, it names the goal beyond the request, the raw material, and an outside judge for each verification step, or records the missing judge as an evidence gap."
+)
+
 # Shared by ralplan's Hermes quality_bar, its portable override, and plan's
 # quality_bar, so both planning skills read one acceptance rule. Host-neutral on
 # purpose: the portable projection has no `omh hermes plan-accept` and no Hermes
@@ -4419,6 +4433,11 @@ _DEFINITIONS = [
             "split-text animation",
             "shadcn",
             "component registry",
+            "three.js scene",
+            "threejs scene",
+            "webgl scene",
+            "voxel scene",
+            "voxel art scene",
             "accessibility",
             "wcag",
             "lighthouse",
@@ -4509,6 +4528,7 @@ _DEFINITIONS = [
             "Query the local design reference data before fixing tokens: `omh design data --kind palette|font|ux --context <product context>` returns curated palettes, font stacks with CJK notes, and UX guidelines offline. Those rows inform DESIGN.md; the contract, not the query, still gates the code.",
             "Scroll-driven motion is a decision with a bill: load `references/scroll-motion-libraries.md`, take the native path (CSS `scroll-behavior`, scroll-driven animations, `IntersectionObserver`, scroll-snap) unless one interpolated scroll position feeds several consumers, and when a library is chosen (Lenis is the reviewed record) name its reduced-motion branch, anchors, nested scroll, teardown, and INP budget in the contract.",
             "Copied component source is the project's to fix: before adopting from a shadcn-style registry, load `references/component-registry-adoption.md` (license, dependencies, reduced motion, ARIA, keyboard/touch, token mapping, one hero effect per view). Theme charts through tokens, not config literals: load `references/chart-styling.md`.",
+            "A 3D or canvas scene (WebGL, a three.js-style engine, a voxel world) is judged on its first frame: load `references/rendered-scene-craft.md`, boot on the view the scene's own title and copy promise, light it with a warm-or-cool key, a sky fill, explicit tone mapping, shadows, and fog, and make every small animated object read as what it is. A clean console is not a finished scene.",
             "For first-time UI creation, name the initial generation branch, reference direction, reusable primitives, state coverage, and required visual QA path.",
             "Cover responsive layout, empty/loading/error states, hover/focus/active states, CJK text, accessibility, and performance expectations.",
             "State performance as a budget, not an adjective: load `references/web-vitals-budgets.md`, name one metric with its published bar (LCP, INP, CLS), the device and network class it is judged on, the route and load shape, and the baseline captured under that same profile - before the change. A budget chosen after seeing the result describes what happened instead of gating it.",
@@ -5296,6 +5316,7 @@ _DEFINITIONS = [
             "When a product surface is composed into a larger frame (promo, poster, slide, end card), measure it against the frame: a look-alike of a UI that exists, in place of its real renderer's output, is BLOCK, while an unbuilt UI labeled concept or a brief-requested stylised treatment labeled as such is not; with no subtitles a product-led shot is full-bleed, the full frame minus a 46 px edge inset (at least about 988 px tall at 1080p) with platform-UI zones still clear, and with subtitles it fills at least 90% of the width and height of the body safe area with the subtitle band clear; text rows are at least 2% of the frame's shorter side; a logo or identity mark keeps at least one of its own text rows from the frame and window edges, intentional crops excepted; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun in each plural category of the content locale. Each miss is one `differences` entry.",
             "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
             "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
+            "For a 3D or canvas scene, capture the first frame exactly as booted, each camera preset, and every time of day the scene advertises; a claim in its own title or HUD that its first frame does not show, a small animated object that does not read as what it is, and flat light are each one `differences` entry (`omh-frontend/references/rendered-scene-craft.md`).",
             "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
             "Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.",
             "Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.",
@@ -5358,6 +5379,7 @@ _DEFINITIONS = [
                 "When a product surface is composed into a larger frame (promo, poster, slide, end card), measure it against the frame: a look-alike of a UI that exists, in place of its real renderer's output, is BLOCK, while an unbuilt UI labeled concept or a brief-requested stylised treatment labeled as such is not; with no subtitles a product-led shot is full-bleed, the full frame minus a 46 px edge inset (at least about 988 px tall at 1080p) with platform-UI zones still clear, and with subtitles it fills at least 90% of the width and height of the body safe area with the subtitle band clear; text rows are at least 2% of the frame's shorter side; a logo or identity mark keeps at least one of its own text rows from the frame and window edges, intentional crops excepted; meta text the product does not render (window title, dimension label, invented path) is removed; every count agrees with its noun in each plural category of the content locale. Each miss is one `differences` entry.",
                 "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
                 "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
+                "For a 3D or canvas scene, capture the first frame exactly as booted, each camera preset, and every time of day the scene advertises; a claim in its own title or HUD that its first frame does not show, a small animated object that does not read as what it is, and flat light are each one `differences` entry (`omh-frontend/references/rendered-scene-craft.md`).",
                 "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
                 "Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.",
                 "Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.",
@@ -5369,7 +5391,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "41661e2b589f5d0188c3932c0d2c9c78e6835f63ae82e2ecb0ef97e61b83d4b0",
+            "quality_bar": "60c914d09d13976b67ab39a132d976a36a65db316bac0d6ca95f940b083fbf3b",
         },
     ),
     SkillDefinition(
@@ -7072,6 +7094,7 @@ _DEFINITIONS = [
             "When the plan describes code changes, add a `Review Focus` section listing at most 5 inputs or failure modes the requirements imply that no planned test covers, likeliest first, each with its expected behavior and the owning task that will add the test; an input the requirements do not mention must still leave the result intact, and when the check turns up nothing the section says it found none.",
             "When the plan describes code changes, keep each step to a single action whose outcome can be checked - a named test and what it asserts, an exact signature and its file, or a command and the output that counts as passing; a step that leaves the choice open (`TBD`, `make it robust`) is a gap.",
             "When the plan describes code changes, run a proportion check before acceptance: if the plan text outgrows the code it leads to, or is mostly function bodies, implementation has leaked into it; reduce bodies to test names, assertions, and signatures.",
+            *_PLAN_AMBITION_BAR,
             PLAN_ACCEPTANCE_ANSWER_RULE,
             ENGINE_FIT_RECOMMENDATION_RULE,
             HermesReferenceLine(
@@ -7085,7 +7108,7 @@ _DEFINITIONS = [
             "and no implementation hidden inside the plan text."
         ),
         final_checklist=_CATEGORY_FINAL_CHECKLISTS["planning"]
-        + ("When the plan describes code changes, it has a `Review Focus` section with at most 5 uncovered inputs and their owning tasks, or one stating the check found none.",),
+        + ("When the plan describes code changes, it has a `Review Focus` section with at most 5 uncovered inputs and their owning tasks, or one stating the check found none.", _PLAN_AMBITION_CHECK),
         situations=(
             "how should we build this feature",
             "break this work into steps",
@@ -7142,6 +7165,7 @@ _DEFINITIONS = [
             "List every lane of the accepted plan in node-prompt shape - `TASK`, `DELIVERABLE`, `SCOPE`, `VERIFY`, `STOP WHEN` - with `depends_on` per lane, so `ultrawork` can prepare board rows from the plan without re-planning; planning itself stays a bounded in-session lane.",
             ADAPTATION_QUALITY_READ_RULE,
             *_RALPLAN_IDEAL_STATE_BAR,
+            *_PLAN_AMBITION_BAR,
             "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
             "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
             "Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.",
@@ -7179,6 +7203,7 @@ _DEFINITIONS = [
             "At least two options or one chosen option plus rejected alternatives are recorded.",
             "Risks, acceptance criteria, and verification commands are testable or explicitly blocked.",
             "Every target-state difference has a `Success criteria` row with a task and a verification scenario or is recorded as a user-excluded non-goal, and the `Target-state coverage` check left none unmapped.",
+            _PLAN_AMBITION_CHECK,
             "The plan exists as a recorded file-backed artifact, not only as chat narration.",
             "The implementation handoff is prepared only after plan acceptance and remains prepared_not_observed.",
             "The follow-on engine or executor path was started only after the user's explicit go-ahead in this conversation, never from plan acceptance alone.",
@@ -7217,6 +7242,7 @@ _DEFINITIONS = [
                 "Produce testable acceptance criteria and exact verification commands or explain why they are not yet knowable.",
                 ADAPTATION_QUALITY_READ_RULE.portable,
                 *_RALPLAN_IDEAL_STATE_BAR,
+                *_PLAN_AMBITION_BAR,
                 "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
                 "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
                 "Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.",
@@ -7233,7 +7259,7 @@ _DEFINITIONS = [
             "artifact_expectations": "a8eb07c3491b92fb1f72dc0bbd8bd5da29398f9b8aa6cae9b64b2b2c5aa3bae6",
             "safety_rules": "72126c765975b034ab683d27aa0349dbe84c564e45f29832f2b8424a1b3d28cc",
             "opening_steps": "f839a5ee9ecaca2834a76d29b601f18e03ca292e0abc0b2af5c92274b5fa4c7e",
-            "quality_bar": "5ec6152d25e922a25960189f30a3560e0b82ffedefa4f4181072f214271bf862",
+            "quality_bar": "8350281acd6839c81e5be9e9c79dc3f57c692b577ce110a00b4b3938a8ae5b13",
             "why_this_exists": "7c8d4e7c04114ed3e5fa532095f54cbd4f36aa5333d34f873c40d516f27c29e1",
         },
     ),

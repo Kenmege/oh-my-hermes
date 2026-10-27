@@ -50,8 +50,15 @@ from .awareness import awareness_primer_context, awareness_primer_markdown
 # the final answer while 13 of 17 interim progress lines in one session came
 # out in English. The compact rail measured 1434 and the markdown 3509
 # (re-derived from the producers, standing headroom kept as above).
-AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT = 1440
-AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT = 3520
+# 1440 -> 1560 and 3520 -> 3630: the reply line gains one sentence carrying the
+# human-voice pass into every session (result first, no chatbot openers or
+# closers, staged contrasts, or decoration); the full pass is the on-demand
+# `omh-routing/references/human-voice.md`. Owners read OMH-guided replies that
+# opened with praise and closed with offers while the persona held. The compact
+# rail measured 1550 and the markdown 3619 (re-derived from the producers,
+# standing headroom kept as above).
+AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT = 1560
+AWARENESS_PRIMER_MARKDOWN_CHAR_LIMIT = 3630
 AWARENESS_WORKFLOW_CONTEXT_CHAR_LIMIT = 1500
 ROLE_CONTEXT_CHAR_LIMIT = 2600
 # Per-request budgets, zero-slack: each is the value its producer measured,
@@ -140,7 +147,10 @@ PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5786
 # producer.
 # 7216 -> 7222: the same runtime-list rename (+6). Re-derived from the
 # producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7222
+# 7222 -> 7338: the primer's reply line gains its human-voice sentence (+116),
+# and it rides the fenced context on this fallback. The section-host limit
+# above does not move. Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7338
 
 SLOT_LIMITS: dict[str, int] = {
     "primer": AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,

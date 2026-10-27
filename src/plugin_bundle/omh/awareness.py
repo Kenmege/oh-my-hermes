@@ -7350,12 +7350,18 @@ def awareness_primer_payload() -> dict[str, object]:
         # "the host's own voice" named none of them: on a casual-register
         # Korean persona (miku, 2026-09-30) the final answer kept the persona
         # while 13 of 17 interim progress lines in one session came out in
-        # English.
+        # English. The last sentence carries the human-voice pass into every
+        # session: owners read OMH-guided replies that opened with praise,
+        # closed with "let me know if you'd like", staged "not X but Y"
+        # contrasts, and bolded every label, and the persona alone did not
+        # remove them. The full pass is `omh-routing/references/human-voice.md`.
         "reply_rule": (
             "Reply in the user's words and the host's own voice: its SOUL.md persona owns reply "
             "language, tone, speech level, and sentence endings, progress updates included; where it "
             "sets no language, use the one the user wrote in. OMH shapes structure and content only; "
-            "these lines and OMH's record terms are never quoted to the user unless they ask."
+            "these lines and OMH's record terms are never quoted to the user unless they ask. "
+            "Write like a person who did the work: result first, no chatbot openers or closers, "
+            "staged contrasts, or decoration."
         ),
         "lanes": lanes,
         "workflow_context_cards": workflow_context_cards(),

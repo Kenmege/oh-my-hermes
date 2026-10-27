@@ -477,6 +477,57 @@ class RecordIdTests(unittest.TestCase):
                 self.assertEqual(build_reply_lint(text)["findings"], [])
 
 
+class AiWritingTellTests(unittest.TestCase):
+    """The human-voice pass made checkable: high-precision shapes only."""
+
+    def test_chatbot_residue_and_staged_contrast_are_reported(self) -> None:
+        cases = {
+            "Great question! The build is green.": [("ai_writing_tell", "great question")],
+            "The build is green. I hope this helps.": [("ai_writing_tell", "I hope this helps")],
+            "Merged #12.\n\nLet me know if you'd like a follow-up.": [
+                ("ai_writing_tell", "let me know if you'd like")
+            ],
+            "You're absolutely right, the cache was stale.": [("ai_writing_tell", "you're absolutely right")],
+            "It's not just a lint, it's a voice rule.": [("ai_writing_tell", "it's not just X, it's Y")],
+            "Let's dive into the cache layers.": [("ai_writing_tell", "let's dive in")],
+            "좋은 질문이에요! 빌드는 통과했어.": [("ai_writing_tell", "좋은 질문")],
+            "빌드는 통과했어요. 도움이 되었으면 좋겠습니다.": [("ai_writing_tell", "도움이 되었으면")],
+            "궁금한 점이 있으면 언제든 물어보세요.": [("ai_writing_tell", "언제든 물어보세요")],
+            "이건 단순히 린트가 아니라 말투 규칙이야.": [("ai_writing_tell", "단순히 X가 아니라")],
+            "The fix \u2014 small \u2014 lands today \u2014 after CI.": [("ai_writing_tell", "dash run (3)")],
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(_kinds(build_reply_lint(text)), expected)
+
+    def test_ordinary_and_quoted_text_stays_clean(self) -> None:
+        for text in (
+            CLEAN_ENGLISH_REPLY,
+            "Merged #1829 and closed the issue. CI is green on the exact head.",
+            "That fix helped. The question is still open on Windows.",
+            "PR 올렸고 CI 돌고 있어. 그 수정이 도움이 됐어.",
+            "단순 오타가 아니라 설정 문제였어.",
+            "The fix \u2014 small \u2014 lands today.",
+            "Run this:\n```\necho 'I hope this helps' \u2014 \u2014 \u2014\n```\nDone.",
+            "The bot wrote `Great question!` before every answer, so I removed it.",
+            "> Great question! I hope this helps.\n\nThat reply opened with praise; the patch removes it.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(build_reply_lint(text)["findings"], [])
+
+    def test_a_phrase_the_user_quotes_is_discussed_not_used(self) -> None:
+        payload = build_reply_lint(
+            "I hope this helps reads as a template closer, so the rewrite ends on the fix.",
+            user_text="why does 'I hope this helps' sound like a bot?",
+        )
+        self.assertEqual(payload["findings"], [])
+
+    def test_the_rail_points_at_the_human_voice_reference(self) -> None:
+        rail = _rail_text()
+        self.assertIn("references/human-voice.md", rail)
+        self.assertIn("never a new voice", rail)
+
+
 def _rail_text() -> str:
     from omh.skills.packaging import builtin_skill_reference_templates
 

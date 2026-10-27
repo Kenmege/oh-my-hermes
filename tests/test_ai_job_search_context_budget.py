@@ -75,8 +75,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # row to each producer (+2990 full, +929 standalone).
             # 526233 -> 526234 and the digest re-derived: the show-reel
             # row's trigger count went +5 -> +13 (+1); no other row moved.
+            # The rendered-scene lane moves only the frontend row (same length).
             (skill_capabilities, 526234, FULL_ROW_DELTA_CAP,
-             '2b435141c0603289a60b99d1dd9d0111a2a25cc47887216e341b4a04a6d7fe0e',
+             '824fce6c98db0a5b193b7db79c3fbbb225dd7629710167104004e5ffad6461d0',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 142629, STANDALONE_ROW_DELTA_CAP,
              'a130544228a3583763e8b987f2a2e07983015ff8f6b832cdc72c230f5f069019',
@@ -152,7 +153,13 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
         # Re-derived again for repro-audit: its own body joins the legacy set
         # (and again for its review's confirmation-wording fix).
-        self.assertEqual(_digest(legacy_hashes), '055021f66e10653f53baa63fa5bd7e01dd84882116802e1f7c32cdcf104a79f3')
+        # Then the rendered-scene lane in frontend and visual-qa; only those two
+        # bodies move versus main (tests/fixtures/agent_skills_hermes_digests.json).
+        # Re-derived for the human-voice pass: the router body gains one
+        # Progressive Disclosure pointer to `references/human-voice.md`;
+        # removing that line alone restores main's digest (db2c9bd4...).
+        # Re-derived for the plan-ambition lines: only plan and ralplan move.
+        self.assertEqual(_digest(legacy_hashes), 'e59229fc0ec6908f699bf6f86a1df9c14a7e16d67a0a3168bee64e30a9bec4a4')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
@@ -176,9 +183,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
             'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
-            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
-            'awareness_primer_markdown_chars': 3520,
-            'awareness_primer_context_chars': 1440,
+            'pre_llm_call_context_fallback_chars_max': 7338,  # The same rename (+6), then the human-voice primer sentence (+116).
+            'awareness_primer_markdown_chars': 3630,  # Human-voice reply sentence (+110).
+            'awareness_primer_context_chars': 1560,  # The same sentence (+120).
             'awareness_workflow_context_chars_max': 1500,
             'role_context_chars_max': 2600,
             'full_capability_skill_item_chars_max': 9000,
