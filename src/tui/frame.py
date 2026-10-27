@@ -60,9 +60,9 @@ from .aura import AURA_RULE, aura_ranges, aura_rule, aura_style
 from .composer import PROMPT, Composer
 from .git_status import GitState
 from .layout import BLANK, Budget, allocate, caret_row, compose, composer_cap
-from .style import TRUECOLOR, Line, Span, Style
+from .style import TRUECOLOR, Line, Span, Style, fill
 from .slash import slash_spans, slash_token_ranges
-from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme, aura_moves
+from .theme import DEFAULT_THEME, KIND_FAMILIES, Theme, aura_moves, on_band
 from .width import cell_width, line_width, truncate, truncate_line
 
 RULE = "─"  # the composer's rules, above and under it, full width
@@ -185,6 +185,7 @@ def build_frame(
             agents_rows=len(agents),
             tail_floor=tail_floor,
             gaps=(gaps[0] and bool(tail) and bool(tail[-1]), gaps[1]),  # a tail that ends blank is its own gap
+            sticky_gap=sticky is not None,
             gap_reserve=gap_reserve,
             badge_rows=int(bool(badge)),
         )
@@ -272,15 +273,21 @@ def rule_line(width: int, theme: Theme = DEFAULT_THEME) -> Line:
 def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME, known: frozenset[str] = frozenset()) -> Line:
     """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs.
 
-    It has no band, as the prompt's echo in the transcript has none: `↳ you:`
-    in the running blue (a turn runs), which no transcript row starts with, the prompt in the
-    muted text colour (a `/name` in it that resolves, `known`, bold in its
-    colour, as on the prompt's own row), and a dim `…` where it is cut. So it
-    reads apart from the transcript rows right above it by its words and
-    colours.
+    It runs on your sent prompt's band (`theme.prompt_band`, to the right
+    edge), as the prompt's echo in the transcript does, with a blank row
+    above it (`layout.allocate`'s sticky gap) so it never reads as the
+    reply's last line: `↳ you:` in the running blue (a turn runs), which no
+    transcript row starts with, the prompt in the muted text colour (a
+    `/name` in it that resolves, `known`, bold in its colour, as on the
+    prompt's own row), and a dim `…` where it is cut, each measured against
+    the band.
     """
     if width <= 0:
         return ()
+    band = theme.prompt_band
+    if band.bg is not None:
+        line = sticky_line(prompt_text, width, on_band(theme, band), known)
+        return (*(Span(span.text, replace(span.style, bg=band.bg, depth=band.depth)) for span in line), fill(band))
     first = prompt_text.strip().split("\n", 1)[0]
     lead = Span(STICKY_PREFIX, theme.running)  # a turn runs
     line = (lead, *slash_spans(first, known, theme.muted, theme.slash))

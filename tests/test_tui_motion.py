@@ -67,8 +67,9 @@ def mark(line: tuple) -> object:
 
 class SaidAndDoneTests(unittest.TestCase):
     def test_a_reply_opens_in_the_text_colour_and_each_call_is_named_in_its_familys_hue(self) -> None:
-        reply = block_rows(AssistantBlock("hello", done=True), 40, THEME)[0]
-        self.assertEqual((reply[2].text, reply[2].style), ("● ", replace(THEME.text, bold=True)))
+        header, reply = block_rows(AssistantBlock("hello", done=True), 40, THEME)[:2]
+        self.assertEqual((header[2].text, header[2].style), ("⚚ Hermes", replace(THEME.brand, bold=True)))
+        self.assertEqual(reply[-1], Span("hello", THEME.text))
         group = ToolGroup([ToolRow("a", "read_file", status=TOOL_OK), ToolRow("b", "terminal", status=TOOL_OK)], done=True)
         rows = [row for row in block_rows(group, 40, THEME) if row]  # a blank row between two calls
         self.assertEqual([(row[4].text, row[4].style) for row in rows],
@@ -221,7 +222,7 @@ class ReducedMotionTests(unittest.TestCase):
     def reduced(self) -> tuple[App, Clock]:
         clock = Clock()
         app, _client = make_app(busy=True, clock=clock, environ={"OMH_TUI_REDUCED_MOTION": "1"})
-        app.transcript.status = "Reading the router"
+        app.transcript.activity = "(⌐■_■) reading the router..."  # Hermes' spinner: the verb slot's
         app._on_event(ev("message.start"))
         app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
         return app, clock

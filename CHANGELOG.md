@@ -71,6 +71,14 @@ All notable changes will be documented here.
   screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
+- **The live region reads more calmly while a turn runs.** A mid-turn
+  `↳ you:` row and a steer run on your sent prompt's band, with a blank row
+  over the sticky prompt. Hermes' background review is one dim row naming
+  each skill once. The plan's done rows are quiet and fold into `✓ N done`
+  before a row still to do is cut, and Ctrl+P folds the plan to its header
+  and current item (the header names the key). The working row keeps
+  Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
+  memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
 
 ## 4.0.3 - 2026-10-27
 

@@ -300,8 +300,24 @@ class WorkingRowTests(unittest.TestCase):
                 app.effort = effort
                 self.assertEqual(working_rows(app)[0][2:], "Working… (0s · esc to interrupt)")
         app, _clock = self.busy()
+        # A face with no verb leaves the slot `Working`; a status goes after the facts, dim (2026-10-28).
         app.transcript.activity, app.transcript.status = "(◔_◔)...", "compressing context"
-        self.assertTrue(working_rows(app)[0][2:].startswith("Compressing context… (0s"))
+        self.assertEqual(working_rows(app)[0][2:], "Working… (0s · esc to interrupt) · Compressing context")
+
+    def test_a_status_never_takes_the_verb_slot_and_gives_way_first(self) -> None:
+        # The owner's screenshot of 2026-10-28: `✳ OMH — recalled 4 memories… (18m 6s · ↓1.6k tokens …)`.
+        app, clock = self.busy()
+        app.effort = "high"
+        app.transcript.activity = "(⌐■_■) pondering..."
+        app.transcript.status = "🧠 OMH — recalled 4 memories"
+        clock.now += 1086
+        rows = working_rows(app, 140)
+        self.assertEqual(rows[0][2:], "Pondering… (18m 6s · thinking with high effort · esc to interrupt) · "
+                                      "OMH — recalled 4 memories")
+        app.transcript.activity = "🧠 OMH — recalled 4 memories"  # the same words on the activity channel
+        app.transcript.status = ""
+        self.assertTrue(working_rows(app, 140)[0][2:].startswith("Pondering… (18m 6s"))  # the verb holds
+        self.assertEqual(working_rows(app, 60)[0][2:], "Pondering… (18m 6s · esc to interrupt)")  # status goes first
 
     def test_a_stall_notice_keeps_its_cause_and_how_long_on_the_row(self) -> None:
         app, _clock = self.busy()
@@ -562,7 +578,8 @@ class ResumedHistoryTests(unittest.TestCase):
         self.assertTrue(diff and all(text.startswith("┃ ") for text in diff), texts)  # the diff, on the edit's rail
         self.assertEqual(texts[after - 1 : after + 4],
                          ["", "┃ ● terminal(sleep 6 + 1 command)", "", "┃ ● terminal(ls does-not-exist)", ""])
-        self.assertTrue(texts[after + 4].startswith("┃ ● Done — div added to calc.py"), texts)
+        self.assertEqual(texts[after + 4], "┃ ⚚ Hermes", texts)  # the reply's header, then its words
+        self.assertTrue(texts[after + 5].startswith("┃   Done — div added to calc.py"), texts)
         calls = [lines[index] for index in (first, first + 2, first + 4, after, after + 2)]
         # The record says what ran, not how it ended: neither green nor red, its rail and its mark grey.
         self.assertEqual({row[0] for row in calls}, {Span("┃", THEME.dim)})

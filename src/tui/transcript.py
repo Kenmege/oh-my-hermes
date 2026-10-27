@@ -160,6 +160,11 @@ COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
 ASSISTANT_MARK = "● "
 ASSISTANT_INDENT = "  "
+# Who a reply is from: a header row `⚚ Hermes · <model>` over the reply (owner's variant B of 2026-10-28); with
+# ASSISTANT_HEADER False, variant A: `⚚ ` in the `● `'s place on the reply's first row and no header.
+AGENT_MARK = "⚚"
+AGENT_NAME = "Hermes"
+ASSISTANT_HEADER = True
 # A call's mark by its state: a shape of its own for each, in its state's colour, so the colour is never the only
 # signal. Running in `running` (the delegation view's running blue), done green, failed or denied red; dim for a
 # call cut off, one still being written, and a resumed session's call, whose outcome its record does not keep.
@@ -212,6 +217,7 @@ class NoticeBlock:
     text: str
     level: str = NOTICE_INFO
     done: bool = True
+    one_line: bool = False  # a background notice (`review_line`): one dim row, cut with `…`, never wrapped
 
 
 @dataclass
@@ -233,6 +239,7 @@ class CommandBlock:
 class AssistantBlock:
     text: str = ""
     done: bool = False
+    model: str = ""  # the session's model as the block began (`Transcript.model`), named on its header
 
 
 @dataclass
@@ -782,7 +789,10 @@ def _steer_rows(block: SteerBlock, width: int, theme: Theme) -> list[Line]:
     if block.state == STEER_REFUSED:
         return [truncate_line((Span(f"{STEER_REFUSED_MARK}{block.outcome} · {text}", theme.warn),), width)]
     words = "steer queued by Hermes · " if block.state == STEER_QUEUED else "steer · "
-    return [truncate_line((Span(STEER_MARK, theme.muted), Span(words, theme.muted), Span(text, theme.text)), width)]
+    band = theme.prompt_band  # a message you sent mid-turn runs on your sent prompt's band, as the prompt does
+    roles = on_band(theme, band) if band.bg is not None else theme
+    row = truncate_line((Span(STEER_MARK, roles.muted), Span(words, roles.muted), Span(text, roles.text)), width)
+    return _banded([row], band) if band.bg is not None else [row]
 
 
 def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
@@ -808,11 +818,45 @@ def _outcome_band(level: str, theme: Theme) -> Style | None:
 
 
 def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
+    if block.one_line:
+        return [truncate_line((Span(" ".join(block.text.split()), theme.faint),), width)]
     band = _outcome_band(block.level, theme)
     roles = on_band(theme, band) if band is not None else theme
     mark, style = _notice_style(block.level, roles)
     rows = _text_rows(block.text, style, (Span(mark, style),), (Span(" " * len(mark)),), width)
     return _banded(rows, band) if band is not None else rows
+
+
+# Hermes' background review summary (`review.summary`): "💾 Self-improvement review: Skill 'x' created · Skill 'x'
+# written (references/a.md) · Memory updated", in Hermes' English wording (`locales/en.yaml` display.review).
+REVIEW_PREFIX = "💾"
+REVIEW_SKILL_RESULT = re.compile(r"Skill '(?P<name>[^']+)' (?P<verb>\w+)(?: \((?P<path>[^)]*)\))?$")
+REVIEW_FILE_VERBS = {"written": "wrote", "removed": "removed"}
+
+
+def review_line(text: str) -> str:
+    """A background review summary as one row: what each skill went through, its name once, then the rest as Hermes
+    worded it, `💾 skill x · created · wrote references/a.md · patched · Memory updated`. Hermes' label before the
+    first `: ` is left out; text in another shape (another language) is otherwise kept as Hermes sent it."""
+    body = text.strip().removeprefix(REVIEW_PREFIX).strip()
+    head, colon, rest = body.partition(": ")
+    parts = [part.strip() for part in (rest if colon else body).split(" · ") if part.strip()]
+    skills: dict[str, list[str]] = {}
+    said: list[str] = []
+    for part in parts:
+        match = REVIEW_SKILL_RESULT.match(part)
+        if match is None:
+            said.append(part)
+            continue
+        verb, path = match["verb"], match["path"]
+        done = f"{REVIEW_FILE_VERBS.get(verb, verb)} {path}" if path else verb
+        if match["name"] not in skills:
+            skills[match["name"]] = []
+            said.append(match["name"])  # where the skill's words go, in the order Hermes said them
+        if done not in skills[match["name"]]:
+            skills[match["name"]].append(done)
+    words = [f"skill {part} · {' · '.join(skills[part])}" if part in skills else part for part in said]
+    return f"{REVIEW_PREFIX} {' · '.join(dict.fromkeys(words))}"
 
 
 TURN_DONE_MARK = "✻ "
@@ -871,14 +915,22 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
     return [_within((*_rail(theme.dim), *row), full) for row in rows + output]
 
 
-def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int) -> list[Line]:
-    """Assistant rows on the reply's rail in the skin's accent: a bold `● ` on the block's first row, an indent on
-    every other one, and the rail alone on a blank row, so a reply's rail is one line; none wider than `width`."""
-    first: Line = (Span(ASSISTANT_MARK, replace(theme.text, bold=True)),)  # what it said; a call's mark is its state
+def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model: str = "") -> list[Line]:
+    """Assistant rows on the reply's rail in the skin's accent, every row at the reply's indent and the rail alone on
+    a blank row, so a reply's rail is one line; none wider than `width`. A block opens with who wrote it: the header
+    `⚚ Hermes · <model>` (bold in the rail's hue, the model muted, its last path segment), or with
+    ASSISTANT_HEADER False a `⚚ ` on its first row."""
     rest: Line = (Span(ASSISTANT_INDENT),)
     rail = _rail(theme.brand)
-    return [_within((*rail, *(first if opens_block and index == 0 else rest), *row), width) if row else rail[:1]
-            for index, row in enumerate(rows)]
+    name = replace(theme.brand, bold=True)
+    first, head = rest, []
+    if opens_block and ASSISTANT_HEADER and rows:
+        said = (Span(f" · {model.rsplit('/', 1)[-1]}", theme.muted),) if model else ()
+        head = [_within((*rail, Span(f"{AGENT_MARK} {AGENT_NAME}", name), *said), width)]
+    elif opens_block:
+        first = (Span(f"{AGENT_MARK} ", name),)
+    return head + [_within((*rail, *(first if opens_block and index == 0 else rest), *row), width) if row else rail[:1]
+                   for index, row in enumerate(rows)]
 
 
 def _reply_width(width: int) -> int:
@@ -888,7 +940,7 @@ def _reply_width(width: int) -> int:
 
 def _assistant_rows(block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
     rows = render_lines(_display_lines(block.text), MarkdownState(), _reply_width(width), theme)[0]
-    return _marked(rows, True, theme, width)
+    return _marked(rows, True, theme, width, block.model)
 
 
 def _seconds(value: float) -> str:
@@ -1174,6 +1226,7 @@ class Transcript:
         """`under_output`: its first lines go under lines already printed (another session's), so they open with
         the spacer every block opens with."""
         self.cwd = ""  # the session's working directory; paths inside it are shown relative to it
+        self.model = ""  # the session's model, named on the header of each reply begun under it
         self.blocks: list[Block] = []
         self.activity = ""  # spinner / wait text from thinking.delta; "" when none
         self.status = ""  # the last status.update text of the running turn; "" when none
@@ -1481,6 +1534,8 @@ class Transcript:
                     row.status = TOOL_INTERRUPTED
 
     def _append(self, block: Block) -> None:
+        if isinstance(block, AssistantBlock) and not block.model:
+            block.model = self.model
         self._close_live()
         self._write_held()
         self.blocks.append(block)
@@ -1722,7 +1777,7 @@ class Transcript:
         rows, self._cursor_state = render_lines(fresh, self._cursor_state, _reply_width(width), theme)
         opens_block = self._cursor_lines == 0
         self._cursor_lines = len(sources)
-        return self._spaced(_marked(rows, opens_block, theme, width), opens_block)
+        return self._spaced(_marked(rows, opens_block, theme, width, block.model), opens_block)
 
     def _spaced(self, rows: list[Line], opens_block: bool) -> list[Line]:
         if not rows:
@@ -1848,7 +1903,7 @@ class Transcript:
                 rest = _display_lines(block.text)[self._cursor_lines :]
                 opens_block = self._cursor_lines == 0
                 block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block,
-                                      theme, width)
+                                      theme, width, block.model)
             else:  # only the last block can be live thinking, the one kind the limit shortens, so it gets all of it
                 block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows, now,
                                          glint)

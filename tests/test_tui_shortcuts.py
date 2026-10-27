@@ -99,11 +99,16 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejklrstouvwxyz"))
+        self.assertEqual(named, set("acdejklprstouvwxyz"))
         for letter in string.ascii_lowercase:
             changed = False
             for draft, undone in (("", False), ("one two", False), ("one two", True)):  # Ctrl+Y redoes the undone draft
                 app, client = make_app()
+                if letter == "p":  # Ctrl+P folds the plan: it does something only while a plan shows
+                    from omh.tui.panels import HudSnapshot
+                    from test_tui_panels import hud_payload
+
+                    app.hud = HudSnapshot(app.stored_id, hud_payload([{"text": "Ship it", "state": "active"}]), 0.0)
                 type_text(app, draft)
                 app._on_input(Key(LEFT))
                 if undone:
