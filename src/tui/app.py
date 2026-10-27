@@ -2425,9 +2425,9 @@ class App(ModesMixin, AgentViewMixin):
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
         elif event.type == "review.summary":
-            text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
-            if text:  # one dim row, whenever it comes (it can come during the next turn): it closes nothing
-                self.transcript.add_aside(NoticeBlock(review_line(text), one_line=True))
+            line = review_line(clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))))
+            if line:  # one dim row, whenever it comes (it can come during the next turn): it closes nothing
+                self.transcript.add_aside(NoticeBlock(line, one_line=True))
         elif event.type in contract.SIDE_ANSWER_EVENTS:
             # A whole agent's answer: its lines kept, each made safe to show.
             text = "\n".join(clean_text(line) for line in as_text(payload.get(contract.SIDE_ANSWER_TEXT)).splitlines())
@@ -2936,7 +2936,7 @@ class App(ModesMixin, AgentViewMixin):
         if not isinstance(event, Key) or event != Key(CHAR, "p", ctrl=True):
             return False
         payload = self.hud.payload if self.hud is not None else None
-        if plan_state(payload) != "open":
+        if plan_state(payload) != "open" or not self.panel_shown:  # a menu over the plan: nothing to fold where seen
             return False
         self.plan_folded = not self.plan_folded
         self.dirty = True

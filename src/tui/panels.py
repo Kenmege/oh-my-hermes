@@ -768,18 +768,19 @@ def plan_text(payload: Any) -> str:
 
 def _plan_lines(
     plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True,
-    fold_key: str = "",
+    fold_key: str = "", folded: bool = False,
 ) -> list[Line]:
-    """The plan: its header, then its items in the window. Collapsed (folded by the person, or shed for room) it is
+    """The plan: its header, then its items in the window. Collapsed (`folded` by the person, or shed for room) it is
     the header alone, naming the item it is on. With `fold_key` the header says on its right edge what that key
-    does now."""
+    does now: `fold` while expanded, `expand` while the person folded it, and nothing while it is collapsed for
+    room, where the key could not expand it."""
     header = _plan_header(plan, now, theme)
     if plan.status == "all_done":
         return [header]
     if collapsed:
         current = _current_item(plan)
         tail: Line = (Span(" ▸ ", theme.dim), Span(_safe_text(current.get("text")), theme.text)) if current else ()
-        return [_with_hint(header, tail, f"{fold_key} expand" if fold_key else "", columns, theme)]
+        return [_with_hint(header, tail, f"{fold_key} expand" if fold_key and folded else "", columns, theme)]
     lines = [_with_hint(header, (), f"{fold_key} fold" if fold_key else "", columns, theme)]
     frame = _frame(now)
     budget = max(16, columns - 10)
@@ -1581,6 +1582,7 @@ def panel_lines(
         lines += _dag_lines(dag, layout.dag_budget, columns, theme, color_depth)
     if plan is not None and layout.plan_on:
         lines += _plan_lines(
-            plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme, motion, fold_key
+            plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme, motion, fold_key,
+            plan_folded,
         )
     return [truncate_line(line, width) for line in lines[:max_rows]]

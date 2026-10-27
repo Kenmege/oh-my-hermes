@@ -81,6 +81,17 @@ class PlanBlockTests(unittest.TestCase):
         self.assertLessEqual(len(narrow), 40)
 
 
+class ShedPlanHintTests(unittest.TestCase):
+    def test_a_plan_collapsed_for_room_names_no_key_and_one_the_person_folded_says_expand(self) -> None:
+        # #2349 review, MEDIUM: at 10x60 the plan is its header for lack of room, and `ctrl+p expand` there named a
+        # key that could not expand it.
+        (shed,) = plan_rows(width=60, max_rows=1, fold_key="ctrl+p")
+        self.assertTrue(shed.startswith("[Plan] Plan │ 5/7 ▸ Full"), shed)
+        self.assertNotIn("ctrl+p", shed)
+        (folded,) = plan_rows(width=80, max_rows=1, fold_key="ctrl+p", plan_folded=True)
+        self.assertTrue(folded.endswith("ctrl+p expand"), folded)
+
+
 class FoldKeyTests(unittest.TestCase):
     def app(self, busy: bool):
         app, client = make_app(busy=busy)
@@ -104,8 +115,17 @@ class FoldKeyTests(unittest.TestCase):
                 self.assertGreater(len(self.plan(app)), 1)
                 self.assertFalse([call for call in client.calls if call[0] in ("prompt.submit", "session.steer")])
 
+    def test_a_menu_over_the_plan_leaves_the_key_alone(self) -> None:
+        # #2349 review, LOW: with `/` typed the menu stands where the plan was, and Ctrl+P flipped a fold nobody saw.
+        app, _client = self.app(False)
+        type_text(app, "/")
+        drawn(app)
+        app._on_input(Key(CHAR, "p", ctrl=True))
+        self.assertFalse(app.plan_folded)
+
     def test_the_choice_holds_for_a_new_plan_and_without_a_plan_the_key_is_the_composer_s(self) -> None:
         app, _client = self.app(False)
+        drawn(app)  # the plan is on screen: the key folds what is seen
         app._on_input(Key(CHAR, "p", ctrl=True))
         app.hud = HudSnapshot(app.stored_id, hud_payload([{"text": "Another plan", "state": "active"}]), 1.0)
         (header,) = self.plan(app)
@@ -128,6 +148,14 @@ class AssistantHeaderTests(unittest.TestCase):
         self.assertTrue(header[2].style.bold)
         with mock.patch.object(transcript_module, "ASSISTANT_HEADER", False):
             self.assertEqual(lines_text(block_rows(AssistantBlock("ok", done=True), 40, THEME)), ["┃ ⚚ ok"])
+
+    def test_a_resumed_reply_names_no_model_it_was_not_recorded_with(self) -> None:
+        # #2349 review, LOW: a resumed session's replies were named with the model of the moment.
+        app, _client = make_app()
+        app.model = "openai/gpt-6.1-sol"
+        app.transcript.add_assistant("Earlier answer.")
+        (block,) = [block for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(lines_text(block_rows(block, 40, THEME))[0], "┃ ⚚ Hermes")
 
     def test_the_session_s_model_is_named_on_each_reply_begun_under_it(self) -> None:
         app, _client = make_app(busy=True)

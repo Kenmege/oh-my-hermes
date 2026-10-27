@@ -1863,14 +1863,14 @@ class OpeningTests(AppTestCase):
             [  # each block on its rail, and a blank row between two calls, as for a live turn
                 "┃ ❯ What is in this repo?",
                 "",
-                "┃ ⚚ Hermes · deepseek-v4.1-flash-ultrafast",  # who wrote it: the session's model, its last segment
+                "┃ ⚚ Hermes",  # who wrote it; the record does not say which model, so none is named
                 "┃   Let me look.",
                 "",
                 "┃ ● terminal(ls -la)",
                 "",
                 "┃ ● read_file(README.md)",
                 "",
-                "┃ ⚚ Hermes · deepseek-v4.1-flash-ultrafast",
+                "┃ ⚚ Hermes",
                 "┃   It is oh-my-hermes.",
                 "",
                 "┃ ❯ Thanks",

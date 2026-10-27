@@ -71,6 +71,14 @@ class ReviewSummaryTests(unittest.TestCase):
         self.assertTrue(line_text(row).endswith("…") and line_width(row) <= 60, line_text(row))
         self.assertEqual({span.style for span in row}, {app.theme.faint})
 
+    def test_a_summary_of_separators_says_nothing_and_text_without_the_label_is_kept_whole(self) -> None:
+        # #2349 review, LOW: `review: · · ·` read `💾 ·`, and text before any `: ` was taken for Hermes' label.
+        self.assertEqual(review_line("💾 Self-improvement review: · · ·"), "")
+        self.assertEqual(review_line("💾 A: b: c"), "💾 A: b: c")
+        app, _client = make_app()
+        app._on_event(Event("review.summary", SID, {"text": "💾 Self-improvement review: · ·"}))
+        self.assertEqual([block for block in app.transcript.blocks if isinstance(block, NoticeBlock)], [])
+
     def test_an_empty_summary_or_another_sessions_says_nothing(self) -> None:
         app, _client = make_app()
         app._on_event(Event("review.summary", SID, {"text": "  "}))

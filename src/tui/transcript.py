@@ -239,7 +239,7 @@ class CommandBlock:
 class AssistantBlock:
     text: str = ""
     done: bool = False
-    model: str = ""  # the session's model as the block began (`Transcript.model`), named on its header
+    model: str | None = ""  # the session's model as it began (`Transcript.model`); None: not known (a resumed reply)
 
 
 @dataclass
@@ -830,17 +830,20 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
 # Hermes' background review summary (`review.summary`): "💾 Self-improvement review: Skill 'x' created · Skill 'x'
 # written (references/a.md) · Memory updated", in Hermes' English wording (`locales/en.yaml` display.review).
 REVIEW_PREFIX = "💾"
+REVIEW_LABEL = "Self-improvement review"  # Hermes' English label (`display.review.summary_callback`)
 REVIEW_SKILL_RESULT = re.compile(r"Skill '(?P<name>[^']+)' (?P<verb>\w+)(?: \((?P<path>[^)]*)\))?$")
 REVIEW_FILE_VERBS = {"written": "wrote", "removed": "removed"}
 
 
 def review_line(text: str) -> str:
     """A background review summary as one row: what each skill went through, its name once, then the rest as Hermes
-    worded it, `💾 skill x · created · wrote references/a.md · patched · Memory updated`. Hermes' label before the
-    first `: ` is left out; text in another shape (another language) is otherwise kept as Hermes sent it."""
+    worded it, `💾 skill x · created · wrote references/a.md · patched · Memory updated`. Hermes' English label
+    (`REVIEW_LABEL`) is left out and parts that are only separators are dropped; text in another shape (another
+    language) is otherwise kept as Hermes sent it."""
     body = text.strip().removeprefix(REVIEW_PREFIX).strip()
     head, colon, rest = body.partition(": ")
-    parts = [part.strip() for part in (rest if colon else body).split(" · ") if part.strip()]
+    said_by_hermes = colon and head.strip() == REVIEW_LABEL  # any other text before a colon is part of what it says
+    parts = [part.strip() for part in (rest if said_by_hermes else body).split(" · ") if part.strip(" ·")]
     skills: dict[str, list[str]] = {}
     said: list[str] = []
     for part in parts:
@@ -856,7 +859,7 @@ def review_line(text: str) -> str:
         if done not in skills[match["name"]]:
             skills[match["name"]].append(done)
     words = [f"skill {part} · {' · '.join(skills[part])}" if part in skills else part for part in said]
-    return f"{REVIEW_PREFIX} {' · '.join(dict.fromkeys(words))}"
+    return f"{REVIEW_PREFIX} {' · '.join(dict.fromkeys(words))}" if words else ""  # "" when it says nothing
 
 
 TURN_DONE_MARK = "✻ "
@@ -915,7 +918,7 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
     return [_within((*_rail(theme.dim), *row), full) for row in rows + output]
 
 
-def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model: str = "") -> list[Line]:
+def _marked(rows: list[Line], opens_block: bool, theme: Theme, width: int, model: str | None = "") -> list[Line]:
     """Assistant rows on the reply's rail in the skin's accent, every row at the reply's indent and the rail alone on
     a blank row, so a reply's rail is one line; none wider than `width`. A block opens with who wrote it: the header
     `⚚ Hermes · <model>` (bold in the rail's hue, the model muted, its last path segment), or with
@@ -1450,9 +1453,10 @@ class Transcript:
         return block
 
     def add_assistant(self, text: str) -> None:
-        """A finished reply (a resumed session's history), rendered like a streamed one."""
+        """A finished reply (a resumed session's history), rendered like a streamed one. The record does not say
+        which model wrote it, so its header names none rather than the session's model now."""
         if text.strip():
-            self._append(AssistantBlock(text, done=True))
+            self._append(AssistantBlock(text, done=True, model=None))
 
     def add_recorded_tools(self, messages: list[dict[str, Any]]) -> None:
         """A resumed session's tool calls (its history's `role: tool` messages) as one settled group, each drawn as a
@@ -1534,7 +1538,7 @@ class Transcript:
                     row.status = TOOL_INTERRUPTED
 
     def _append(self, block: Block) -> None:
-        if isinstance(block, AssistantBlock) and not block.model:
+        if isinstance(block, AssistantBlock) and block.model == "":
             block.model = self.model
         self._close_live()
         self._write_held()
