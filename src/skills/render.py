@@ -11992,6 +11992,11 @@ def _design_reference_templates_cached() -> tuple[SkillReferenceTemplate, ...]:
             "references/visual-verdict-contract.md",
             _visual_verdict_contract_reference(),
         ),
+        SkillReferenceTemplate(
+            "visual-qa",
+            "references/motion-continuity.md",
+            _motion_continuity_reference(),
+        ),
     )
 
 
@@ -13010,6 +13015,56 @@ The scored-verdict shape additionally adapts the score-then-iterate pattern
 common to community visual-review skills, restated in OMH's prepared-versus-
 observed vocabulary. No text from any of them is reproduced either; the
 wording here is OMH's own.
+"""
+
+
+def _motion_continuity_reference() -> str:
+    material = """# Motion Continuity
+
+For animated or simulated output, a single settled frame can look correct
+while the motion itself is wrong. Load this reference when the surface in
+scope involves animation, simulation, or replayed sequences, and judge the
+continuity of the motion itself as observed evidence, not the stillness.
+
+## Checks
+
+- **Entry and spawn position** — the position at which an object or character
+  enters the frame matches the declared origin. An entry from a location other
+  than the declared origin is a continuity defect even if the motion after it
+  looks smooth.
+- **No teleport** — per-frame displacement stays within the cap derived from
+  the declared speed. If the declared speed implies at most N pixels (or
+  units) per frame, any observed jump larger than that is a teleport: an
+  object skipping intermediate positions between consecutive frames.
+- **Force direction equals motion direction** — when a force is applied
+  (knockback, push, impulse), the direction of the observed displacement
+  equals the sign and direction of the applied force. Motion in the opposite
+  direction of the declared force, or motion with no declared force, is a
+  defect.
+- **Monotonic resource bars** — HP and resource bars fall (or rise) only as
+  declared effects allow. An unexplained jump upward or downward between
+  frames — a bar that drops in one frame by more than any declared effect
+  explains, or recovers without a declared cause — is a continuity defect.
+- **Flow replay, not inference** — re-run the full flow (deploy, travel,
+  engage) in an independent simulation or replay, and sample frames within
+  each phase. Inferring that the flow ran correctly from summary numbers such
+  as cost, clear time, or final score is not observation: intermediate phases
+  can fail while the summary looks fine.
+- **A technical pass is not visual approval** — a passing build, passing
+  tests, or healthy metrics are technical results. They never substitute for
+  the visual verdict on the motion itself.
+- **Record evidence** — for every finding, record the frame indices or
+  timestamps at which the defect is observed. A continuity claim that cannot
+  be located in time cannot be re-checked.
+
+## Boundary
+
+OMH prepares this reference; the captures, replays, and reruns happen in
+whichever executor or wrapper lane the user selected. Findings without frame
+indices or timestamps are prepared claims, not observed evidence.
+"""
+    return f"""{material}
+{_DESIGN_CRAFT_ATTRIBUTION}
 """
 
 
