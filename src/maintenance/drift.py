@@ -876,8 +876,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # repro-audit adds one vocabulary control (+1). Its review replaces
             # that control, which no trigger reached, with 19 that each say a
             # phrase the skill once dispatched on or a HellaSwag phrase in
-            # another sense, one per clause of its admission rule (+18).
-            expected=1134,
+            # another sense, one per clause of its admission rule (+18). The
+            # #2324 review adds ten more: execution by stem anywhere in the
+            # request (hyphen, -ing, retrain, keep training, fine-tune, again,
+            # a later sentence) and the record-to-relation shape (an upload
+            # state, a citing appendix, a table before sending) (+10).
+            expected=1144,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

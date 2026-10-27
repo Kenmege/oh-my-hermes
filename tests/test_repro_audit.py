@@ -203,6 +203,17 @@ class NativeImport(AuditSurface):
                 p = self.cli('audit-init', '--out', Path(tmp) / 'case')
                 self.assertEqual(p.returncode, 0, p.stderr)
 
+    @unittest.skipUnless(Path('/tmp').is_symlink(), 'needs the macOS /tmp alias')
+    def test_report_inside_case_is_refused_through_the_tmp_alias(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as tmp:
+            case = Path(tmp) / 'case'
+            self.assertEqual(self.cli('audit-init', '--out', case).returncode, 0)
+            # The same directory spelled through /private, the alias's target.
+            inside = Path('/private') / case.relative_to('/') / 'report'
+            p = self.cli('audit', '--case', case, '--out', inside)
+            self.assertEqual(p.returncode, 2, p.stderr)
+            self.assertFalse(inside.exists())
+
     def test_old_and_new_exact_source_claims_audit_and_minimal_export(self):
         for key in ('acc', 'acc,none'):
             source = self.root / ('source-' + key + '.json')

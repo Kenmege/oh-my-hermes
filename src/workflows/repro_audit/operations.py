@@ -189,8 +189,11 @@ def run(args):
         return 2
     try:
         if args.audit_command == 'audit':
-            # Lexical overlap check does not follow or open any input path.
-            case_root, out_root = Path(os.path.abspath(args.case)), _path(args.out)
+            # Compared as real paths, so a trusted alias (`/tmp` and
+            # `/private/tmp` on macOS) cannot spell the report into the case.
+            # Nothing is opened here; the walkers still refuse user symlinks.
+            out_root = Path(os.path.realpath(_path(args.out)))
+            case_root = Path(os.path.realpath(os.path.abspath(args.case)))
             if case_root == out_root or case_root in out_root.parents:
                 raise _SafetyError()
         if args.audit_command == 'import-harness':

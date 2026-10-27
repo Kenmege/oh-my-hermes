@@ -22,7 +22,7 @@ DEFINITION = SkillDefinition(
         'Use only supplied local files. If no evaluation record is available, ask for one; do not run or fetch a model.',
         'For agent infrastructure, call `omh paper import-harness --results FILE --metric acc_norm --out NEW_CASE` for native Harness JSON; `--metric acc` is a separate profile.',
         'When authoring a normalized case instead, call `omh paper audit-init --out NEW_CASE [--metric acc_norm]`; omitted metric preserves the acc default. All conditions start unknown.',
-        'Review the selected source claims and paper conditions with the person. No command records confirmation yet: never edit evidence.json or reported.json by hand, so imported claims stay pending and the audit reports them as blockers.',
+        'Review the selected source claims and paper conditions with the person. No command records confirmation yet: never edit evidence.json or reported.json to stand in for one, so imported claims stay pending and the audit reports them as blockers.',
         'Call `omh paper audit --case CASE --out NEW_REPORT`; read validation.json and report.json, then explain blockers and the offline report. Exit 0 means an audit artifact was written, not that conditions match.',
     ),
     artifact_expectations=('Keep selected evidence only; never copy arbitrary model_args, credentials or raw logs.',

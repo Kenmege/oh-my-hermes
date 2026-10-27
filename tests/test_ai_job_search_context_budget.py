@@ -137,8 +137,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # and role-slot wording); only model-setup moves versus main.
         # Then the promo postmortem in content-operator, design-quality-gate,
         # show-reel, and visual-qa.
-        # Re-derived again for repro-audit: its own body joins the legacy set.
-        self.assertEqual(_digest(legacy_hashes), '516ae5ba1c037826443bee2523e97edf89c41fd595960a6ec76471350b36fc94')
+        # Re-derived again for repro-audit: its own body joins the legacy set
+        # (and again for its review's confirmation-wording fix).
+        self.assertEqual(_digest(legacy_hashes), '4d81bf6275a291e799bce43d38badfdd5df9019ba53598e41df02c2c9192eff4')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.

@@ -5975,17 +5975,33 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
 
 # `repro-audit` compares a HellaSwag record the person holds with what a paper
 # reported. Its phrases name the benchmark only, so they count on one request
-# shape alone: a sentence that leads with a comparison verb, names the
-# person's own record (`my`, `our`, `this`, `these` before `hellaswag`) and
-# the paper or reported target, and asks for no new numbers -- the workflow
-# never runs a model. A tweet, a proofread, a spreadsheet entry or a question
-# about someone else's reported score routes as it did before the skill.
+# shape alone, read on the first sentence: it leads with a comparison verb,
+# names the person's own record (`my`, `our`, `this`, `these` before
+# `hellaswag`), and goes straight from the record to a comparison relation and
+# the paper or reported target -- "my HellaSwag log against the paper". Only
+# record words may sit between the benchmark and the relation, so a slide, a
+# section, a spreadsheet or an attachment checked before a paper deadline is
+# not admitted. And the whole request, every sentence of it, may ask for no
+# new numbers -- the workflow never runs a model. Execution is matched by stem
+# with an optional `re`/`re-` (run, re-run, rerunning, retrain, fine-tune,
+# re-evaluating, ...), and `again` or `redo` count as asking to do it once
+# more, so no inflection or later sentence reopens it.
 _REPRO_AUDIT_WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
 _REPRO_AUDIT_LEAD_VERBS = frozenset({"compare", "check", "audit", "verify", "reconcile", "diff"})
 _REPRO_AUDIT_OWNERS = frozenset({"my", "our", "this", "these"})
+_REPRO_AUDIT_RECORD_WORDS = frozenset(
+    {"log", "logs", "result", "results", "score", "scores", "number", "numbers", "accuracy",
+     "acc", "norm", "acc-norm", "output", "outputs", "json", "file"}
+)
+_REPRO_AUDIT_RELATIONS = frozenset(
+    {"against", "with", "to", "vs", "versus", "match", "matches", "matching", "differ", "differs", "from"}
+)
+_REPRO_AUDIT_RELATION_FILLERS = frozenset({"the", "a", "an", "what", "those", "its", "their"})
 _REPRO_AUDIT_TARGETS = frozenset({"paper", "paper's", "papers", "reported", "published"})
-_REPRO_AUDIT_EXECUTION_WORDS = frozenset(
-    {"run", "rerun", "execute", "evaluate", "benchmark", "generate", "produce", "train", "download", "compute"}
+_REPRO_AUDIT_EXECUTION = re.compile(
+    r"(?:re-?)?(?:run|runs|running|ran|execut(?:e|es|ed|ing)|evaluat(?:e|es|ed|ing)|train|trains|trained|training"
+    r"|generat(?:e|es|ed|ing)|comput(?:e|es|ed|ing)|download(?:s|ed|ing)?|benchmark(?:s|ed|ing))"
+    r"|fine-?tun(?:e|es|ed|ing)|produc(?:e|es|ed|ing)|re-?do(?:es|ing|ne)?|again"
 )
 
 
@@ -5993,16 +6009,25 @@ def _repro_audit_offers_itself(normalized_query: str, query_tokens: set[str]) ->
     """Admit a comparison of the person's own HellaSwag record with a paper's report."""
     del query_tokens
     request = after_courtesy(normalized_query.strip())
+    if any(_REPRO_AUDIT_EXECUTION.fullmatch(word) for word in _REPRO_AUDIT_WORD.findall(request)):
+        return False
     sentence = re.split(r"[.!?;](?:\s|$)", request, maxsplit=1)[0]
     words = _REPRO_AUDIT_WORD.findall(sentence)
     if not words or words[0] not in _REPRO_AUDIT_LEAD_VERBS or "hellaswag" not in words:
         return False
     benchmark = words.index("hellaswag")
-    return (
-        bool(_REPRO_AUDIT_OWNERS.intersection(words[1:benchmark]))
-        and bool(_REPRO_AUDIT_TARGETS.intersection(words[benchmark + 1:]))
-        and not _REPRO_AUDIT_EXECUTION_WORDS.intersection(words)
-    )
+    if not _REPRO_AUDIT_OWNERS.intersection(words[1:benchmark]):
+        return False
+    index = benchmark + 1
+    while index < len(words) and words[index] in _REPRO_AUDIT_RECORD_WORDS:
+        index += 1
+    if index == len(words) or words[index] not in _REPRO_AUDIT_RELATIONS:
+        return False
+    index += 1
+    for _ in range(2):
+        if index < len(words) and words[index] in _REPRO_AUDIT_RELATION_FILLERS:
+            index += 1
+    return index < len(words) and words[index] in _REPRO_AUDIT_TARGETS
 
 
 @lru_cache(maxsize=1)
@@ -6081,8 +6106,8 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # boost and stands down no guard.
     "market-research": _market_research_offers_itself,
     # `repro-audit`: a lead comparison verb over the person's own HellaSwag
-    # record and a paper's report (`_repro_audit_offers_itself`). No boost, no
-    # stand-down.
+    # record, related straight to a paper's report, with no request anywhere
+    # for new numbers (`_repro_audit_offers_itself`). No boost, no stand-down.
     "repro-audit": _repro_audit_offers_itself,
 }
 # A skill whose admission reads where the data goes reads a stricter predicate

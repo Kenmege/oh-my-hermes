@@ -135,6 +135,22 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("repro-audit-two-papers", "Two papers' numbers are not the person's own record", "Compare the HellaSwag results reported by two different papers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-last-week", "Comparing two own runs has no paper target", "Compare my HellaSwag results with last week's", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-then-rerun", "A rerun request asks for new numbers", "Compare this HellaSwag log to the paper and then rerun it with 10-shot", "answer_clarification", "", "repro-audit"),
+    # Execution is read by stem over the whole request (#2324 review): a
+    # hyphen, an -ing form, retraining, fine-tuning, "again" and a later
+    # sentence each ask for new numbers too.
+    RoutingPrecisionCase("repro-audit-hyphen-rerun", "A hyphenated rerun asks for new numbers", "Check my HellaSwag log against the paper and re-run whatever looks off", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-rerunning", "An -ing rerun asks for new numbers", "Compare this HellaSwag results file to the paper before rerunning the job", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-retrain", "Retraining is producing a new model", "Verify my HellaSwag score against the paper and retrain the head if it is lower", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-fine-tune", "Fine-tuning is producing a new model", "Compare our HellaSwag results with the paper so we can fine-tune further", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-again", "Doing the eval again asks for new numbers", "Check my HellaSwag score against the paper, then do the eval again", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-keep-training", "Training the model is producing new numbers", "Check this HellaSwag log against the paper while I keep training the model", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-later-sentence-run", "A run asked in a later sentence still asks for new numbers", "Audit my HellaSwag log against the paper. After that, run it once more on the new checkpoint.", "answer_clarification", ""),
+    # Only record words may sit between the benchmark and the comparison
+    # relation: a file's upload state or a table before a deadline is not a
+    # comparison with the paper.
+    RoutingPrecisionCase("repro-audit-upload-state", "Whether a log is uploaded is not a comparison", "Verify this HellaSwag log file is uploaded with the paper artifacts", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-cited-log", "Without a comparison relation the paper only cites the log", "Check my HellaSwag log the paper appendix cites", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-score-table", "A table checked before sending a paper is writing work", "Check our HellaSwag score table before sending the paper to reviewers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),
     RoutingPrecisionCase("docking-boat-reservation", "Boat docking is not a molecular search", "Explain the boat docking reservation policy.", "answer_directly", "direct_answer", "molecular-docking"),
