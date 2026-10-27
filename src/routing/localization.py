@@ -736,7 +736,7 @@ def normalized_phrase(value: str) -> str:
 
 
 def phrase_is_spoken(message: str, phrase: str) -> bool:
-    """True when `phrase` occurs in `message` as its own run of Latin text.
+    """True when `phrase` occurs in `message` as its own run of words.
 
     Plain containment cannot tell a phrase that was said from a phrase that
     merely happens to spell part of a longer word. `loop` is inside
@@ -754,6 +754,12 @@ def phrase_is_spoken(message: str, phrase: str) -> bool:
     CJK trigger in the language packs: `アップロード` inside
     `大きなpdfのアップロード` is the phrase, spoken normally.
 
+    Cyrillic and Greek are written with spaces, so they get the same edges as
+    ASCII, and for the same reason: `ревью` inside `превью` and `выкати`
+    inside `выкатил` are other words (#2284). Both sides must be letters of
+    the same script, as both must be ASCII for Latin, so a Latin name glued to
+    a Russian word keeps the reading it had before.
+
     A phrase EXTENDED on the right is a different question, and the answer
     depends on how much the phrase has already pinned down. One word extended
     is a different word: `asked` is not `ask`. Several words extended is the
@@ -770,22 +776,36 @@ def phrase_is_spoken(message: str, phrase: str) -> bool:
     require_right_edge = " " not in phrase
     start = message.find(phrase)
     while start != -1:
-        if not _continues_a_latin_word(message, start - 1, phrase[0]):
+        if not _continues_a_spaced_word(message, start - 1, phrase[0]):
             end = start + len(phrase)
-            if not require_right_edge or not _continues_a_latin_word(message, end, phrase[-1]):
+            if not require_right_edge or not _continues_a_spaced_word(message, end, phrase[-1]):
                 return True
         start = message.find(phrase, start + 1)
     return False
 
 
-def _continues_a_latin_word(message: str, index: int, edge: str) -> bool:
+def _continues_a_spaced_word(message: str, index: int, edge: str) -> bool:
     if index < 0 or index >= len(message):
         return False
-    return _is_latin_word_character(message[index]) and _is_latin_word_character(edge)
+    script = _spaced_word_script(edge)
+    return bool(script) and _spaced_word_script(message[index]) == script
 
 
-def _is_latin_word_character(character: str) -> bool:
-    return character.isascii() and character.isalnum()
+def _spaced_word_script(character: str) -> str:
+    """The space-delimited script `character` spells a word in, or "" for any other.
+
+    CJK, Hangul and every script not named here answer "", so their edges are
+    never checked.
+    """
+    if character.isascii():
+        return "latin" if character.isalnum() else ""
+    if not character.isalpha():
+        return ""
+    if "\u0400" <= character <= "\u052f":
+        return "cyrillic"
+    if "\u0370" <= character <= "\u03ff" or "\u1f00" <= character <= "\u1fff":
+        return "greek"
+    return ""
 
 
 @lru_cache(maxsize=8192)

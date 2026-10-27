@@ -873,6 +873,20 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Normalized actor/objective follow-up adds seven employer contrasts.
             # The pi-family runtime rename: `family` alone never names the
             # executor readiness owner (+1).
+            # The Russian trigger pack adds three chat turns its generic words
+            # dispatched or named before they were held back to whole phrases:
+            # a weekend chores plan, a family trip plan and a bank site down (3).
+            # The ru pack review (#2301): twenty everyday Russian turns that say
+            # a pack word in its everyday sense or inside a longer word -- a
+            # fence to fix, a lift that does not work, a film review, an app
+            # preview, a past-tense remembered, a car rolled out of a garage,
+            # a family budget, an estate agent (+20). Then two turns where a
+            # held-back phrase inside a longer one of the same skill scored
+            # twice and dispatched: a grandmother's "запомни это" and metro
+            # tokens (+2). Then three turns where two held-back phrases of one
+            # skill, overlapping or apart, summed to a dispatch: reports to the
+            # bosses already handed in, a secretary's weekly report, a vague
+            # geometry problem (+3).
             # show-reel promo/demo/launch/trailer names: the same words as a
             # playback fault, an edit, an upload, a conversion, a chained post,
             # a towed trailer, a video call and a renderer install (+8).
@@ -887,7 +901,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # quoted, curly-quoted, `>`-quoted, fenced or linked fault (8), a
             # three-digit v-version (1), and a with-adjunct that does not end
             # the sentence (1) (+10).
-            expected=1155,
+            expected=1183,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1392,11 +1406,33 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Actor/objective follow-up adds two third-person candidate controls.
             # The pi-family runtime rename: asking whether pi-family is ready
             # checks executor readiness (+1).
+            # The Russian trigger pack adds eleven requests that fell back
+            # without it: code review, build failure (bare and with a compile
+            # error), an implementation plan, a bare make-a-plan clarify, a
+            # site accessibility check, deep research, a task graph, what is
+            # running, prod down and save to memory (11).
+            # The ru pack review (#2301): five of those now ask instead of
+            # dispatching, because their words are everyday ones (the build,
+            # site accessibility, task graph, what agents do, save to memory;
+            # same count), plus a screen-reader check, remember-this, a bug, a
+            # landing page, a tech-debt audit, a commit message, the logs and
+            # IT-jargon research, which dispatch on a software word (+8). Then
+            # the nested-phrase fix: "сделай ревью кода" and "запомни это" ask
+            # instead of dispatching on a double count (same count), and a
+            # pull-request review dispatches on its own word (+1). A skill now
+            # credits one held-back pack phrase per message, so an
+            # implementation plan asks instead of dispatching (same count);
+            # `компиляции` is a software word, so the build failure with a
+            # compile error still dispatches. That credit is the ru pack's
+            # only: three Korean requests whose held-back phrases add up on
+            # purpose (chart styling, an architecture diagram with the code
+            # structure, model serving with a serving benchmark) still
+            # dispatch (+3).
             # show-reel promo/demo/launch/trailer names, a two-word duration
             # and a renderer-led brief, each of which dispatched another lane
             # or asked on main (+8).
             # A with-adjunct closes a promo video brief (+1).
-            expected=1140,
+            expected=1163,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

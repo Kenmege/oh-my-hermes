@@ -30,6 +30,7 @@ import collections
 import unittest
 
 from omh.routing.input_language import (
+    SCRIPT_CYRILLIC,
     SCRIPT_HAN,
     SCRIPT_HANGUL,
     SCRIPT_KANA,
@@ -285,9 +286,10 @@ class RoutingLanguagePolicyTests(unittest.TestCase):
         self.assertGreater(counts[SCRIPT_HANGUL], 100)
         self.assertGreater(counts[SCRIPT_HAN], 50)
         self.assertGreater(counts[SCRIPT_KANA], 50)
+        self.assertGreater(counts[SCRIPT_CYRILLIC], 100)
         self.assertEqual(
             set(trigger_backed_scripts()),
-            {SCRIPT_LATIN, SCRIPT_HANGUL, SCRIPT_HAN, SCRIPT_KANA},
+            {SCRIPT_LATIN, SCRIPT_HANGUL, SCRIPT_HAN, SCRIPT_KANA, SCRIPT_CYRILLIC},
         )
 
     def test_the_shipped_packs_are_what_makes_a_script_trigger_backed(self) -> None:
@@ -299,7 +301,7 @@ class RoutingLanguagePolicyTests(unittest.TestCase):
         # `trigger_backed_scripts()`: Latin was already backed by the English
         # catalog, so a Latin pack adds a language to a supported script rather
         # than a script to the supported set.
-        self.assertEqual(set(shipped_trigger_pack_languages()), {"ko", "ja", "zh", "id", "vi"})
+        self.assertEqual(set(shipped_trigger_pack_languages()), {"ko", "ja", "zh", "id", "vi", "ru"})
 
     def test_every_routable_skill_is_reachable_in_english(self) -> None:
         missing = [
@@ -319,13 +321,13 @@ class RoutingLanguagePolicyTests(unittest.TestCase):
         self.assertEqual(detect_input_script("Claude Code로 바로 열어줘"), SCRIPT_HANGUL)
 
     def test_scripts_without_a_trigger_table_are_marked_model_selection(self) -> None:
-        # Cyrillic and Devanagari ship no pack, so a deterministic trigger score
+        # Devanagari and Arabic ship no pack, so a deterministic trigger score
         # is not evidence of intent for them and the contract has to say so --
-        # the same statement the Kana and Han rows made before their packs
-        # existed.
+        # the same statement the Kana, Han, and Cyrillic rows made before their
+        # packs existed.
         for message, expected_script in (
-            ("почему сборка падает", "cyrillic"),
             ("बिल्ड क्यों फेल हो रहा है", "devanagari"),
+            ("لماذا يفشل البناء", "arabic"),
         ):
             with self.subTest(message=message):
                 script = detect_input_script(message)
@@ -338,15 +340,16 @@ class RoutingLanguagePolicyTests(unittest.TestCase):
             "빌드 실패 원인 봐줘",
             "ビルドが失敗した理由を教えて",
             "为什么构建失败了",
+            "почему сборка падает",
         ):
             with self.subTest(message=message):
                 self.assertEqual(routing_language_support(detect_input_script(message)), SUPPORT_TRIGGER_BACKED)
 
     def test_routing_input_language_states_the_boundary(self) -> None:
-        payload = routing_input_language("почему сборка падает")
+        payload = routing_input_language("बिल्ड क्यों फेल हो रहा है")
 
         self.assertEqual(payload["schema_version"], "routing_input_language/v1")
-        self.assertEqual(payload["script"], "cyrillic")
+        self.assertEqual(payload["script"], "devanagari")
         self.assertEqual(payload["trigger_support"], SUPPORT_MODEL_SELECTION_REQUIRED)
         self.assertIn("not evidence of intent", str(payload["boundary"]))
         self.assertIn(SCRIPT_KANA, payload["trigger_backed_scripts"])

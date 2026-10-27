@@ -78,7 +78,11 @@ class SkillContextCostTests(unittest.TestCase):
         # Pre-feature producer measurements, not token/latency estimates. This
         # feature changes opening actions only, never indexed descriptions.
         self.assertEqual(skill_index_chars(), 13_243)  # Career adds its bounded 86-character entry.
-        baseline = {'research': 19_587, 'web-research': 11_495, 'source-finder': 9_221}
+        # research and web-research add the shipped `ru` trigger pack's routing
+        # signals (+446 and +316 bytes, after its review dropped the everyday
+        # and nested phrases) to their pre-feature bodies; the search guidance
+        # increment itself (286 and 305) is unchanged.
+        baseline = {'research': 20_033, 'web-research': 11_811, 'source-finder': 9_221}
         for name, before in baseline.items():
             record = skill_record(name)
             body = record.body().content

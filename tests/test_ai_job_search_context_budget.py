@@ -3,8 +3,9 @@
 Baseline: 245d34d7135ba0fba18afbf7f4151d5c4f6a5f37 (integration main).
 Legacy body hashes match main's producer-derived digest fixture after restoring
 only the research lane cardinality; integration-1/merged-measurements.json
-records the combined repeated-byte measurement. The unchanged index, capability
-and registry pins retain their original 85673e100 measurements. Hashes pin existing
+records the combined repeated-byte measurement. The index pin retains its
+original 85673e100 measurement; the capability and registry pins are re-derived
+for the ru trigger pack's sibling-row triggers. Hashes pin existing
 content, not just its size, so removing a safeguard cannot finance this feature.
 """
 from __future__ import annotations
@@ -64,10 +65,14 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # model-setup row refresh (-3); no other row moved.
             # Then the promo postmortem's visual-qa quality-bar rule grows that
             # sibling row: 522328 -> 523199.
-            # 523199 -> 523200 and the digest re-derived: the show-reel row's
+            # 523199 -> 523243 and the digest re-derived: the ru trigger pack,
+            # after its review, moves sibling rows' trigger previews and `+N more`
+            # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
+            # career row is unchanged.
+            # 523243 -> 523244 and the digest re-derived: the show-reel row's
             # trigger count went +5 -> +13 (+1); no other row moved.
-            (skill_capabilities, 523200, FULL_ROW_DELTA_CAP,
-             '11f772aa00692e67a22b8f99463e2ef737b924e0e5336e1e6f284b8517fe72fa',
+            (skill_capabilities, 523244, FULL_ROW_DELTA_CAP,
+             '56cdb41797110101fdda9115183502c4b8bc29eb6b88de5a7049981d4cb56bda',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -96,9 +101,13 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertEqual(len(added[0].encode()), 227)
         # Remove only the new row and the explicit operator membership token.
         legacy = [line.replace(', `ai-job-search`', '') for line in lines if line not in added]
-        self.assertEqual(_digest(legacy), '6c130e8ecad1e2ea6fada96a8f3b555b3b80f40d63ec64ea6872c1c49bf941e4')
+        # Re-derived for the ru trigger pack: `running-work-board` gains
+        # `что сейчас делается` and `dag-ulw` three Cyrillic triggers (+123 bytes).
+        # The pack review replaces `что сейчас делается` with `что делают
+        # агенты` (-4 bytes).
+        self.assertEqual(_digest(legacy), '71240381ad2738a6e954085a6c1a6c0fd32c1503a90fd4fb575c370a803abd98')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 32874)
+        self.assertEqual(baseline, 32993)
         self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
@@ -132,7 +141,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # and role-slot wording); only model-setup moves versus main.
         # Then the promo postmortem in content-operator, design-quality-gate,
         # show-reel, and visual-qa.
-        self.assertEqual(_digest(legacy_hashes), 'e0b95cb486a60fe02d063d2afde0f842a911135c370e4c1f7bc63b3d3d9cc40a')
+        # Re-derived for the ru trigger pack: the 49 bodies it covers gain
+        # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
+        self.assertEqual(_digest(legacy_hashes), 'cc6d48c3e3cc343c56d48c23d2f774235159aa3365771dbca6777c747aff36bb')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
