@@ -29,10 +29,9 @@ from dataclasses import dataclass
 from .escapes import strip_escapes
 from .gateway_contract import MODEL_PROVIDER_FLAG, MODEL_SESSION_FLAG, model_switch_value, plain_word
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
-from .session_picker import picker_frame
+from .session_picker import picker_frame, picker_row
 from .style import Line, Span
 from .theme import Theme
-from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
@@ -186,11 +185,5 @@ class ModelPicker:
         return frame.lines
 
     def _row(self, row: ModelRow, highlighted: bool, width: int, theme: Theme) -> Line:
-        style = theme.menu_current if highlighted else theme.menu
-        lead = f" {CURRENT_MARK if row.current else ' '} "
-        meta = f" {row.provider_name} "
-        room = width - cell_width(lead) - cell_width(meta)
-        if room < 8:
-            return truncate_line((Span(lead + row.model, style),), width)
-        label = truncate(row.model, room)
-        return (Span(lead + label + " " * (room - cell_width(label)) + meta, style),)
+        return picker_row(highlighted, f"{CURRENT_MARK if row.current else ' '} ", row.model, row.provider_name, width,
+                          theme)

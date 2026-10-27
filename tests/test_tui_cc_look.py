@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import unittest
 from unittest import mock
 
@@ -47,9 +48,9 @@ from omh.tui.composer import PROMPT
 from omh.tui.history import HistorySearch
 from omh.tui.keys import BACKSPACE, CHAR, Key
 from omh.tui.session_picker import FILTER_PROMPT
-from omh.tui.style import Span
+from omh.tui.style import Span, is_fill
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import build_theme, contrast_ratio, kind_style
+from omh.tui.theme import LAUNCH_PRESETS, TEXT_CONTRAST, build_theme, contrast_ratio, kind_style, with_prompt_band
 from omh.tui.transcript import (
     NOTICE_INFO,
     PULSE_SECONDS,
@@ -271,6 +272,10 @@ def working_rows(app, cols: int = 100) -> list[str]:
     return [line for line in lines_text(app._tail(cols)) if line][-2:]
 
 
+# A completion menu row: the pointer or its blank column, a name, then its summary (not the composer or the info line).
+MENU_ROW = re.compile(r"(❯|\s) /\S+ {2,}\S")
+
+
 class WorkingRowTests(unittest.TestCase):
     def busy(self, rows: int = 24, **options: object):
         clock = Clock()
@@ -385,18 +390,18 @@ class WorkingRowTests(unittest.TestCase):
         type_text(app, "/")
         screen = drawn(app)
         self.assertTrue([line for line in screen if "Tip:" in line], screen)  # nothing above the composer moved
-        menu = [line for line in screen if line.startswith(" /")]
+        menu = [line for line in screen if MENU_ROW.match(line)]
         self.assertEqual(len(menu), 5, screen)
         alone, _clock = self.busy(rows=TIP_MIN_ROWS)
         type_text(alone, "/")
         with mock.patch("omh.tui.app.TIP_MIN_ROWS", TIP_MIN_ROWS + 1):  # the same frame with no tip
-            self.assertEqual([line for line in drawn(alone) if line.startswith(" /")], menu)
+            self.assertEqual([line for line in drawn(alone) if MENU_ROW.match(line)], menu)
         listing, _clock = self.busy()
         listing.list_selected = 0  # the agent list has the keys
         self.assertTrue([line for line in lines_text(listing._tail(100)) if "Tip:" in line])
 
 class PromptRowTests(unittest.TestCase):
-    def test_a_prompt_is_a_dim_mark_and_dim_text_on_no_band(self) -> None:
+    def test_without_a_prompt_band_a_prompt_is_a_dim_mark_and_dim_text_and_no_fill(self) -> None:
         for theme in (THEME, build_theme(SKIN_THEMES[0], "#1E1E1E"), build_theme(SKIN_THEMES[0], "#FFFFFF")):
             rows = block_rows(UserBlock("first line\nsecond line"), 40, theme)
             with self.subTest(theme=theme.name):
@@ -404,7 +409,23 @@ class PromptRowTests(unittest.TestCase):
                 self.assertEqual({row[0] for row in rows}, {Span("┃", theme.dim)})  # a grey rail down the prompt
                 self.assertEqual(rows[0][2], Span("❯ ", theme.dim))
                 self.assertEqual({span.style for row in rows for span in row[3:]}, {theme.muted})  # after the lead
-                self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no band, no fill
+                self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no prompt_band set: no fill
+
+    def test_a_sent_prompt_runs_on_the_launch_look_s_band_to_the_right_edge(self) -> None:
+        # Owner's pick of 2026-10-27 ("보낸프롬프트 배경색"): every row of a sent prompt, a wrapped and a blank one
+        # too, on one band that ends at the right edge (a fill, not padding), its words at 4.5:1 on it.
+        for background in ("#0D1117", "#FFFFFF"):
+            for look in LAUNCH_PRESETS:
+                theme = with_prompt_band(build_theme(SKIN_THEMES[0], background), SKIN_THEMES[0], background, look)
+                rows = block_rows(UserBlock("first line\n\n" + "word " * 12), 30, theme)
+                with self.subTest(background=background, look=look):
+                    self.assertEqual(len(rows), 5)  # the first line, the blank one, and the long one wrapped onto three
+                    self.assertTrue(all(is_fill(row[-1]) and row[-1].style.bg == theme.prompt_band.bg for row in rows))
+                    self.assertEqual({span.style.bg for row in rows for span in row}, {theme.prompt_band.bg})
+                    words = [span for row in rows for span in row[3:-1] if span.text.strip()]
+                    self.assertTrue(words)
+                    for span in words:
+                        self.assertGreaterEqual(contrast_ratio(span.style.fg, theme.prompt_band.bg), TEXT_CONTRAST)
 
     def test_a_prompt_the_queue_sent_says_so_in_the_same_dim(self) -> None:
         (row,) = block_rows(UserBlock("next one", from_queue=True), 40, THEME)

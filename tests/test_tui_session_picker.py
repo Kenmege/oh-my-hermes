@@ -84,14 +84,16 @@ class LinesTests(unittest.TestCase):
         self.assertEqual(len(lines), 5)
         self.assertEqual(line_text(lines[-1]), "❯ type to filter")  # the filter, where the composer was
         current, other, old = (line_text(line) for line in lines[1:4])
-        self.assertTrue(current.startswith(" ● Reply with ok"))
+        self.assertTrue(current.startswith("❯ ● Reply with ok"))  # the pointer, then the current session's mark
         self.assertTrue(current.rstrip().endswith("just now · 14 messages"))
-        self.assertTrue(other.startswith("   Refactor the router"))
+        self.assertTrue(other.startswith("    Refactor the router"))
         self.assertTrue(other.rstrip().endswith("2h ago · 1 message"))
         self.assertTrue(old.rstrip().endswith("3d ago · 40 messages"))
         self.assertTrue(all(line_width(line) <= 60 for line in lines))
-        self.assertEqual(lines[1][0].style, DEFAULT_THEME.menu_current)
-        self.assertEqual(lines[2][0].style, DEFAULT_THEME.menu)
+        # The highlighted name in the accent, the others in the terminal's foreground; no row has a fill.
+        self.assertEqual(next(span for span in lines[1] if "Reply" in span.text).style, DEFAULT_THEME.menu_current)
+        self.assertEqual(next(span for span in lines[2] if "Refactor" in span.text).style, DEFAULT_THEME.menu)
+        self.assertEqual({span.style.bg for line in lines for span in line}, {None})
 
     def test_rows_scroll_to_keep_the_highlighted_one_and_the_page_follows_the_room(self) -> None:
         chooser = picker(index=2)
@@ -132,10 +134,10 @@ class FrameTests(unittest.TestCase):
         chooser = picker(index=1)
         one = chooser.lines(60, DEFAULT_THEME, 1, NOW)
         self.assertEqual(len(one), 1)
-        self.assertTrue(line_text(one[0]).startswith("   Refactor the router"), one)
-        self.assertEqual(one[0][0].style, DEFAULT_THEME.menu_current)
+        self.assertTrue(line_text(one[0]).startswith("❯   Refactor the router"), one)
+        self.assertEqual(next(span for span in one[0] if "Refactor" in span.text).style, DEFAULT_THEME.menu_current)
         two = [line_text(line) for line in chooser.lines(60, DEFAULT_THEME, 2, NOW)]
-        self.assertTrue(two[0].startswith("   Refactor the router"), two)
+        self.assertTrue(two[0].startswith("❯   Refactor the router"), two)
         self.assertEqual(two[1], "❯ type to filter")
         self.assertIn("no session matches", line_text(picker(query="zzz").lines(60, DEFAULT_THEME, 1, NOW)[0]))
 

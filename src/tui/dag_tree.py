@@ -68,6 +68,7 @@ from typing import Any
 
 from .aura import aura_text
 from .panels import DAG_INDENT, SPINNER_FRAMES, dag_style
+from .session_picker import pointer
 from .style import TRUECOLOR, Line, Span
 from .subagents import (
     COMPLETED, FAILED_STATUSES, INTERRUPTED, LOG_PROGRESS, LOG_THINKING, LOG_TOOL, QUEUED, RUNNING, Agent, LogRow,
@@ -492,8 +493,8 @@ def tree_lines(
     aura: int | None = None,
 ) -> tuple[list[Line], TreeState]:
     """The tree in `cap` rows at most, none wider than `width`, painted at `depth` as the graph is everywhere
-    (`style.color_depth`), and what the keys need from it; `selected` (a key of the state's `order`) is one
-    `menu_current` bar across the row while the tree has the keys, else None. `aura` is the phase a running node's
+    (`style.color_depth`), and what the keys need from it; `selected` (a key of the state's `order`) is the
+    row marked with the menus' pointer and drawn in `menu_current` while the tree has the keys, else None. `aura` is the phase a running node's
     title stands at in the dag-ulw aura; None (the aura does not move here) draws it as every title is drawn."""
     from ..plugin_bundle.omh.delegation_view import header_text
 
@@ -520,9 +521,9 @@ def tree_lines(
         key = item.key if item is not None and kind in ("layer", "node") else ""
         key = MORE_KEY + item.label if kind == "more" and item is not None else key
         line: Line = tuple(spans)
-        if key and key == selected:  # one bar across the row, as the agent list highlights its row
+        if key and key == selected:  # the pointer in the row's indent and the row bold in the accent, as every menu
             text = "".join(span.text for span in spans)
-            line = (Span(text + " " * max(width - cell_width(text), 0), theme.menu_current),)
+            line = (pointer(True, theme), Span(text.removeprefix(DAG_INDENT), theme.menu_current))
         line = tuple(span if span.style.depth == depth else Span(span.text, replace(span.style, depth=depth))
                      for span in line)
         done = kind == "layer" and item is not None and not expanded[item.key] and all(

@@ -29,8 +29,9 @@ the edges in joints, in the delegation view's charset (`unicode`, or
    record in full, each platform's error, each memory target's gauge with its
    exact figures, and sessions by source), then a table box, newest activity
    first, under a muted header row and a rule, one divider between the title
-   and the figures, numbers right-aligned, the highlighted row banded from edge
-   to edge, and `SESSION_DROPS` given up in order when the title would run
+   and the figures, numbers right-aligned, the highlighted row marked `❯` with
+   its title bold in the accent and its figures in the text colour (no fill,
+   as every menu), and `SESSION_DROPS` given up in order when the title would run
    short. Delegated children (`source = 'subagent'`) are counted on level 1
    and not listed;
 3. one session: a box of its source, messages, age, model, tokens and cost,
@@ -118,9 +119,9 @@ from .keys import CHAR, DOWN, END, ENTER, ESCAPE, HOME, LEFT, PAGE_DOWN, PAGE_UP
 from .markdown import clean_text
 from .pager import Pager
 from .prompts import CHOICE_MARK
-from .session_picker import age_text
+from .session_picker import age_text, pointer
 from .style import Line, Span, Style
-from .theme import BLACK, EDGE_CONTRAST, TEXT_CONTRAST, WHITE, Theme, contrast_ratio
+from .theme import BLACK, EDGE_CONTRAST, WHITE, Theme, contrast_ratio
 from .width import cell_width, cluster_width, clusters, line_width, truncate, truncate_line, wrap_line
 
 BOARD_TITLE = "Hermes bots"
@@ -1265,26 +1266,23 @@ def _edge(kind: str, width: int, joints: Sequence[int], edge: Style, charset: st
     return _cells_line(cells)
 
 
-def _box_row(columns: Sequence[tuple[Line, int]], edge: Style, charset: str, band: Style | None = None) -> Line:
-    """One row of a box: each column's line padded to its width, a pad either side, separators between them; on a
-    `band`, everything between the outer edges takes it, so the band runs from edge to edge."""
+def _box_row(columns: Sequence[tuple[Line, int]], edge: Style, charset: str) -> Line:
+    """One row of a box: each column's line padded to its width, a pad either side, separators between them."""
     vertical = BOX_GLYPHS[charset]["│"]
     inner: list[Span] = []
     for number, (line, width) in enumerate(columns):
         if number:
             inner.append(Span(vertical, edge))
         inner += [Span(" "), *_pad(line, width), Span(" ")]
-    if band is not None:
-        inner = [Span(span.text, _on(band, span.style, span.text)) for span in inner]
     return (Span(vertical, edge), *inner, Span(vertical, edge))
 
 
 def _panel(widths: Sequence[int], rows: Sequence[Sequence[Line]], edge: Style, charset: str, *,
            top: tuple[Line, Line] = ((), ()), bottom: tuple[Line, Line] = ((), ()), after_first: bool = False,
-           rules: Sequence[int] = (), bands: Mapping[int, Style] | None = None) -> list[Line]:
+           rules: Sequence[int] = ()) -> list[Line]:
     """A rounded box in the launch card's style (`launch_card.boxed`) with columns `widths` wide: its top and bottom
     edges carry `top` and `bottom` (left, right), the left part past the first column when `after_first`; a rule
-    goes in before each row numbered in `rules`, and a row numbered in `bands` runs on that band."""
+    goes in before each row numbered in `rules`."""
     width = _box_width(widths)
     joints = _joints(widths)
     after = joints[0] if after_first and joints else 0
@@ -1292,7 +1290,7 @@ def _panel(widths: Sequence[int], rows: Sequence[Sequence[Line]], edge: Style, c
     for number, row in enumerate(rows):
         if number in rules:
             lines.append(_edge("rule", width, joints, edge, charset))
-        lines.append(_box_row(list(zip(row, widths)), edge, charset, (bands or {}).get(number)))
+        lines.append(_box_row(list(zip(row, widths)), edge, charset))
     lines.append(_edge("bottom", width, joints, edge, charset, *bottom, after=after))
     return lines
 
@@ -1627,15 +1625,6 @@ def profile_lines(
     return [truncate_line(line, cols) for line in lines], span
 
 
-def _on(band: Style, style: Style, text: str = "") -> Style:
-    """`style`'s colour on the row's band, so the band runs unbroken from edge to edge; the band's own ink where
-    `style`'s colour would not read on it (a muted word on the highlighted band): 4.5:1 for words, 3:1 for a lone
-    mark, so a state's colour survives wherever it can."""
-    floor = TEXT_CONTRAST if any(character.isalnum() for character in text) or not text else EDGE_CONTRAST
-    readable = style.fg is not None and band.bg is not None and contrast_ratio(style.fg, band.bg) >= floor
-    return replace(style, fg=style.fg if readable or band.bg is None else band.fg, bg=band.bg, reverse=band.reverse)
-
-
 def _session_table(sessions: Sequence[SessionRow], now: float) -> list[dict[str, str]]:
     """Each session's level-2 cells by column, the unit in the column's header; "" where the store recorded nothing."""
     table = []
@@ -1713,16 +1702,13 @@ def session_lines(
     header = {name: SESSION_HEADERS[name] for name in SESSION_COLUMNS}
     rows: list[list[Line]] = [[(Span(" " * len(CHOICE_MARK) + "title", theme.muted),),
                                *([_session_block(header, keep, table, theme.muted)] if keep else [])]]
-    bands: dict[int, Style] = {}
     for index, (row, cells) in enumerate(zip(snapshot.sessions, table)):
         highlighted = index == selected
-        mark = CHOICE_MARK if highlighted else " " * len(CHOICE_MARK)
-        label = truncate(row.title or _text(row.id), max(widths[0] - len(mark), 1))
-        title = (Span(mark, theme.prompt), Span(label, theme.text))
-        rows.append([title, *([_session_block(cells, keep, table, theme.muted)] if keep else [])])
-        if highlighted:
-            bands[len(rows) - 1] = theme.menu_current
-    drawn = _panel(widths, rows, theme.rule, charset, top=(head(widths[0] - 2 if keep else cols - 6), ()), rules=(1,), bands=bands)
+        label = truncate(row.title or _text(row.id), max(widths[0] - len(CHOICE_MARK), 1))
+        title = (pointer(highlighted, theme), Span(label, theme.menu_current if highlighted else theme.text))
+        figures = theme.text if highlighted else theme.muted
+        rows.append([title, *([_session_block(cells, keep, table, figures)] if keep else [])])
+    drawn = _panel(widths, rows, theme.rule, charset, top=(head(widths[0] - 2 if keep else cols - 6), ()), rules=(1,))
     first = len(lines) + 3  # the top edge, the header row and its rule
     lines += drawn
     span = (first + selected, first + selected) if 0 <= selected < len(snapshot.sessions) else (0, 0)

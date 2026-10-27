@@ -86,7 +86,8 @@ def rows_under_composer(rows: int) -> int:
 
 
 def info_row_of(screen: list[str]) -> int:
-    """The info line's screen row: the last row that is not blank, since every row under the region is."""
+    """The region's last screen row (the badge row under the info line, or the info line where the region has no
+    badge row): the last row that is not blank, since every row under the region is."""
     return max(index for index, row in enumerate(screen) if row)
 
 
@@ -576,7 +577,7 @@ class AppBottomRowsTests(unittest.TestCase):
 
         def menu(app: object) -> None:
             type_text(app, "/")
-            self.assertTrue([row for row in drawn(app) if row.startswith(" /") or row.startswith("/")])
+            self.assertTrue([row for row in drawn(app) if row.startswith(("❯ /help", "  /keys"))])
             app._on_input(Key(BACKSPACE))
 
         def question(app: object) -> None:
@@ -920,12 +921,14 @@ class AgentViewBelowTests(unittest.TestCase):
                         shown = view_rows(app)
                         self.assertEqual(shown, min(cap, running + done + 1))
                         top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
-                        # The top rule, one input row, its bottom rule, the info line, then the view.
-                        self.assertEqual(top, rows - 1 - shown - 3)
-                        self.assertGreaterEqual(top, rows - 1 - cap - 3)
-                        self.assertGreaterEqual(top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3)
+                        badge = app.frame_budget.badge  # the branch and OMH Native row, the region's last
+                        # The top rule, one input row, its bottom rule, the info line, then the view and the badge.
+                        self.assertEqual(top, rows - 1 - shown - 3 - badge)
+                        self.assertGreaterEqual(top, rows - 1 - cap - 3 - badge)
+                        self.assertGreaterEqual(
+                            top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3 - badge)
                         self.assertTrue(screen[top + 3].startswith("  "), screen)  # the info line, under the composer
-                        self.assertTrue(screen[rows - 1], "the view ends on the screen's last row")
+                        self.assertTrue(screen[rows - 1], "the region ends on the screen's last row")
 
     def test_the_usual_cap_measured(self) -> None:
         # A one-row composer's input row on the bottom rows, with a view at its usual cap, 1-based as a person
