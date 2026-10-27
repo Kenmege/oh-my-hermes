@@ -52,7 +52,12 @@ class SkillContextCostTests(unittest.TestCase):
         # expanding to the roughly 3% headroom prior entries permitted.
         # The feature-cost regression pins legacy body bytes, bounds these
         # two sections and also enforces (current - 1,943) < 126,000.
-        self.assertLess(profile["repeated"]["bytes"], 127_943)
+        # 127,943 -> 129,950: HEAD c532cd5c4 measures 126,593; adding sprite-forge
+        # and the visual-qa/show-reel/deliverable-package rails measures 128,600.
+        # The exact +2,007 is sprite-forge's mandatory Workflow Lane (519) and
+        # Runtime Evidence (1,446) plus 42 sibling rail bytes. The old allowance
+        # (1,350 bytes) is preserved, not widened.
+        self.assertLess(profile["repeated"]["bytes"], 129_950)
 
     def test_ulw_context_reports_bounded_static_body_and_progressive_references(self) -> None:
         payload = skill_context_cost_payload()
@@ -77,7 +82,9 @@ class SkillContextCostTests(unittest.TestCase):
 
         # Pre-feature producer measurements, not token/latency estimates. This
         # feature changes opening actions only, never indexed descriptions.
-        self.assertEqual(skill_index_chars(), 13_243)  # Career adds its bounded 86-character entry.
+        # Career adds its bounded 86-character entry; sprite-forge adds its
+        # 84-character line + newline (13,243 -> 13,328).
+        self.assertEqual(skill_index_chars(), 13_328)
         baseline = {'research': 19_587, 'web-research': 11_495, 'source-finder': 9_221}
         for name, before in baseline.items():
             record = skill_record(name)

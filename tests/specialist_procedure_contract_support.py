@@ -14,6 +14,7 @@ TARGETS = frozenset(
         "geospatial-analysis",
         "biomedical-evidence",
         "molecular-docking",
+        "sprite-forge",
     }
 )
 
@@ -55,6 +56,15 @@ DOMAIN_REVIEW_CONTRACTS = {
             "docking_input_check": {"file_hashes", "format_validation", "source_license", "preparation_choices", "binding_box"},
             "docking_budget_check": {"cpu", "seed", "exhaustiveness", "n_poses", "host_deadline"},
             "docking_execution_check": {"backend_identity", "pose_score_readback", "hashes", "replay", "claim_boundary"},
+        },
+    },
+    "sprite-forge": {
+        "outputs": ("aligned equal-size frames and sheet", "sprite_forge_qc/v1 receipt", "character art-direction record"),
+        "steps": ("sprite_direct", "sprite_process", "sprite_verify"),
+        "checks": {
+            "sprite_input_check": {"grid_layout", "background_key", "cell_division", "source_record"},
+            "sprite_backend_check": {"pillow_version", "command", "exit_code", "script_sha256"},
+            "sprite_qc_check": {"body_scale_cv", "anchor_y_std", "verdict", "output_hashes"},
         },
     },
     "show-reel": {

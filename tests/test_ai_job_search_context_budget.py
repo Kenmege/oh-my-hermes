@@ -46,21 +46,30 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         added = [line for line in lines if line.startswith('    - omh-ai-job-search: ')]
         self.assertEqual(len(added), 1)
         legacy = [line for line in lines if line not in added]
-        self.assertEqual(_digest(legacy), '08c0a6fc44b47bde948aee6ff427eb2e7312bffb627deeb31b32304747d754df')
-        self.assertEqual(len('\n'.join(legacy)), 13157)
-        delta = len('\n'.join(lines)) - 13157
+        # Re-derived 2026-10-27: the sprite-forge skill adds one 84-character
+        # index line (+85 with its newline); dropping only that line reproduces
+        # the previous pin 08c0a6fc44b47bde948aee6ff427eb2e7312bffb627deeb31b32304747d754df / 13157.
+        self.assertEqual(_digest(legacy), 'c062110c0b2f1e5e4f9c082f42e87271efd89972a5dc997e400861385b2b4308')
+        self.assertEqual(len('\n'.join(legacy)), 13242)
+        delta = len('\n'.join(lines)) - 13242
         self.assertGreater(delta, 0)
         self.assertLessEqual(delta, INDEX_DELTA_CAP)
         # A catalog ratchet is exact; do not carry the old row's unused slack.
         self.assertEqual(release.SKILL_INDEX_CHAR_LIMIT, len('\n'.join(lines)))
 
     def test_capability_growth_is_one_bounded_row_without_sibling_edits(self) -> None:
+        # Re-derived 2026-10-27 from both producers. Full: the sprite-forge row
+        # (+3174 with separator) plus deliverable-package's `archived, and
+        # published` states (+21): 522307 -> 525502. Standalone: the sprite-forge
+        # summary (+960): 141700 -> 142660. Dropping the sprite-forge row and
+        # reverting that one description reproduces the previous digests
+        # 774f8789...982a and a108c8d1...6e20.
         for producer, base, cap, expected_hash, limit in (
-            (skill_capabilities, 522307, FULL_ROW_DELTA_CAP,
-             '774f87898595ab3e55d6e1fc98136afeb6c8b542fdfc943b1c5f917db027982a',
+            (skill_capabilities, 525502, FULL_ROW_DELTA_CAP,
+             'f9f792c1b0b29a46621f8d023372ddf0f41dca3ac7f672c1f75c7d264626fae9',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
-            (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
-             'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
+            (standalone_skill_capability_items, 142660, STANDALONE_ROW_DELTA_CAP,
+             'd0c27f9fd83c733621e5e70945fe704ea2c745cf99c79a892655ce85fdb1dba0',
              release.STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
         ):
             with self.subTest(producer=producer.__name__):
@@ -86,9 +95,12 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertEqual(len(added[0].encode()), 227)
         # Remove only the new row and the explicit operator membership token.
         legacy = [line.replace(', `ai-job-search`', '') for line in lines if line not in added]
-        self.assertEqual(_digest(legacy), '6c130e8ecad1e2ea6fada96a8f3b555b3b80f40d63ec64ea6872c1c49bf941e4')
+        # Re-derived 2026-10-27: the sprite-forge trigger row (205 bytes) and its
+        # `, `sprite-forge`` operator token (+16): 32874 -> 33095. Removing only
+        # those reproduces the previous pin 6c130e8ecad1e2ea6fada96a8f3b555b3b80f40d63ec64ea6872c1c49bf941e4.
+        self.assertEqual(_digest(legacy), 'c5f90ee8e229cf2245e2e896eb12fd7cb4a0fd0ed017c1c630a57ac6bc852456')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 32874)
+        self.assertEqual(baseline, 33095)
         self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
@@ -117,14 +129,22 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup's nine Kimi K3 -> Kimi K3.1 Pro mentions on main.
         # Re-derived from both main sources above plus the bounded dag-ulw
         # baseline-verification guidance; only dag-ulw moves versus main.
-        self.assertEqual(_digest(legacy_hashes), '5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3')
+        # Re-derived 2026-10-27: the new sprite-forge body plus the visual-qa /
+        # show-reel / deliverable-package reinforcement rails, which move 15
+        # sibling bodies; HEAD c532cd5c4 reproduces the previous pin
+        # 5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3.
+        self.assertEqual(_digest(legacy_hashes), 'f373687a08e925bcd7951a9ba6ba91880db541ef28f9357f7c0be513bfefc023')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
-        self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
+        # Main's search guidance adds 305. 124650 -> 126657: sprite-forge's
+        # mandatory Workflow Lane (519) + Runtime Evidence (1446) = 1965, plus
+        # 42 bytes of sibling reinforcement rails (+2007).
+        self.assertEqual(legacy['repeated']['bytes'], 126657)
         delta = current['repeated']['bytes'] - legacy['repeated']['bytes']
         self.assertEqual(delta, len(sections['Workflow Lane']) + len(sections['Runtime Evidence']))
         self.assertLessEqual(delta, REPEATED_DELTA_CAP)
-        self.assertLess(current['repeated']['bytes'] - REPEATED_DELTA_CAP, 126_000)
+        # 126_000 -> 128_007: the same measured +2007 as above; no new headroom.
+        self.assertLess(current['repeated']['bytes'] - REPEATED_DELTA_CAP, 128_007)
         feature_refs = [t for t in refs if t.skill_name == FEATURE]
         self.assertEqual(len(feature_refs), 6)
         self.assertLessEqual(sum(len(t.content.encode()) for t in feature_refs), 19397)
