@@ -178,6 +178,21 @@ class SkillRowTests(unittest.TestCase):
                                        ("other", ("ulw-work", "omh-lone"))))
         self.assertEqual((rows.omh, rows.hermes, rows.hermes_categories), (7, 2, ("creative", "devops")))
 
+    def test_an_installed_generation_s_role_directories_still_regroup_as_omh(self) -> None:
+        # An installed generation files its skills under role directories (`guide/omh-plan/SKILL.md`), so Hermes
+        # names them by those categories, not `general`. The card regroups them by name and keeps those categories
+        # off the hermes row. Hermes listing none of them at all (a home naming two generations' packs, #1857's
+        # ambiguity) is what left the owner's card with the hermes row alone; the registration tests pin that.
+        installed = {"guide": ["omh-plan", "omh-lone"], "planner": ["dag-ulw", "ulw-plan"],
+                     "reviewer": ["omh-code-review"], "devops": ["docker"], "creative": ["poem"]}
+        rows = skill_rows(installed, members=lambda: MEMBERS)
+        self.assertEqual(rows.groups, (("ulw", ("dag-ulw", "ulw-plan")), ("plan", ("omh-plan",)),
+                                       ("ship", ("omh-code-review",)), ("other", ("omh-lone",))))
+        self.assertEqual((rows.omh, rows.hermes, rows.hermes_categories), (5, 2, ("creative", "devops")))
+        card = texts(launch_card(DEFAULT_LAUNCH, CardTests.FACTS, paint(), 150, 40, rows))
+        self.assertTrue([row for row in card if "ulw      dag-ulw" in row], card)
+        self.assertTrue([row for row in card if "hermes   creative" in row], card)
+
     def test_names_show_whole_in_columns_and_a_full_group_ends_with_how_many_more(self) -> None:
         names = ("omh-a-name-wider-than-one-column-x",) + tuple(f"omh-skill-number-{index}" for index in range(30))
         rows = texts(grid([("plan", names)], 120, 2, paint()))
@@ -599,13 +614,18 @@ class SwitchTests(unittest.TestCase):
         run.press(Mouse(BUTTON_LEFT, 4, row + 1))  # under the preview, a click still lands on its row
         self.assertEqual(run.app._shown_look(), "violet")
 
-    def test_under_no_color_the_highlight_is_reverse_video(self) -> None:
+    def test_under_no_color_the_highlight_is_the_pointer_and_bold(self) -> None:
+        # No menu has a fill since 2026-10-27, so NO_COLOR draws no reverse band either: the pointer and the bold
+        # name say which row is highlighted.
         run = Launched(env={"NO_COLOR": "1"})
         run.app._theme("")
         rows = run.app.launch_picker.lines(150, run.app.theme, 10, run.app._launch_swatches())
-        highlighted = [span for span in rows[run.app.launch_picker.first_row] if span.text.strip()]
-        self.assertTrue(highlighted[0].style.reverse)
-        self.assertFalse(rows[run.app.launch_picker.first_row + 1][0].style.reverse)
+        highlighted, other = rows[run.app.launch_picker.first_row], rows[run.app.launch_picker.first_row + 1]
+        self.assertTrue(line_text(highlighted).startswith("❯ ● spectrum"), line_text(highlighted))
+        self.assertTrue(line_text(other).startswith("    violet"), line_text(other))
+        self.assertTrue(next(span for span in highlighted if "spectrum" in span.text).style.bold)
+        self.assertFalse(next(span for span in other if "violet" in span.text).style.bold)
+        self.assertFalse([span for row in rows for span in row if span.style.reverse])
 
     def test_tab_completes_a_look_after_theme(self) -> None:
         run = Launched()

@@ -91,15 +91,16 @@ class NoColourTests(unittest.TestCase):
         self.assertIn("7", footer[1].split(";"))
         self.assertEqual(colour_codes(written(app)), [])
 
-    def test_the_menus_current_row_is_reversed_and_bold(self) -> None:
+    def test_the_menus_current_row_is_the_pointer_and_bold_and_nothing_is_reversed(self) -> None:
+        # No menu has a fill since 2026-10-27: the highlighted row is `❯` and a bold name at every depth.
         app = scene_app({"NO_COLOR": "1"})
         app.turn_pending = False
         type_text(app, "/")
         app._render()
-        current = [match for match in SGR.finditer(written(app)) if {"1", "7"} <= set(match[1].split(";"))]
-        self.assertTrue(current, "the menu's current row is drawn reversed and bold")
-        self.assertTrue(app.theme.menu_current.reverse and app.theme.menu_current.bold)
-        self.assertFalse(app.theme.menu.reverse)  # only the current row
+        self.assertIn("❯ /help", written(app))
+        self.assertTrue([match for match in SGR.finditer(written(app)) if "1" in match[1].split(";")], "bold")
+        self.assertTrue(app.theme.menu_current.bold)
+        self.assertFalse(app.theme.menu_current.reverse or app.theme.menu.reverse)
 
     def test_the_rows_on_a_band_paint_no_colour(self) -> None:
         # #2230 review F1: `_banded` gave a band's spans its background at their own depth, the default truecolour.

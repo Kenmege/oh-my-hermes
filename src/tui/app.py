@@ -190,7 +190,7 @@ from .screen import (
     cursor_up,
 )
 from .session_picker import KEYS as SESSION_PICKER_KEYS
-from .session_picker import PICK, SessionPicker, session_rows
+from .session_picker import PICK, SessionPicker, pointer, session_rows
 from .rewind_picker import KEYS as REWIND_PICKER_KEYS
 from .rewind_picker import PICK as REWIND_PICK
 from .rewind_picker import RewindPicker, rewind_rows
@@ -1173,7 +1173,11 @@ def _slot_owns(slot: PromptSlot, event: Key | Paste, composer_text: str) -> bool
 
 
 def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows: int, theme: Theme) -> list[Line]:
-    """The completion menu (`(label, summary)` rows), scrolled so the highlighted entry is visible."""
+    """The completion menu (`(label, summary)` rows), scrolled so the highlighted entry is visible.
+
+    No fill (`theme.menu`): the highlighted row has the pointer and its name bold in the accent, its summary in the
+    text colour; every other name is in the command hue, not bold, and its summary muted, so the names read first.
+    """
     if not entries or max_rows <= 0:
         return []
     start = min(max(index - max_rows + 1, 0), max(len(entries) - max_rows, 0))
@@ -1184,9 +1188,12 @@ def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows
     for number in range(start, min(start + max_rows, len(entries))):
         label, summary = entries[number]
         current = number == index
-        style = theme.menu_current if current else theme.menu
-        name = f" {label}" + " " * max(name_cells - 1 - cell_width(label), 0)
-        rows.append(truncate_line((Span(name, style), Span(f" {summary} ", style)), width))
+        name = label + " " * max(name_cells - 1 - cell_width(label), 0)
+        rows.append(truncate_line((
+            pointer(current, theme),
+            Span(name, theme.menu_current if current else replace(theme.menu_current, bold=False)),
+            Span(f" {summary}", theme.text if current else theme.muted),
+        ), width))
     return rows
 
 

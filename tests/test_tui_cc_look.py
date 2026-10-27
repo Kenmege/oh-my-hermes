@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import unittest
 from unittest import mock
 
@@ -271,6 +272,10 @@ def working_rows(app, cols: int = 100) -> list[str]:
     return [line for line in lines_text(app._tail(cols)) if line][-2:]
 
 
+# A completion menu row: the pointer or its blank column, a name, then its summary (not the composer or the info line).
+MENU_ROW = re.compile(r"(❯|\s) /\S+ {2,}\S")
+
+
 class WorkingRowTests(unittest.TestCase):
     def busy(self, rows: int = 24, **options: object):
         clock = Clock()
@@ -385,12 +390,12 @@ class WorkingRowTests(unittest.TestCase):
         type_text(app, "/")
         screen = drawn(app)
         self.assertTrue([line for line in screen if "Tip:" in line], screen)  # nothing above the composer moved
-        menu = [line for line in screen if line.startswith(" /")]
+        menu = [line for line in screen if MENU_ROW.match(line)]
         self.assertEqual(len(menu), 5, screen)
         alone, _clock = self.busy(rows=TIP_MIN_ROWS)
         type_text(alone, "/")
         with mock.patch("omh.tui.app.TIP_MIN_ROWS", TIP_MIN_ROWS + 1):  # the same frame with no tip
-            self.assertEqual([line for line in drawn(alone) if line.startswith(" /")], menu)
+            self.assertEqual([line for line in drawn(alone) if MENU_ROW.match(line)], menu)
         listing, _clock = self.busy()
         listing.list_selected = 0  # the agent list has the keys
         self.assertTrue([line for line in lines_text(listing._tail(100)) if "Tip:" in line])

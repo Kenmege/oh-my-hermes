@@ -93,6 +93,7 @@ from ..plugin_bundle.omh.hud_text import compact_count, elapsed_text
 from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
+from .prompts import CHOICE_MARK
 from .style import Line, Span
 from .theme import Theme, kind_style
 from .width import cell_width, truncate, truncate_line, wrap_line
@@ -136,7 +137,7 @@ OPEN_MARK = "↓ agents"  # what Down opens, after the count on the info line
 WAITING = "waiting"  # a queued agent's figure: how long it has waited for a worker
 # The order the agent view keeps rows in when it has no room for all: running first, done last.
 KEEP_RANK = {RUNNING: 0, QUEUED: 1, **{status: 2 for status in FAILED_STATUSES}, INTERRUPTED: 3, COMPLETED: 4}
-SELECTED_MARK = "▸ "
+SELECTED_MARK = CHOICE_MARK  # the pointer every menu marks its row with; `▸` here is a folded row
 UNSELECTED_MARK = "  "
 COLUMN_GAP = "  "
 FACT_SEPARATOR = " · "

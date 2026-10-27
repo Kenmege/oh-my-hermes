@@ -384,11 +384,14 @@ def _target_notice(args: argparse.Namespace, source_metadata: dict[str, str]) ->
     paths = _paths(args)
     auto_apply = bool(getattr(args, "auto_apply_target_change", False))
     if auto_apply:
+        from .setup import _registered_workflow_dir  # the directory setup registers: the pointer, not a generation's pack
+
         observation = record_target_observation(
             paths,
             source=f"chat:{args.source}",
             source_metadata=source_metadata,
             ensure_config=bool(source_metadata.get("hermes_home")),
+            skills_dir=_registered_workflow_dir(paths),
         )
     else:
         observation = inspect_target_observation(paths, source=f"chat:{args.source}", source_metadata=source_metadata)

@@ -3131,6 +3131,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         source="setup",
         dry_run=args.dry_run,
         ensure_config=not args.skip_apply,
+        skills_dir=_registered_workflow_dir(paths),
         setup_context={
             "apply_skipped": bool(args.skip_apply),
             "with_plugin": True,

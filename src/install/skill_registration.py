@@ -58,10 +58,20 @@ def managed_skill_dir_candidates(paths: OmhPaths, *, current: Path | None) -> li
     `current` is the shared generation pointer as the caller resolved it,
     passed in rather than read here so the installer's own binding (and the
     fixtures that stub it) stays the one reading.
+
+    Every generation's own pack still on disk beside the pointer
+    (`<root>/generations/*/skills`) is a candidate too. Setup's target step
+    used to register the running generation's pack after the apply step had
+    registered the pointer: one directory that day, two different
+    ones after the next update, while the previous generation is kept for
+    rollback. Hermes then refused every OMH skill by name, and no candidate
+    named the older pack, so nothing retired it.
     """
     primary = primary_hermes_home(paths.hermes_home)
     primary_store = configured_omh_home(primary) if primary != paths.hermes_home else None
     runtime_store = configured_omh_home(paths.hermes_home)
+    generations = current.parent.parent / "generations" if current is not None else None
+    packs = sorted(generations.glob("*/skills")) if generations is not None and generations.is_dir() else []
     candidates: list[Path] = []
     for candidate in (
         primary_store / "skills" if primary_store is not None else None,
@@ -70,6 +80,7 @@ def managed_skill_dir_candidates(paths: OmhPaths, *, current: Path | None) -> li
         paths.skills_dir,
         current,
         runtime_paths.standalone_default_omh_home(paths.hermes_home) / "skills",
+        *packs,
     ):
         if candidate is not None and candidate not in candidates:
             candidates.append(candidate)

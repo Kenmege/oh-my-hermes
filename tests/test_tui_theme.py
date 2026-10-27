@@ -8,7 +8,10 @@ from pathlib import Path
 import unittest
 
 from omh.skin_pack import SKIN_THEMES, hex_to_rgb, skin_colors
-from omh.tui.theme import DEFAULT_THEME, GLYPH_ROLES, TEXT_ROLES, build_theme, is_light, theme_named
+from omh.tui.style import Style
+from omh.tui.theme import (
+    DEFAULT_THEME, GLYPH_ROLES, TEXT_CONTRAST, TEXT_ROLES, build_theme, contrast_ratio, is_light, surface_for, theme_named,
+)
 
 # The backgrounds every palette is measured on: none reported (the palette's own status-bar background stands in
 # for a dark terminal), pure white and black, and the near-white and near-black defaults common terminals ship.
@@ -42,7 +45,9 @@ class ThemeTests(unittest.TestCase):
                 for field in fields(theme):
                     # `tool` joined the terminal's own foreground with the rail and kind colours (2026-10-22): a call's
                     # name is bold in its family's hue (`kinds`, tested in test_tui_rail_kinds.py), else the default foreground.
-                    if field.name in ("name", "text", "user", "tool"):
+                    # An unhighlighted menu row's name joined them too (2026-10-27): menus have no fill, and the
+                    # highlighted row is the pointer and `menu_current` (tested below).
+                    if field.name in ("name", "text", "user", "tool", "menu"):
                         continue
                     if background is None and field.name in BAND_ROLES:
                         continue  # no band is painted over a background nobody reported
@@ -50,6 +55,21 @@ class ThemeTests(unittest.TestCase):
                         value = getattr(theme, field.name)
                         for style in value if isinstance(value, tuple) else (value,):  # a gradient is its steps
                             self.assertTrue(style.fg or style.bg, "a role without any colour paints as plain text")
+
+    def test_menus_have_no_fill_and_the_highlight_reads_on_light_and_dark(self) -> None:
+        # The owner's screenshot of 2026-10-27: every completion row ran on a teal band that stopped where its words
+        # did, so the right edges were ragged, and the highlighted band was barely lighter. A menu has no fill on
+        # any palette or background; its highlighted name is bold in the skill hue at 4.5:1 on either side.
+        for skin in SKIN_THEMES:
+            for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                theme = build_theme(skin, background)
+                with self.subTest(theme=skin.short_name, background=background):
+                    self.assertEqual((theme.menu.bg, theme.menu_current.bg), (None, None))
+                    self.assertEqual(theme.menu, Style())
+                    self.assertEqual(theme.menu_current, theme.slash)
+                    self.assertTrue(theme.menu_current.bold)
+                    surface = background or surface_for(skin, None)
+                    self.assertGreaterEqual(contrast_ratio(theme.menu_current.fg, surface), TEXT_CONTRAST)
 
     def test_body_text_and_the_prompt_mark_are_the_terminals_default_foreground(self) -> None:
         # A light terminal showed near-white body text on white (1.08:1); the default foreground is readable on

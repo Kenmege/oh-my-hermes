@@ -2775,7 +2775,7 @@ class HermesProfileSyncTests(unittest.TestCase):
         return profile
 
     @contextmanager
-    def _managed_install(self, current: Path):
+    def _managed_install(self, current: Path, pack: Path | None = None):
         """What a managed command install looks like to the setup module.
 
         Only the probes a test process cannot answer truthfully are stubbed
@@ -2789,7 +2789,8 @@ class HermesProfileSyncTests(unittest.TestCase):
         home pass (the first fix did exactly that). The self-update plan is
         pinned off because a managed runtime is exactly what would otherwise
         send `omh update` into the staged command package transaction, which
-        is not what these tests exercise.
+        is not what these tests exercise. `pack` is the running generation's
+        own pack when it is not the pointer itself, as on a real install.
         """
         with (
             mock.patch.object(
@@ -2798,7 +2799,7 @@ class HermesProfileSyncTests(unittest.TestCase):
             mock.patch.object(
                 sys.modules[resolve_paths.__module__],
                 "managed_workflow_pack_dir",
-                return_value=current,
+                return_value=pack or current,
             ),
             mock.patch.object(
                 _setup_module,
@@ -3023,6 +3024,61 @@ class HermesProfileSyncTests(unittest.TestCase):
                 f"Hermes registration migrated from {old_path} to {generation.as_posix()}.",
                 stdout,
             )
+
+    def _generations(self, root: Path) -> tuple[Path, Path, Path]:
+        """The live layout: `current` links to the running generation, and the previous one is kept for rollback.
+        Returns (the pointer's skills, the older generation's pack, the running generation's pack)."""
+        share = root / "share"
+        older, running = share / "generations" / "older" / "skills", share / "generations" / "running" / "skills"
+        older.mkdir(parents=True)
+        running.mkdir(parents=True)
+        (share / "current").symlink_to(running.parent, target_is_directory=True)
+        return share / "current" / "skills", older, running
+
+    @requires_symlinks
+    def test_update_retires_an_older_generation_pack_beside_the_pointer(self) -> None:
+        # A home naming the pointer and the previous generation's pack has
+        # two different SKILL.md per name, so Hermes lists no OMH skill at
+        # all (the launch card's missing omh row). The older pack is a
+        # managed candidate, so one update retires it.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status, _, stderr = run_cli(self._base(root) + ["setup"])
+            self.assertEqual(status, 0, stderr)
+            pointer, older, running = self._generations(root)
+            config = root / ".hermes" / "config.yaml"
+            old_path = (root / ".omh" / "skills").resolve().as_posix()
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    f"    - {old_path}\n", f"    - {pointer.as_posix()}\n    - {older.as_posix()}\n"
+                ),
+                encoding="utf-8",
+                newline="",
+            )
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix(), older.as_posix()])
+
+            with self._managed_install(pointer, pack=running):
+                status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(external_dirs(config.read_text(encoding="utf-8")), [pointer.as_posix()])
+            self.assertNotIn("OMH-managed skills directories", stdout)
+
+    @requires_symlinks
+    def test_setup_on_a_managed_install_registers_the_pointer_and_no_generation_pack(self) -> None:
+        # Setup's target step registered `paths.skills_dir`, the running
+        # generation's own pack, after the apply step had registered the
+        # pointer: the same directory that day, the ambiguity above after the
+        # next update. Both steps now register the one directory.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, _older, running = self._generations(root)
+            with self._managed_install(pointer, pack=running):
+                status, _, stderr = run_cli(self._base(root) + ["setup"])
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(external_dirs((root / ".hermes" / "config.yaml").read_text(encoding="utf-8")),
+                             [pointer.as_posix()])
 
     def test_a_deliberately_unregistered_profile_is_not_migrated_onto_the_pointer(self) -> None:
         # The opt-out rule survives the migration: a profile naming NO

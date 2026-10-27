@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .keys import CHAR, DOWN, ENTER, ESCAPE, UP, Key, Paste
+from .session_picker import CURRENT_MARK, pointer
 from .style import Line, Span, Style
 from .theme import LAUNCH_PRESETS, Theme
 from .width import truncate_line
@@ -77,11 +78,14 @@ class LaunchPicker:
         shown = list(preview) if len(preview) + 1 + len(LAUNCH_PRESETS) <= max_rows else []
         rows: list[Line] = [*shown, truncate_line((Span(TITLE, theme.heading),), width)]
         self.first_row = len(rows)
+        widest = max((len(swatches.get(name, ())) for name in LAUNCH_PRESETS), default=0)  # one summary column
         for index, name in enumerate(LAUNCH_PRESETS):
-            style = theme.menu_current if index == self.index else theme.menu
-            mark = "›" if name == self.current else " "
-            row: list[Span] = [Span(f" {mark} {name:<10}", style)]
+            highlighted = index == self.index
+            mark = CURRENT_MARK if name == self.current else " "
+            row: list[Span] = [pointer(highlighted, theme),
+                               Span(f"{mark} {name:<10}", theme.menu_current if highlighted else theme.menu)]
             row += [Span(SWATCH, swatch) for swatch in swatches.get(name, ())]
-            row.append(Span(f"  {SUMMARIES[name]}", style))
+            row.append(Span(" " * (widest - len(swatches.get(name, ())))))
+            row.append(Span(f"  {SUMMARIES[name]}", theme.text if highlighted else theme.muted))
             rows.append(truncate_line(tuple(row), width))
         return rows[: max(max_rows, 0)]

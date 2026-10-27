@@ -1368,9 +1368,10 @@ and every rule or mark 3:1 (on the pager's footer, against its bar: the
 theme's own bar colour on a dark background, a light tint of it on a light
 one; the info line under the composer and the sticky prompt have no bar),
 and
-on a light background the diff bands and the menu bands (the completion
-menu, the pickers, choice prompts, the agent list and the bot board) are light
-tints, their words at 4.5:1 on each. With no answer and no `COLORFGBG` that names one, the background is
+on a light background the diff bands are light tints, their words at 4.5:1 on
+each. The menus (the completion menu, the pickers, choice prompts, the agent
+list, the delegation view and the bot board) have no band on any background:
+the highlighted row is a `❯` and its name bold in the skill hue, at 4.5:1. With no answer and no `COLORFGBG` that names one, the background is
 taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows

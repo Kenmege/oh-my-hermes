@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH skills load again in a Hermes home that named two generations' skill
+  packs, and the TUI's menus lose their bands.** `omh setup` registered the
+  shared generation pointer and then, in its target step, the running
+  generation's own pack. After the next update the home named two different
+  copies of every OMH skill, so Hermes refused them all by name and listed
+  none: the launch card showed only the hermes row. The target step (and
+  `omh chat --auto-apply-target-change`) now registers the pointer, every
+  generation pack on disk counts as a managed entry, so the next `omh setup`
+  or `omh update` retires the older one and `omh doctor` names it. The
+  completion menu, the session, model, rewind and launch-look pickers, the
+  agent list, the delegation view and the bot board's sessions draw no fill:
+  the highlighted row is a `❯` and a bold name in the skill hue, other
+  commands keep that hue and their descriptions are muted.
+
 - **The gateway-attach child no longer aborts when Hermes' gateway hangs up
   first (#2327, reported and first fixed by @skihyeon in #2328).** Its
   `omh-attach-stdin` thread read the TUI's input through `sys.stdin.buffer`

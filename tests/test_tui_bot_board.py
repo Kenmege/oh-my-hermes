@@ -56,8 +56,7 @@ from omh.tui.bot_board import (
 )
 from omh.tui.history import HistorySearch
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key
-from omh.skin_pack import default_theme, skin_colors
-from omh.tui.style import Style
+from omh.skin_pack import default_theme
 from omh.tui.theme import DEFAULT_THEME, EDGE_CONTRAST, TEXT_CONTRAST, build_theme, contrast_ratio, is_light
 from omh.tui.style import Span
 from omh.tui.width import cluster_width, clusters, line_width
@@ -959,15 +958,18 @@ class ProfileBoxTests(unittest.TestCase):
                         self.assertEqual(table[3].index(unit) if unit != "48 │" else table[3].rindex("│"),
                                          table[3].index(unit) if unit != "48 │" else table[4].rindex("│"))
 
-    def test_the_selection_band_runs_from_edge_to_edge_inside_the_table(self) -> None:
+    def test_the_selected_row_is_the_pointer_and_an_accent_title_with_no_fill(self) -> None:
+        # Every menu lost its fill on 2026-10-27 (the owner's ragged teal bands): the table marks its row as the
+        # completion menu and the pickers do.
         sessions = [bot_board.SessionRow(f"s{n}", f"chat {n}", "cli", NOW - n, 1) for n in range(3)]
         snapshot_ = BoardSnapshot(BoardView("miku"), bots(), tuple(sessions), read_at=NOW)
         lines, span = session_lines(snapshot_, 1, NOW, 120, DEFAULT_THEME)
-        band = lines[span[0]]
-        self.assertEqual({item.style.bg for item in band[1:-1]}, {DEFAULT_THEME.menu_current.bg}, "inside the edges")
-        self.assertEqual({band[0].style.bg, band[-1].style.bg}, {None}, "the edges keep the page")
-        self.assertTrue(line_text(band).startswith("│ ❯ chat 1"))
-        self.assertEqual({item.style.bg for item in lines[span[0] + 1][1:-1]}, {None}, "only the selected row is banded")
+        selected, other = lines[span[0]], lines[span[0] + 1]
+        self.assertEqual({item.style.bg for line in lines for item in line}, {None}, "no row has a fill")
+        self.assertTrue(line_text(selected).startswith("│ ❯ chat 1"))
+        self.assertTrue(line_text(other).startswith("│   chat 2"))
+        self.assertEqual(next(item for item in selected if "chat 1" in item.text).style, DEFAULT_THEME.menu_current)
+        self.assertEqual(next(item for item in other if "chat 2" in item.text).style, DEFAULT_THEME.text)
 
 
 class MessageBoxTests(unittest.TestCase):
@@ -1120,16 +1122,6 @@ class ReviewBoundaryTests(unittest.TestCase):
         self.assertEqual(sum(1 for glyph in lines_text(profile_lines(bots(), 0, NOW, 117, DEFAULT_THEME)[0])[HEAD] if glyph == "┬"), 2)
         self.assertEqual(sum(1 for glyph in lines_text(profile_lines(bots(), 0, NOW, 116, DEFAULT_THEME)[0])[HEAD] if glyph == "┬"), 1)
 
-    def test_words_on_the_light_selection_band_take_its_ink_when_their_own_would_not_read(self) -> None:
-        theme = build_theme(default_theme(), "#FCF9FD")
-        self.assertLess(contrast_ratio(theme.muted.fg, theme.menu_current.bg), TEXT_CONTRAST, "the case the fallback is for")
-        sessions = [bot_board.SessionRow(f"s{n}", f"chat {n}", "cli", NOW - n, 1, "glm-5.3", bot_board.Usage(10, 10))
-                    for n in range(3)]
-        lines, span = session_lines(BoardSnapshot(BoardView("miku"), bots(), tuple(sessions), read_at=NOW), 1, NOW, 120, theme)
-        for item in lines[span[0]][1:-1]:
-            if any(character.isalnum() for character in item.text):
-                self.assertGreaterEqual(contrast_ratio(item.style.fg, item.style.bg), TEXT_CONTRAST, item)
-
     def test_a_profile_named_in_bytes_that_are_not_utf8_still_draws(self) -> None:
         name = "bot" + chr(0xDC80)  # how Linux hands Python a directory name that is not UTF-8
         self.assertEqual(len(avatar(name)), bot_board.AVATAR_ROWS)
@@ -1226,26 +1218,15 @@ class AvatarTests(unittest.TestCase):
 
 
 class ThemeBandTests(unittest.TestCase):
-    """The menu bands on a light background are light, read at AA, and leave a dark background as it was."""
+    """The footer bar on a light background is light and reads at AA; the menus have no band at all
+    (`test_tui_theme`)."""
 
-    def test_a_light_background_gets_light_bands_that_read_at_aa(self) -> None:
+    def test_a_light_background_gets_a_light_status_bar_that_reads_at_aa(self) -> None:
         for background in ("#FCF9FD", "#FFFFFF", "#F3F8FD"):
             with self.subTest(background=background):
-                theme = build_theme(default_theme(), background)
-                for band in (theme.menu, theme.menu_current, theme.status):
-                    self.assertTrue(is_light(band.bg), band)
-                    self.assertGreaterEqual(contrast_ratio(band.fg, band.bg), TEXT_CONTRAST, band)
-                self.assertGreater(contrast_ratio(theme.menu_current.bg, background),
-                                   contrast_ratio(theme.menu.bg, background), "the highlighted row stands further out")
-
-    def test_a_dark_background_keeps_the_palettes_own_bands(self) -> None:
-        colours = skin_colors(default_theme().skin_name)
-        for background in ("#0F1B2D", "#1E1E1E", None):
-            with self.subTest(background=background):
-                theme = build_theme(default_theme(), background)
-                self.assertEqual(theme.menu, Style(fg=colours["banner_text"], bg=colours["completion_menu_bg"]))
-                self.assertEqual(theme.menu_current,
-                                 Style(fg=colours["banner_text"], bg=colours["completion_menu_current_bg"], bold=True))
+                status = build_theme(default_theme(), background).status
+                self.assertTrue(is_light(status.bg), status)
+                self.assertGreaterEqual(contrast_ratio(status.fg, status.bg), TEXT_CONTRAST, status)
 
     def test_the_highlighted_box_edge_and_the_others_read_on_light_and_dark(self) -> None:
         for background in ("#FCF9FD", "#0F1B2D"):

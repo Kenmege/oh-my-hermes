@@ -194,7 +194,7 @@ class RelayFixtureTests(unittest.TestCase):
             [
                 "  ● main",
                 "  ○ find usages of old_ap…  deepseek-v4.1-flash · 12s · 6 tools · ↓340",
-                "▸ ✗ read the diff for risks        deepseek-v4.1-flash · 30s · 0 tools",
+                "❯ ✗ read the diff for risks        deepseek-v4.1-flash · 30s · 0 tools",
             ],
         )
         self.assertEqual(ids, (MAIN_ID, FIRST, SECOND))
@@ -686,7 +686,7 @@ class ViewTests(unittest.TestCase):
         self.assertEqual(view[0], "  ● main")
         self.assertEqual(len(view), len(listed), "Down highlights a row and moves none")
         self.assertEqual([row[2:] for row in view], [row[2:] for row in listed])
-        self.assertEqual([row[:2] for row in listed], ["  ", "▸ ", "  "])
+        self.assertEqual([row[:2] for row in listed], ["  ", "❯ ", "  "])
 
     def test_an_agent_waiting_for_a_worker_shows_the_wait_on_its_clock(self) -> None:
         roster = Roster()
@@ -757,7 +757,7 @@ class ListTests(unittest.TestCase):
             [
                 "  ● main",
                 "  ⠹ find usages of…  deepseek-v4.1-flash · 10s · 4 tools",  # the title is cut first
-                "▸ ⠹ read the diff fo…  deepseek-v4.1-flash · 4s · 1 tool",
+                "❯ ⠹ read the diff fo…  deepseek-v4.1-flash · 4s · 1 tool",
             ],
         )
         self.assertEqual(ids, (MAIN_ID, "sa-a", "sa-b"))
@@ -772,7 +772,7 @@ class ListTests(unittest.TestCase):
         self.assertEqual(style_of(rows[2], "read the diff"), THEME.text)
         self.assertEqual(style_of(rows[2], "deepseek-v4.1-flash · 4s"), THEME.muted)
         rows, _ = self._roster().list_lines(50, THEME, MAIN_ID, 0, 6, 20.0)
-        self.assertEqual(line_text(rows[0]), "▸ ● main" + " " * 42)
+        self.assertEqual(line_text(rows[0]), "❯ ● main" + " " * 42)
         self.assertEqual({span.style for span in rows[0]}, {THEME.menu_current})
 
     def test_an_unknown_selection_highlights_nothing_and_shows_the_top(self) -> None:
@@ -802,7 +802,7 @@ class ListTests(unittest.TestCase):
                 self.assertEqual(shown, ids[start : start + 6])
                 if index in expected_start:
                     self.assertEqual(start, expected_start[index])
-                marked = [line_text(row).startswith("▸ ") for row in rows]
+                marked = [line_text(row).startswith("❯ ") for row in rows]
                 self.assertEqual(marked, [shown_id == row_id for shown_id in shown])
 
     def test_a_list_shorter_than_its_room_shows_every_row(self) -> None:
@@ -841,7 +841,7 @@ class ListTests(unittest.TestCase):
                 for row in rows:
                     self.assertLessEqual(line_width(row), width)
         rows, _ = roster.list_lines(30, THEME, "sa-a", 0, 6, 5.0)
-        self.assertEqual(line_text(rows[1]), "▸ ⠋ 한글 검색 에이전트 실행 … ")  # no room for the model: the title alone
+        self.assertEqual(line_text(rows[1]), "❯ ⠋ 한글 검색 에이전트 실행 … ")  # no room for the model: the title alone
         self.assertEqual(line_width(rows[1]), 30)
         rows, _ = roster.list_lines(60, THEME, "sa-a", 0, 6, 5.0)
         self.assertTrue(line_text(rows[1]).endswith("  deepseek-v4.1-flash · 5s · 0 tools"), line_text(rows[1]))

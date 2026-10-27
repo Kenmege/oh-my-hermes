@@ -2523,8 +2523,8 @@ class KeyTests(AppTestCase):
         menu = terminal.captures["menu"]
         # The launch puts the composer on the bottom rows, so the menu opens above it, over its top rule.
         top = rule_rows(menu)[0]
-        self.assertTrue(menu[top - 2].startswith(" app.py"), menu)
-        self.assertTrue(menu[top - 1].startswith(" src/"), menu)
+        self.assertTrue(menu[top - 2].startswith("❯ app.py"), menu)  # the highlighted row has the pointer
+        self.assertTrue(menu[top - 1].startswith("  src/"), menu)
         self.assertIn("dir", menu[top - 1])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)

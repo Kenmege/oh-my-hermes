@@ -511,7 +511,7 @@ class PickerTests(unittest.TestCase):
                 app, _client = make_app(rows=rows, cols=40)
                 app._open_session_picker(SESSIONS)
                 screen = drawn(app)
-                self.assertTrue(any(line.startswith(" ● Release notes") or line.startswith("   Release notes")
+                self.assertTrue(any(line.startswith("❯ ● Release notes") or line.startswith("❯   Release notes")
                                     for line in screen), screen)
 
     def test_a_short_terminal_says_a_pickers_keys_on_the_info_line_and_not_in_its_header(self) -> None:

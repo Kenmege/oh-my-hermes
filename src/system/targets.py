@@ -55,7 +55,14 @@ def record_target_observation(
     dry_run: bool = False,
     ensure_config: bool = False,
     setup_context: dict[str, object] | None = None,
+    skills_dir: Path | None = None,
 ) -> dict[str, object]:
+    """Record this target; with `ensure_config`, register `skills_dir` (default `paths.skills_dir`) in its config.
+
+    Setup passes the directory its apply step registered: on an installer-managed command that is the shared
+    generation pointer, while `paths.skills_dir` is the running generation's own pack, which beside the pointer
+    makes Hermes refuse every OMH skill once the next update moves the pointer.
+    """
     registry, error = read_target_registry_result(paths)
     target = build_target_record(paths, source=source, source_metadata=source_metadata, setup_context=setup_context)
     config_changed = False
@@ -77,7 +84,7 @@ def record_target_observation(
         # the one outcome this must never produce.
         change = update_config(
             config_path,
-            lambda text: ensure_external_dir(text, paths.skills_dir),
+            lambda text: ensure_external_dir(text, skills_dir or paths.skills_dir),
             omh_home=paths.omh_home if own_config else None,
         )
         config_changed = change.written

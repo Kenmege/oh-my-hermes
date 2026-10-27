@@ -576,7 +576,7 @@ class AppBottomRowsTests(unittest.TestCase):
 
         def menu(app: object) -> None:
             type_text(app, "/")
-            self.assertTrue([row for row in drawn(app) if row.startswith(" /") or row.startswith("/")])
+            self.assertTrue([row for row in drawn(app) if row.startswith(("❯ /help", "  /keys"))])
             app._on_input(Key(BACKSPACE))
 
         def question(app: object) -> None:
