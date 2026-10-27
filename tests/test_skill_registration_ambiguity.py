@@ -175,13 +175,29 @@ class GenerationPackEntriesTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             pointer, older, gone = self._layout(root)
-            foreign = [root / "mine", root / "generations" / "20261025" / "other", root / "elsewhere" / "x" / "skills"]
+            # A `skills` directory under another root's `generations/` is the
+            # person's: only the pointer's own root matches, never the name.
+            foreign = [
+                root / "mine",
+                root / "generations" / "20261025" / "other",
+                root / "elsewhere" / "x" / "skills",
+                root / "elsewhere" / "generations" / "20261025" / "skills",
+            ]
+            relative = "generations/20261025/skills"
             with mock.patch.dict(os.environ, {"HOME": str(root), "USERPROFILE": str(root)}):
-                text = _config_naming(*foreign, pointer, gone) + f"    - {older.as_posix()}/\n    - ~/generations/x/skills\n"
-                self.assertEqual(
-                    generation_pack_entries(text, pointer),
-                    [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"],
+                text = (
+                    _config_naming(*foreign, pointer, gone)
+                    + f"    - {older.as_posix()}/\n    - ~/generations/x/skills\n    - {relative}\n"
                 )
+                # Run from the managed root: Hermes anchors a relative entry
+                # at its own home, so it is never a generation's pack.
+                cwd = os.getcwd()
+                os.chdir(root)
+                try:
+                    entries = generation_pack_entries(text, pointer)
+                finally:
+                    os.chdir(cwd)
+                self.assertEqual(entries, [gone.as_posix(), f"{older.as_posix()}/", "~/generations/x/skills"])
             self.assertEqual(generation_pack_entries(text, None), [])
 
     def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:

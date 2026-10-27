@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Hermes lists OMH skills again after an update.** `omh setup` registered
+  the running generation's own pack (`generations/<id>/skills`) after the
+  shared `current/skills` pointer; once the next update moved the pointer,
+  every OMH skill resolved to two files and Hermes listed none of them.
+  Setup and `omh chat --auto-apply-target-change` now register only the
+  pointer. The installer-managed command's setup and update retire every
+  generation-pack entry from the primary home and every bot profile, on
+  disk or already collected; a home naming only one is migrated to the
+  pointer, the same for the primary home as for a profile; `omh uninstall
+  --registration-only` removes them; and `omh doctor`
+  (`external_dir_ambiguity`) and the update post-check name an older pack
+  still on disk beside the pointer.
 - **`plan` and `ralplan` name the goal beyond the request, the raw material,
   and an outside judge.** Before splitting tasks a plan states what should
   happen once the requested result exists and whether it aims there, and adds

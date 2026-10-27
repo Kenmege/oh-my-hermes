@@ -718,10 +718,7 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             clone = _profile_clone(args, primary, profile_dir)
             profile_paths = _paths(clone)
             config_text = read_config(profile_paths.hermes_config_path)
-            registered = any(
-                _external_dir_registered(config_text, candidate)
-                for candidate in _managed_workflow_dir_candidates(profile_paths)
-            ) or bool(generation_pack_entries(config_text, managed_current_workflow_pack_dir()))
+            registered = _home_names_managed_dir(config_text, profile_paths)
             if profile_paths.hermes_plugin_dir.is_dir() and not registered:
                 results.append(
                     {
@@ -1097,6 +1094,22 @@ def _managed_workflow_dir_candidates(paths: OmhPaths) -> list[Path]:
     return candidates
 
 
+def _home_names_managed_dir(config_text: str, paths: OmhPaths) -> bool:
+    """Whether a home is registered, for the primary home and every profile alike.
+
+    Any managed candidate counts (`_managed_workflow_dir_candidates`). A
+    generation's own pack counts too, but only for the command that retires
+    it: that command moves the home onto the pointer in the same write, while
+    an unmanaged command would add its own path beside the pack and leave a
+    working home with two managed directories.
+    """
+    if any(_external_dir_registered(config_text, candidate) for candidate in _managed_workflow_dir_candidates(paths)):
+        return True
+    if not _registration_retires_older_entries(_registered_workflow_dir(paths)):
+        return False
+    return bool(generation_pack_entries(config_text, managed_current_workflow_pack_dir()))
+
+
 def _remove_managed_external_dirs(config_text: str, paths: OmhPaths) -> ConfigChange:
     """Strip every OMH-managed skills directory this home may carry.
 
@@ -1235,13 +1248,10 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
     """
     paths = _paths(args)
     config_text = read_config(paths.hermes_config_path)
-    # Same candidate set the profile sync reads: a primary home registered at
-    # the older managed path is registered, and must be carried forward
-    # rather than read as a deliberate unregistration.
-    if not any(
-        _external_dir_registered(config_text, candidate)
-        for candidate in _managed_workflow_dir_candidates(paths)
-    ):
+    # Same predicate the profile sync reads: a primary home registered at an
+    # older managed path is registered, and must be carried forward rather
+    # than read as a deliberate unregistration.
+    if not _home_names_managed_dir(config_text, paths):
         return {"display_release": _unregistered_display_release(paths, args)}
     return _apply_result(args)
 
