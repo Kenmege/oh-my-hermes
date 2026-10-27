@@ -129,6 +129,29 @@ class FlickerTests(AppTestCase):
         self.assert_clean_run(run)
         self.assertEqual(erases(run.terminal.writes[marks["out"] : marks["end"]]), 0)
 
+    def test_a_tab_hidden_and_shown_again_erases_nothing(self) -> None:
+        # A terminal tab switched away and back: a focus report out, the pane at a transient size (one column, as a
+        # split pane laid out again can be), its own size again before the resize settles, a focus report in.
+        run = self.session()
+        marks: dict[str, int] = {}
+        terminal = run.terminal
+        run.terminal.script(
+            Step(b"\x1b[O", when=self.mark(run, marks, "hide", terminal.idle), label="focus out"),
+            Step(resize=(24, 1), when=self.after(run, "focus out", 0.3), label="transient"),
+            Step(resize=(24, 80), label="shown"),
+            Step(b"\x1b[I", label="focus in"),
+            Step(b"\x04", when=self.mark(run, marks, "end", self.after(run, "shown")), capture="final", label="settled"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        writes = terminal.writes[marks["hide"] : marks["end"]]
+        self.assertEqual(erases(writes), 0, writes)
+        painted = [text for text in writes if BOX_MARK in text]
+        self.assertTrue(painted, writes)  # repainted in place once the size settled back
+        self.assertTrue(all(text.startswith(SYNC_BEGIN) and text.endswith(SYNC_END) for text in painted), painted)
+        screen = terminal.captures["final"]
+        self.assertEqual(sum(line.startswith(BOX_MARK) for line in screen), 2, screen)
+
     def test_the_pager_opens_and_closes_without_erasing_the_main_screen(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
