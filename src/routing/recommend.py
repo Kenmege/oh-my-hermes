@@ -1391,6 +1391,11 @@ _SKILL_POLICIES = {
         evidence_boundary="A brief, storyboard or renderer handoff is not a rendered video, locale/font/voice review, export QA, attachment, receipt or publication. Missing required production evidence keeps HOLD.",
         wrapper_guidance="Prepare audience and language tracks, source/brand rights, three concepts and segment direction, measured timing, selected renderer capability, revision budget, export/QA and source delivery with honest gaps.",
     ),
+    "sprite-forge": RecommendationPolicy(
+        next_action="prepare_sprite_forge",
+        evidence_boundary="A prepared grid contract or command is not generated art or processed frames; require actual frames, aligned sheet and a read-back qc.json with body_scale_cv and anchor_y_std.",
+        wrapper_guidance="Confirm the host image tool's grid sheet on #FF00FF, cell size and baseline, isolated Pillow environment and host timeout; regenerate the source on REGENERATE instead of patching frames.",
+    ),
     "geospatial-analysis": RecommendationPolicy(
         next_action="prepare_geospatial_analysis",
         evidence_boundary="Prepared CRS checks and commands are not observed spatial computation; require actual geometry, metric summary and hash-checked replay outputs.",
@@ -2865,6 +2870,8 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
         "show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser",
         "promo", "promotional", "sizzle", "hyperframes",
     }),
+    # Sheet/pixel/game/character words alone must not reach sprite processing.
+    "sprite-forge": frozenset({"sprite", "sheet", "pixel", "art", "character", "game", "frames", "2d", "animation"}),
     "geospatial-analysis": frozenset({"analysis", "overlay", "spatial", "intersection", "intersect", "layers", "compute", "overlap", "area"}),
     "biomedical-evidence": frozenset({"evidence", "reconciliation", "cross", "check", "variant", "matrix", "capture"}),
     "molecular-docking": frozenset({"molecular", "docking", "rigid", "receptor", "ligand", "poses"}),

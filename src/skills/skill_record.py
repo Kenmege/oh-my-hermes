@@ -64,6 +64,7 @@ from .market_research_skill import REFERENCE_CONTENT as MARKET_RESEARCH_REFERENC
 from .show_reel_references import show_reel_reference_templates
 from .review_methods import review_method_reference_templates
 from .geospatial_analysis_skill import geospatial_analysis_reference_templates
+from .sprite_forge_skill import sprite_forge_reference_templates
 from .biomedical_evidence_skill import biomedical_evidence_reference_templates
 from .molecular_docking_skill import molecular_docking_reference_templates
 from .ai_job_search_skill import ai_job_search_reference_templates
@@ -269,6 +270,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     dag_ulw_reference_templates,
     show_reel_reference_templates,
     geospatial_analysis_reference_templates,
+    sprite_forge_reference_templates,
     biomedical_evidence_reference_templates,
     molecular_docking_reference_templates,
     ai_job_search_reference_templates,

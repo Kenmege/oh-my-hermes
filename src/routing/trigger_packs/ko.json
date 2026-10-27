@@ -3,6 +3,7 @@
   "language": "ko",
   "skills": {
     "show-reel": ["제품 쇼케이스 영상"],
+    "sprite-forge": ["도트 캐릭터", "스프라이트 시트", "도트 스프라이트"],
     "codebase-uml": [
       "코드베이스 시각화",
       "코드베이스 시각화해줘",
