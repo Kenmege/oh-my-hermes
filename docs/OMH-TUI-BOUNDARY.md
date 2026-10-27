@@ -34,7 +34,10 @@ they differ (the launch policy riding `session.create`, a detach for a close, a
 rewind as Hermes' revision-fenced `session.mutate`, a steer or a stop carrying
 the execution generation of the turn it acts on, images staged through
 Hermes' `image.attach_bytes`, approvals and clarify questions the gateway asks
-as events), and passes everything else as it is. On any other Hermes it runs
+as events, and a command the person typed that the gateway's `slash.exec`
+refuses but runs through a call of its own, `/compress` and `/undo` among
+them, sent as that call, as Ink sends it), and passes everything else as it
+is. On any other Hermes it runs
 Hermes' stdio entry in its own process, as before. Which one is decided by what
 imports in that Hermes, never by an error's wording. When that child exits on
 its own with a failure (never after a normal exit, after the person quits, or

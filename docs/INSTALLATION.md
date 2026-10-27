@@ -1211,10 +1211,20 @@ profile archive, not the transcript, so the first `/export` says so and the
 next one runs it), and `/reload-skills` (Hermes re-scans its
 skills for this session and the TUI reads its command list again, so a skill
 installed since the start, by `omh update` or `/skills install`, runs as
-`/<name>` without a restart). Claude Code's `/cost` and `/permissions` run
-Hermes' `/usage` and `/approvals`.
+`/<name>` without a restart). Claude Code's `/cost`, `/permissions` and
+`/compact` run Hermes' `/usage`, `/approvals` and `/compress` (`here [N]`, a
+focus topic, or `--preview`; a compression waits for a running turn to end,
+and the TUI says so). Hermes' shared gateway, which a Hermes from v0.22 runs,
+does not take `/compress`, `/branch`, `/retry`, `/undo`, `/stop`, `/bg`,
+`/btw`, `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` or
+`/config` as a typed command. The TUI runs each one through the gateway call
+Hermes' own Ink TUI uses for it, and `/branch` then opens the new session.
+Commands that only Hermes' classic CLI runs (`/handoff`, `/worktree`,
+`/snapshot`, `/import`, `/hatch`, `/palette`) are left out of completion, and
+`/help` names them on one line. Typed, they go to Hermes, which says where to
+run each one.
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
-`/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
+`/agents`, `/subscription`, `/save`, `/prompt`, ...) say so and name
 `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
 terminal, except that bare `/skills`, whose screen there is an overlay,
 prints the help of Hermes' skills command here instead of opening the skills
