@@ -1348,7 +1348,6 @@ class App(ModesMixin, AgentViewMixin):
         self.region = LiveRegion(terminal.write)
         self.decoder = KeyDecoder(clock)
         self.size = terminal.size()
-        self.drawn_size = self.size  # the size the session on screen was printed at; a full redraw moves it
         self.sid = ""
         self.stored_id = ""
         self.opened_ids: list[str] = []  # the sessions this launch had open before `stored_id`, oldest first
@@ -4823,8 +4822,7 @@ class App(ModesMixin, AgentViewMixin):
         self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
         if self.resized_while_paging:
             self.resized_while_paging = False
-            if self.size != self.drawn_size:  # the main screen came back as it was left unless the size moved
-                self._full_redraw()
+            self._full_redraw()
 
     # ── drawing ──
 
@@ -4848,16 +4846,12 @@ class App(ModesMixin, AgentViewMixin):
         self.redraw_at = self.clock() + RESIZE_SETTLE_SECONDS
 
     def _redraw_when_settled(self) -> None:
-        """The settled size redraws the session; a size back where it was printed (a resize signal on a switch back to
-        the terminal, a multiplexer's shrink and restore) reflowed nothing, so the region is repainted in place and
-        nothing is erased."""
+        """The settled size redraws the session, even one back where it was printed: a shrink and restore close
+        together (a tab shown again, a split laid out again) reaches the loop as one signal at the old size, and the
+        terminal has reflowed its rows by then."""
         if self.redraw_at is not None and self.clock() >= self.redraw_at:
             self.redraw_at = None
-            if self.size != self.drawn_size:
-                self._full_redraw()
-            else:
-                self.region.invalidate()
-                self.dirty = True
+            self._full_redraw()
 
     def _full_redraw(self) -> None:
         """Erase screen and scrollback, then print the session again at the current width.
@@ -4869,7 +4863,6 @@ class App(ModesMixin, AgentViewMixin):
         no more than that. Scrollback from before the TUI started is erased
         with it.
         """
-        self.drawn_size = self.size
         # The clear homes the cursor, so the next first frame starts on the screen's top row; it goes out in that
         # frame's synchronized update, so the blank screen never shows. Unless a pager is open, when it clears the
         # alternate screen now and the main screen's cursor is where it was.

@@ -343,10 +343,6 @@ class LiveRegion:
             written, painted, self._lead = self._lead + written, painted or bool(self._lead), ""
             self._write(f"{SYNC_BEGIN}{written}{SYNC_END}" if painted else written)
 
-    def invalidate(self) -> None:
-        """Paint every row again on the next frame, in place: nothing is erased first and the region keeps its place."""
-        self._width = None
-
     def render(
         self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, flush: Sequence[Line] = (),
         screen_rows: int | None = None,

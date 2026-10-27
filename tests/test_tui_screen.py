@@ -108,20 +108,16 @@ class SynchronizedOutputTests(unittest.TestCase):
         self.assertEqual(harness.screen.lines()[:2], ["one", "TWO"])
         self.assertEqual(harness.screen.scrollback, [])
 
-    def test_an_invalidated_region_repaints_every_row_in_place_erasing_nothing(self) -> None:
-        from omh.tui.screen import ERASE_BELOW, SYNC_BEGIN, SYNC_END
+    def test_a_region_cleared_before_its_first_frame_still_writes_its_lead(self) -> None:
+        # An exit right after a full redraw, before its frame: the erase the redraw asked for still goes out, once.
+        from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK
 
         harness = Harness(history=3)
-        harness.render(plain("one", "two", "three"), cursor=(2, 0))
-        written = len(harness.writes)
-        harness.region.invalidate()
-        harness.render(plain("one", "two", "three"), cursor=(2, 0))
-        (frame,) = harness.writes[written:]
-        self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END))
-        self.assertNotIn(ERASE_BELOW, frame)
-        self.assertNotIn("\x1b[2J", frame)
-        self.assertEqual(printable(frame), "onetwothree")
-        self.assertEqual(harness.screen.history(), [f"history {index}" for index in range(3)] + ["one", "two", "three"])
+        harness.region = LiveRegion(harness._write, at_top=True, lead=CLEAR_SCREEN_AND_SCROLLBACK)
+        harness.region.clear()
+        harness.region.clear()
+        self.assertEqual(harness.writes, [CLEAR_SCREEN_AND_SCROLLBACK])
+        self.assertEqual(harness.screen.scrollback, [])
 
     def test_a_pager_frame_is_wrapped_too(self) -> None:
         from omh.tui.pager import Pager
