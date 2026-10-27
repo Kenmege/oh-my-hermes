@@ -741,16 +741,22 @@ class SummaryTests(FixtureRoot):
         self.assertIn("#.........", field(text, "memory", "|"))
         self.assertTrue(field(text, "24 h", "|").split()[2].endswith("#"), "the busiest hour is the tallest cell")
         self.assertTrue(text[0].startswith("+- Hermes bots -") and text[0].endswith("+"))
-        self.assertTrue(text[HEAD].startswith("+----------+- * default"), "the face's column meets the edge in a joint")
+        # `*` running on POSIX, `?` where the board never probes a pid (Windows): the record still says running.
+        self.assertRegex(text[HEAD], r"^\+-{10}\+- [*?] default ", "the face's column meets the edge in a joint")
         bottom = next(squeeze(row) for row in text[HEAD + 1 :] if row.startswith("+"))
-        self.assertTrue(bottom.startswith("+----------+- discord o slack * -"), "chips, as last recorded: o")
+        self.assertTrue(bottom.startswith("+----------+- "), bottom)
+        # Off POSIX the gateway's words come first and take an 80-column edge; 150 leaves room for the chips.
+        wide, _span = profile_lines([self.profile()], 0, NOW, 150, DEFAULT_THEME, charset="ascii")
+        self.assertIn("discord o", squeeze(lines_text(wide)[-2]), "a platform as last recorded: o")
         self.assertTrue(any(row.startswith("+----------+- ? miku -") for row in text), "a gateway whose record outlived it: ?")
 
     def test_hermes_display_name_is_read_from_profile_yaml(self) -> None:
         self.assertEqual(self.profile().display, "")
         (self.root / "profile.yaml").write_text("display_name: Kami Sama\nui_meta: {}\n", encoding="utf-8")
         self.assertEqual(self.profile().display, "Kami Sama")
-        self.assertTrue(self.row(self.profile(), "top").startswith("╭──────────┬─ ● Kami Sama (default) (this TUI) ─"))
+        # The mark is the gateway's state: running only on POSIX, where the board probes the fixture's own pid.
+        top = self.row(self.profile(), "top")
+        self.assertTrue(top.startswith("╭──────────┬─ ") and "Kami Sama (default) (this TUI) ─" in top, top)
         (self.root / "profile.yaml").write_bytes(b"display_name: \xff\n")
         self.assertEqual(self.profile().display, "", "an unreadable profile.yaml names nothing")
 
@@ -1135,7 +1141,8 @@ class DrawingTests(FixtureRoot):
                     self.assertIn("2 agents", text)
                     self.assertIn("24 h 2 active · 4 stored", text)
                     self.assertIn("╭──────────┬─ ◌ miku ─", text)
-                    self.assertIn("╰──────────┴─ gateway not running · its record still says running", text)
+                    self.assertIn("╰──────────┴─ gateway not running slack ○ ─", text, "the why gives way to the chips")
+                    self.assertNotIn("is gone…", text, "never cut mid-word")
                     self.assertIn("╭──────────┬─ ○ broken ─", text)
                     self.assertIn("╰──────────┴─ gateway record unreadable ─", text)
                     self.assertIn("24 h sessions: no state.db", text)

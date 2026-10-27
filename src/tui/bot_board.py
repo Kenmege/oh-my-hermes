@@ -188,6 +188,7 @@ NOW_TITLE_MIN = 12  # a level-1 "now" row keeps its source and age only while it
 # charsets (`delegation_view.CHARSETS`).
 LABEL_WIDTH = 8
 FIT_GAP = 3  # the least gap before a row's right-pushed part
+EDGE_WHY_RANK = 20  # a card's bottom edge gives up the gateway's explanation before its last chip
 COST_RANK = 4
 SPARK_GAP = "   "
 GAUGE_CELLS = 10
@@ -1344,7 +1345,11 @@ def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, c
     _glyph, words, style = _gateway_words(profile, served_by, theme)
     pieces: list[Piece] = []
     if not gateway.live or gateway.state != GATEWAY_RUNNING:
-        pieces.append((0, "", (Span(words, style),)))
+        # The state first and whole; the why after it (`its record still says ...`) goes before any chip does, and
+        # level 2's box says it in full.
+        first, *why = words.split(" · ")
+        pieces.append((0, "", (Span(first, style),)))
+        pieces += [(EDGE_WHY_RANK + number, " · ", (Span(part, style),)) for number, part in enumerate(why)]
     live, stale = CHIP_GLYPHS[charset]
     for number, platform in enumerate(gateway.platforms):
         if not platform.current:
@@ -1476,8 +1481,16 @@ def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, wid
     rows = [[column[number] for column in columns] for number in range(height)]
     edge = theme.brand if highlighted else theme.rule
     top = (_bot_title(profile, served_by, highlighted, theme, charset), _bot_facts(profile, now, theme))
-    bottom = _bot_platforms(profile, served_by, max(width - 6 - (widths[0] + 3 if faced else 0), 1), theme, charset)
+    bottom = _bot_platforms(profile, served_by, _edge_room(widths, faced), theme, charset)
     return _panel(widths, rows, edge, charset, top=top, bottom=bottom, after_first=faced)
+
+
+def _edge_room(widths: Sequence[int], after_first: bool) -> int:
+    """How much text `_edge` sets into a box's edge: from past the first joint (or the corner) to the next one."""
+    joints = _joints(widths)
+    after = joints[0] if after_first and joints else 0
+    stop = min([at for at in joints if at > after] + [_box_width(widths) - 1])
+    return max(stop - (after + 3) - 2, 1)
 
 
 def profile_box(profile: Profile, served_by: str, now: float, width: int, theme: Theme, charset: str = "unicode") -> list[Line]:
@@ -1513,7 +1526,7 @@ def profile_box(profile: Profile, served_by: str, now: float, width: int, theme:
     columns = [_face_column(_text(profile.name), height, theme, charset), fields] if faced else [fields]
     rows = [[column[number] for column in columns] for number in range(height)]
     top = (_bot_title(profile, served_by, False, theme, charset), _bot_facts(profile, now, theme))
-    bottom = _bot_platforms(profile, served_by, max(width - 6 - (widths[0] + 3 if faced else 0), 1), theme, charset)
+    bottom = _bot_platforms(profile, served_by, _edge_room(widths, faced), theme, charset)
     return _panel(widths, rows, theme.rule, charset, top=top, bottom=bottom, after_first=faced)
 
 
