@@ -277,6 +277,9 @@ class SystemAliasBoundary(unittest.TestCase):
                     patch('sys.platform', platform), patch('os.readlink', return_value=link_text):
                 self.assertIs(system_alias(Path(part)), trusted)
 
+    # `_publish` is the POSIX descriptor path; `run` refuses other platforms
+    # before reaching it (PlatformBoundary), so the call itself is POSIX-only.
+    @unittest.skipUnless(SUPPORTED, 'audit filesystem requires macOS/Linux')
     def test_rollback_failure_keeps_the_original_error(self):
         from omh.workflows.repro_audit import operations
         with tempfile.TemporaryDirectory() as root:

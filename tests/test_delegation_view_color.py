@@ -31,7 +31,8 @@ from omh.plugin_bundle.omh.delegation_snapshot import messenger_snapshot  # noqa
 from omh.plugin_bundle.omh.delegation_view import ASCII, UNICODE, Focus, cells, render_delegation_view  # noqa: E402
 from omh.skin_pack import SKIN_THEMES, default_theme, hex_to_rgb, skin_colors  # noqa: E402
 from omh.tui import style as style_module  # noqa: E402
-from omh.tui.app import App  # noqa: E402
+from omh.tui.app import TICK_SECONDS, App  # noqa: E402
+from omh.tui.aura import GLINT_CELLS, aura_text  # noqa: E402
 from omh.tui.escapes import strip_escapes  # noqa: E402
 from omh.tui.panels import dag_line, dag_style, node_style, panel_lines  # noqa: E402
 from omh.tui.screen import paint_line  # noqa: E402
@@ -105,6 +106,25 @@ def drawn_rgb(style: Style) -> tuple[int, int, int]:
 def graph_spans(lines) -> list:
     """The spans of the delegation block's rows (indented under the agents header), its indent left out."""
     return [span for line in lines if line_text(line).startswith("  ") for span in line[1:] if span.text.strip()]
+
+
+def graph_text(lines) -> str:
+    """The text of the delegation block's rows, every cell kept: `graph_spans` leaves out a span that is only
+    spaces, and the aura can draw a title's space as a span of its own."""
+    return "\n".join(line_text(line) for line in lines if line_text(line).startswith("  "))
+
+
+RUNNING_TITLES = ("Refresh HUD docs", "Update HUD tests")  # `owner_mock`'s running nodes
+LONE_SPACE_PHASE = 8  # the band covers "h " of "Refresh HUD docs": its space a span apart from both neighbours
+
+
+def aura_app(phase: int) -> App:
+    """A truecolor app whose clock stands at aura `phase` (`App._spinner_frame`), the owner mock in its HUD."""
+    app = App(ScriptedTerminal(), None, {"COLORTERM": "truecolor", "TERM": "xterm-256color"},  # type: ignore[arg-type]
+              poller=FakePoller(), clock=lambda: (phase + 0.5) * TICK_SECONDS)
+    app.hud = type("Hud", (), {"payload": {"privacy": "metadata_only", "delegation_graph": owner_mock()},
+                               "received_at": None})()
+    return app
 
 
 def luminance(rgb: tuple[int, int, int]) -> float:
@@ -317,15 +337,36 @@ class PaintTests(unittest.TestCase):
     def test_the_tui_paints_the_graph_at_the_terminals_depth(self) -> None:
         for environ, expected in (({"COLORTERM": "truecolor", "TERM": "xterm-256color"}, TRUECOLOR),
                                   ({"TERM": "xterm-256color"}, COLOR_256), ({"NO_COLOR": "1"}, NO_COLOR)):
-            app = App(ScriptedTerminal(), None, environ, poller=FakePoller())  # type: ignore[arg-type]
+            app = App(ScriptedTerminal(), None, environ, poller=FakePoller(),  # type: ignore[arg-type]
+                      clock=lambda: (LONE_SPACE_PHASE + 0.5) * TICK_SECONDS)
             app.hud = type("Hud", (), {"payload": {"privacy": "metadata_only", "delegation_graph": owner_mock()},
                                        "received_at": None})()
             with self.subTest(environ=environ):
                 self.assertEqual(app.color_depth, expected)
-                spans = graph_spans(app._agent_view(100, 40))  # the agent view under the info line draws it
+                lines = app._agent_view(100, 40)  # the agent view under the info line draws it
                 # A running node's title is a span a character in the aura where it moves (truecolor, motion on).
-                self.assertIn("Refresh HUD docs", "".join(span.text for span in spans))
-                self.assertTrue(all(span.style.depth == expected for span in spans))
+                self.assertIn("Refresh HUD docs", graph_text(lines))
+                self.assertTrue(all(span.style.depth == expected for span in graph_spans(lines)))
+
+    def test_every_aura_phase_keeps_a_running_title_exactly(self) -> None:
+        theme = aura_app(0).theme
+        cycle = max(len(title) for title in RUNNING_TITLES) + 2 * GLINT_CELLS  # the band enters, crosses and leaves
+        lone_space = []
+        for phase in range(2 * cycle):
+            app = aura_app(phase)
+            self.assertEqual(app._aura_phase(), phase)
+            lines = app._agent_view(100, 40)
+            rows = graph_text(lines)
+            painted_rows = "\n".join(strip_escapes(paint_line(line, line_width(line))) for line in lines)
+            for title in RUNNING_TITLES:
+                with self.subTest(phase=phase, title=title):
+                    spans = aura_text(title, theme.aura, theme.aura_glint, phase)
+                    self.assertEqual("".join(span.text for span in spans), title)
+                    self.assertIn(title, rows)
+                    self.assertIn(title, painted_rows, "the terminal is sent every cell, the space included")
+            if "Refresh HUD docs" not in "".join(span.text for span in graph_spans(lines)):
+                lone_space.append(phase)  # a title's space drawn as a span of its own, which `graph_spans` leaves out
+        self.assertIn(LONE_SPACE_PHASE, lone_space, "the sweep reaches the phases that dropped the space before")
 
     def test_a_chat_post_is_plain_text(self) -> None:
         with homes() as home:

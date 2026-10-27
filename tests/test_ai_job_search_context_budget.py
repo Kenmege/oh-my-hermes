@@ -64,10 +64,12 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # when its runtime names became scoring-only (same length).
             # 522331 -> 522328 and the digest re-derived again for the
             # model-setup row refresh (-3); no other row moved.
-            # 522328 -> 525318 and both digests re-derived: repro-audit adds
+            # Then the promo postmortem's visual-qa quality-bar rule grows that
+            # sibling row: 522328 -> 523199.
+            # 523199 -> 526189 and both digests re-derived: repro-audit adds
             # one row to each producer (+2990 full, +929 standalone).
-            (skill_capabilities, 525318, FULL_ROW_DELTA_CAP,
-             'e76a430cd69f75f27c6a28d2a364bbcc29c7facb51f37e5240b50220c393dcaa',
+            (skill_capabilities, 526189, FULL_ROW_DELTA_CAP,
+             '323ec53a271866da516ce1e412bb2e6c1450598aa7b72ba6e34a45cfc4c03ade',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 142629, STANDALONE_ROW_DELTA_CAP,
              'a130544228a3583763e8b987f2a2e07983015ff8f6b832cdc72c230f5f069019',
@@ -133,8 +135,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
         # Re-derived again for the model-setup body refresh (retired provider
         # and role-slot wording); only model-setup moves versus main.
+        # Then the promo postmortem in content-operator, design-quality-gate,
+        # show-reel, and visual-qa.
         # Re-derived again for repro-audit: its own body joins the legacy set.
-        self.assertEqual(_digest(legacy_hashes), 'f7e194e3fa7b40d9f36869f211094c578c7a8ea4639b5784e48132849a0c1bf4')
+        self.assertEqual(_digest(legacy_hashes), '516ae5ba1c037826443bee2523e97edf89c41fd595960a6ec76471350b36fc94')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.

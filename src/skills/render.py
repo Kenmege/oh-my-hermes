@@ -6569,8 +6569,8 @@ _DOMAIN_ENGINEERING_ATTRIBUTION = """## Attribution
 
 Concept lineage only. The idea of a mandatory per-language reference gate that
 escalates on `unsafe`/FFI contact, and of a hypothesis-first native debugging
-loop, is adapted from the `programming` and `debugging` skills of the
-`omo-ai` plugin; the DAP-over-printf preference is adapted from `can1357/oh-my-pi`'s
+loop, is adapted from the `programming` and `debugging` skills of an
+upstream coding-agent plugin; the DAP-over-printf preference is adapted from `can1357/oh-my-pi`'s
 first-class debug adapter tooling. No upstream text is reproduced -- the
 wording, the artifact vocabulary, and the `prepared_not_observed` claim
 boundary are OMH's own, and OMH keeps its no-execution boundary: every command
@@ -12857,10 +12857,21 @@ axis explicitly; a PASS with no named evidence per axis is not a review.
   broken CJK line-height.
 - **Spacing rhythm** — values come from the scale; sibling gaps agree;
   sections breathe in proportion to their weight. FAIL: off-scale values,
-  touching sections, arrhythmic padding.
+  touching sections, arrhythmic padding, a logo or identity mark with less
+  than one of its own text rows of clear space from the frame or window edge
+  (an intentional crop is exempt).
 - **Color system** — layered backgrounds, text hierarchy through color, a
   deliberate accent budget, semantic states. FAIL: one flood color plus
   gray; decorative gradients with no role; contrast under the floor.
+  For a composed frame (promo, poster, slide, end card), judge harmony from
+  a written hue-family list, not by eye: every family on screen with its hex
+  values and where it appears (background, chrome, subject, logo, captions,
+  accents). The captured product or brand palette is given and never
+  repainted; the surrounding composition adds at most one accent family
+  beyond it. Neutrals, semantic-state colors and data-series palettes are
+  listed but not counted. Text contrast is at least 4.5:1, or 3:1 for large
+  type, on the background it actually sits on. Run the list before render;
+  after render it only confirms.
 - **State coverage** — primitives show hover, focus-visible, active,
   disabled, loading, error, and empty. FAIL: any interactive element with
   only a default state.
@@ -12878,8 +12889,9 @@ axis explicitly; a PASS with no named evidence per axis is not a review.
   the brief is operational or data-dense. FAIL: an editorial prior applied to
   a dashboard, fintech, or developer-tool surface with no stated reason.
 - **Chosen, not inherited** — framework blue, glass surfaces, gradient
-  accents, the default UI typeface, per-surface shadows, and uniform column
-  grids each carry a stated reason or are replaced. FAIL: a default present
+  accents, the default UI typeface, per-surface shadows, uniform column
+  grids, and decorative meta text (window title bars, dimension labels,
+  invented paths) each carry a stated reason or are replaced. FAIL: a default present
   with no rationale, checked against the review prompts in
   `omh-frontend/references/taste-foundations.md`.
 
