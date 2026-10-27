@@ -23,7 +23,9 @@ class LifecycleCompatibilityTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory(prefix="lifecycle-compatibility-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # Resolve the root: Windows hands out an 8.3 alias (RUNNER~1) while OMH
+        # reports long-name paths, and kept_paths entries are compared whole.
+        self.root = Path(temporary.name).resolve()
         self.hermes = self.root / "hermes"
         self.store = self.root / "store"
         self.hermes.mkdir()
