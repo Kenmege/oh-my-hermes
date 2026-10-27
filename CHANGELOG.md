@@ -33,6 +33,7 @@ All notable changes will be documented here.
   archived only with its hash, version and catalog row read back, published
   only when the destination's own URL resolves to the same hash, and the
   final file is the one the person approved, never the newest mtime. (#2335)
+## 4.0.3 - 2026-10-27
 
 - **`plan` and `ralplan` name the goal beyond the request, the raw material,
   and an outside judge.** Before splitting tasks a plan states what should
