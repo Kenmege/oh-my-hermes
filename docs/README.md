@@ -56,6 +56,7 @@ references rather than normal user steps.
 | Capture and recall reviewed project context | [Project Memory](MEMORY.md) |
 | Find out which stage failed when a saved memory was not used | [Memory Recall Incident](MEMORY-RECALL-INCIDENT.md) |
 | Answer what a web page said as of a date, or compare then versus now | [Temporal Source Receipts](TEMPORAL-SOURCE-RECEIPTS.md) |
+| Compare existing HellaSwag results with reported paper conditions without running a model | [Research result audit](REPRO-AUDIT.md) |
 | Read a very large PDF, contract, or manual through Hermes in page ranges | [Long Document Reading](LONG-DOCUMENT-READING.md) |
 | Judge whether a realtime voice connector keeps whole spoken turns | [Realtime Voice Trial Receipts](REALTIME-VOICE-TRIAL-RECEIPTS.md) |
 | See which OMH workflow owns each plugin in the active host catalog | [Plugin Catalog Coverage](PLUGIN-CATALOG-COVERAGE.md) |

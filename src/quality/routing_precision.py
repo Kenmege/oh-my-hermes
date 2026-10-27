@@ -109,6 +109,67 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("career-employer-reference", "An employer campaign named as a phrase is reference input", 'Explain the phrase "our recruiting team runs a job search campaign".', "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("career-financial-definition", "Financial terms do not request career work", "Explain what a salary bond is in finance.", "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("career-resume-process", "Resume as a verb is not career tailoring", "Explain how to resume a paused process.", "answer_directly", "direct_answer", "ai-job-search"),
+    # repro-audit (#2242 review): each control says a phrase the PR once
+    # triggered on, or one of the HellaSwag phrases, in a sense that is not a
+    # comparison of the person's own record with a paper. A clarify that only
+    # lists the workflow as an option passes; forbidden_candidate pins the
+    # sentences where it is not even listed today.
+    RoutingPrecisionCase("repro-audit-score-explainer", "Explaining a benchmark score is a direct answer", "Explain how HellaSwag score is computed", "answer_directly", "direct_answer", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-patient-conditions", "A patient's reported conditions are not paper conditions", "List the reported conditions for this patient", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-insurance-conditions", "An insurance claim's conditions are not evaluation evidence", "Write up the reported conditions for the insurance claim", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-weather-conditions", "Weather conditions are not evaluation conditions", "Summarize the reported conditions from the weather report", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-soccer-evaluations", "Player evaluations are not benchmark records", "Compare evaluation results for our soccer players this season", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-student-evaluations", "Student evaluations are not benchmark records", "Compare evaluation results for my students between midterm and final", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-sales-evaluations", "A sales team review is not a paper comparison", "Compare evaluation results for our sales team", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-rag-eval", "An app eval run is outside the HellaSwag contract", "Compare evaluation results of our RAG pipeline eval run", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-hiring-log", "A hiring log is not an evaluation log", "Check the evaluation log comparison for the hiring process", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-ci-harness", "CI harness results are not paper evidence", "audit harness results from CI", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-survey-audit", "A survey audit is not a benchmark audit", "Run a research result audit of our marketing survey", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-run-request", "Producing a new score is evaluation, which the audit never runs", "Run HellaSwag on my model and report the HellaSwag score", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-generate-log", "Generating a log is evaluation, not an audit of one", "Generate a HellaSwag log for my checkpoint", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-tweet", "Writing about reported results is not comparing a record", "Draft a tweet about the HellaSwag results our paper reported", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-spreadsheet", "Copying published numbers is not comparing a record", "Add the published HellaSwag results to my spreadsheet", "answer_clarification", ""),
+    # One control per clause of `_repro_audit_offers_itself`: no comparison
+    # lead verb, no own record, no paper or reported target, a request to rerun.
+    RoutingPrecisionCase("repro-audit-format-table", "Formatting results for a paper is writing, not a comparison", "Format my HellaSwag results table for the paper's appendix", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-two-papers", "Two papers' numbers are not the person's own record", "Compare the HellaSwag results reported by two different papers", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-last-week", "Comparing two own runs has no paper target", "Compare my HellaSwag results with last week's", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-then-rerun", "A rerun request asks for new numbers", "Compare this HellaSwag log to the paper and then rerun it with 10-shot", "answer_clarification", "", "repro-audit"),
+    # Execution is read by stem over the whole request (#2324 review): a
+    # hyphen, an -ing form, retraining, fine-tuning, "again" and a later
+    # sentence each ask for new numbers too.
+    RoutingPrecisionCase("repro-audit-hyphen-rerun", "A hyphenated rerun asks for new numbers", "Check my HellaSwag log against the paper and re-run whatever looks off", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-rerunning", "An -ing rerun asks for new numbers", "Compare this HellaSwag results file to the paper before rerunning the job", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-retrain", "Retraining is producing a new model", "Verify my HellaSwag score against the paper and retrain the head if it is lower", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-fine-tune", "Fine-tuning is producing a new model", "Compare our HellaSwag results with the paper so we can fine-tune further", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-again", "Doing the eval again asks for new numbers", "Check my HellaSwag score against the paper, then do the eval again", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-keep-training", "Training the model is producing new numbers", "Check this HellaSwag log against the paper while I keep training the model", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-later-sentence-run", "A run asked in a later sentence still asks for new numbers", "Audit my HellaSwag log against the paper. After that, run it once more on the new checkpoint.", "answer_clarification", ""),
+    # Only record words may sit between the benchmark and the comparison
+    # relation: a file's upload state or a table before a deadline is not a
+    # comparison with the paper.
+    RoutingPrecisionCase("repro-audit-upload-state", "Whether a log is uploaded is not a comparison", "Verify this HellaSwag log file is uploaded with the paper artifacts", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-cited-log", "Without a comparison relation the paper only cites the log", "Check my HellaSwag log the paper appendix cites", "answer_clarification", "", "repro-audit"),
+    # The whole request is the admitted shape or nothing (#2324 delta review):
+    # a trailing clause of any kind, a second sentence, a tail word that is not
+    # a compared quantity, or a word before the owner each refuse.
+    RoutingPrecisionCase("repro-audit-rescore-clause", "A trailing rescore asks for new numbers", "Compare this HellaSwag log to the paper and rescore it afterwards", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-benchmark-clause", "Benchmarking another model is new work", "Audit our HellaSwag score against the paper and benchmark the distilled model", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-second-sentence", "Any second sentence is a follow-up request", "Check my HellaSwag results against the paper. Then try the 13B checkpoint as well.", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-style-guide", "A style guide is not a compared quantity", "Compare my HellaSwag score with the paper's style guide", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-paper-editor", "Checking with the paper's editor is not a comparison", "Verify my HellaSwag numbers with the paper editor before Friday", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-formatting-prefix", "Formatting checked before the record is document work", "Check the formatting of my HellaSwag results against the paper", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-results-slide", "A results slide is a document, not the record", "Check my HellaSwag results slide against the paper", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-no-relation", "Results a paper reported are not compared with it", "Check my HellaSwag results the paper reported", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-no-owner", "The benchmark's results are not the person's record", "Compare the HellaSwag results with the published numbers", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-leaderboard", "A leaderboard is not the paper's report", "Compare my HellaSwag score with the leaderboard results", "answer_clarification", "", "repro-audit"),
+    # Quoted, code and link text is masked before the predicate reads the
+    # message, so a shielded message never admits repro-audit.
+    RoutingPrecisionCase("repro-audit-double-quoted-tail", "A quoted trailing clause is unread, not absent", 'Compare my HellaSwag log against the paper "and then retrain it overnight"', "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-backticked-tail", "A code-span trailing clause is unread, not absent", "Check our HellaSwag results against the paper `then kick off a fresh eval`", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-curly-quoted-tail", "A curly-quoted trailing clause is unread, not absent", "Verify my HellaSwag score with the paper \u201cand redo the sweep\u201d", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-single-quoted-tail", "A single-quoted trailing clause is unread, not absent", "Compare this HellaSwag log to the paper 'then score the bigger model'", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-score-table", "A table checked before sending a paper is writing work", "Check our HellaSwag score table before sending the paper to reviewers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),
     RoutingPrecisionCase("docking-boat-reservation", "Boat docking is not a molecular search", "Explain the boat docking reservation policy.", "answer_directly", "direct_answer", "molecular-docking"),
@@ -9057,6 +9118,11 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("career-tailoring", "Resume tailoring reaches real drafts", "Tailor my resume to this library coordinator posting using my supplied facts.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("career-interview", "Interview preparation reaches versioned evidence", "Prepare for my job interview from the selected application version.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("career-tracking", "Outcome tracking requires confirmed events", "Track my job applications and record my explicitly confirmed outcome.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("repro-audit-log-conditions", "Compare retained results to reported conditions", "Compare this HellaSwag log to the paper's reported conditions", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-own-results", "The person's own HellaSwag results against the paper", "Audit my lm-eval HellaSwag results against the paper", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-score-metric", "A score check against a paper's reported metric", "Check whether my HellaSwag score matches the paper's reported acc_norm", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-metric-tail", "The compared metric may close the request", "Compare my HellaSwag score with the paper's reported metric", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-courtesy-lead", "A courtesy opener still leads with the comparison", "Can you compare my HellaSwag log with the paper's numbers?", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
     RoutingInterventionCase("gis-metric-overlay", "Supplied geometry requires actual metric computation", "Intersect these two GeoJSON layers in a metric CRS and compute overlap area.", "dispatch", "geospatial-analysis", "prepare_geospatial_analysis", "geospatial_analysis"),
     RoutingInterventionCase("bio-public-source-comparison", "Public claims require source-labelled reconciliation", "Cross-check this public BRAF V600E melanoma query with a ClinVar cross-check and trial registry records, retaining disagreements and update dates.", "dispatch", "biomedical-evidence", "prepare_biomedical_evidence", "biomedical_evidence"),
     RoutingInterventionCase("docking-prepared-search", "Prepared inputs require actual bounded pose search", "Run rigid-receptor docking for these prepared PDBQT inputs and declared binding box, returning real poses and replay settings.", "dispatch", "molecular-docking", "prepare_molecular_docking", "molecular_docking"),

@@ -47,9 +47,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         added = [line for line in lines if line.startswith('    - omh-ai-job-search: ')]
         self.assertEqual(len(added), 1)
         legacy = [line for line in lines if line not in added]
-        self.assertEqual(_digest(legacy), '08c0a6fc44b47bde948aee6ff427eb2e7312bffb627deeb31b32304747d754df')
-        self.assertEqual(len('\n'.join(legacy)), 13157)
-        delta = len('\n'.join(lines)) - 13157
+        # 13157 -> 13241 and the digest re-derived: repro-audit adds its own
+        # 84-character entry, which test_skill_context_cost pins.
+        self.assertEqual(_digest(legacy), 'cea493d3fac9e07b6052a8196b90a74e4b74b7354df825d30914078e1264aa33')
+        self.assertEqual(len('\n'.join(legacy)), 13241)
+        delta = len('\n'.join(lines)) - 13241
         self.assertGreater(delta, 0)
         self.assertLessEqual(delta, INDEX_DELTA_CAP)
         # A catalog ratchet is exact; do not carry the old row's unused slack.
@@ -69,11 +71,13 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # after its review, moves sibling rows' trigger previews and `+N more`
             # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
             # career row is unchanged.
-            (skill_capabilities, 523243, FULL_ROW_DELTA_CAP,
-             '6117d8a6608a0c5f8f54b0aad6a4f09a5042b495e4314c3b768b23d6404db2d1',
+            # 523243 -> 526233 and the digest re-derived: repro-audit adds one
+            # row to each producer (+2990 full, +929 standalone).
+            (skill_capabilities, 526233, FULL_ROW_DELTA_CAP,
+             'b4dde327c355ec019ae372125b00b280e1cd39a59291ca3ebf28b9ffa5115393',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
-            (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
-             'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
+            (standalone_skill_capability_items, 142629, STANDALONE_ROW_DELTA_CAP,
+             'a130544228a3583763e8b987f2a2e07983015ff8f6b832cdc72c230f5f069019',
              release.STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
         ):
             with self.subTest(producer=producer.__name__):
@@ -103,9 +107,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # `что сейчас делается` and `dag-ulw` three Cyrillic triggers (+123 bytes).
         # The pack review replaces `что сейчас делается` with `что делают
         # агенты` (-4 bytes).
-        self.assertEqual(_digest(legacy), '71240381ad2738a6e954085a6c1a6c0fd32c1503a90fd4fb575c370a803abd98')
+        # 32993 -> 33096 and the digest re-derived: repro-audit adds its
+        # trigger row and its researcher membership (+103).
+        self.assertEqual(_digest(legacy), 'f40d6d4ac1b0d0b7e4489815f21c382c9669136e9c89582c22bce7c8a6a1d0e2')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 32993)
+        self.assertEqual(baseline, 33096)
         self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
@@ -126,7 +132,8 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # Reconstruct that one measured, same-length membership change.
             # The vi trigger rewording also moved five lane bodies, which is
             # why this digest is no longer the clean-base one.
-            restored = ''.join(body.replace('`+26 more`', '`+25 more`')
+            # repro-audit's own lane membership makes it +27 -> +26.
+            restored = ''.join(body.replace('`+27 more`', '`+26 more`')
                                if heading == 'Workflow Lane' and '**Research and company ops**' in body
                                else body for heading, body in parts)
             legacy_hashes[template.name] = hashlib.sha256(restored.encode()).hexdigest()
@@ -141,14 +148,18 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # show-reel, and visual-qa.
         # Re-derived for the ru trigger pack: the 49 bodies it covers gain
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
-        self.assertEqual(_digest(legacy_hashes), 'cc6d48c3e3cc343c56d48c23d2f774235159aa3365771dbca6777c747aff36bb')
+        # Re-derived again for repro-audit: its own body joins the legacy set
+        # (and again for its review's confirmation-wording fix).
+        self.assertEqual(_digest(legacy_hashes), '055021f66e10653f53baa63fa5bd7e01dd84882116802e1f7c32cdcf104a79f3')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
-        self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
+        # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
+        self.assertEqual(legacy['repeated']['bytes'], 126593)
         delta = current['repeated']['bytes'] - legacy['repeated']['bytes']
         self.assertEqual(delta, len(sections['Workflow Lane']) + len(sections['Runtime Evidence']))
         self.assertLessEqual(delta, REPEATED_DELTA_CAP)
-        self.assertLess(current['repeated']['bytes'] - REPEATED_DELTA_CAP, 126_000)
+        # 126,000 -> 127,943: repro-audit's 1,943 rails, bounded by its own test.
+        self.assertLess(current['repeated']['bytes'] - REPEATED_DELTA_CAP, 127_943)
         feature_refs = [t for t in refs if t.skill_name == FEATURE]
         self.assertEqual(len(feature_refs), 6)
         self.assertLessEqual(sum(len(t.content.encode()) for t in feature_refs), 19397)

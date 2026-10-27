@@ -70,7 +70,12 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Actor/objective follow-up adds seven employer contrasts.
         # The Russian trigger pack adds three negatives its held-back words guard,
         # and its review twenty-five everyday Russian turns.
-        self.assertEqual(payload["summary"]["case_count"], 1143)
+        # repro-audit adds one vocabulary control; its review replaces it with
+        # 19 controls that each say a phrase the skill once dispatched on;
+        # the #2324 review adds ten more for its execution and relation clauses,
+        # and its delta review ten more, one per position of the allow-listed shape,
+        # then four quoted or code-span trailing clauses.
+        self.assertEqual(payload["summary"]["case_count"], 1186)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -140,7 +145,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A stop with a declarative reason is answered directly (+1).
         # The three science vocabulary controls also answer directly.
         # The two quoted employer controls are answered directly.
-        self.assertEqual(payload["summary"]["direct_answer_count"], 349)
+        # repro-audit's score explainer is answered directly (+1).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 350)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -196,7 +202,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # `merge` twins stay beside them and keep the dispatch path.
         # The Russian trigger pack adds eleven interventions, its review nine,
         # and three Korean ones that pin its scoring rule to Russian.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1154)
+        # repro-audit adds one HellaSwag log versus paper request, and its
+        # review three more requests in the admitted shape, then one that
+        # closes on the compared metric.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1159)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

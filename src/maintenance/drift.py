@@ -887,7 +887,21 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # skill, overlapping or apart, summed to a dispatch: reports to the
             # bosses already handed in, a secretary's weekly report, a vague
             # geometry problem (+3).
-            expected=1143,
+            # repro-audit adds one vocabulary control (+1). Its review replaces
+            # that control, which no trigger reached, with 19 that each say a
+            # phrase the skill once dispatched on or a HellaSwag phrase in
+            # another sense, one per clause of its admission rule (+18). The
+            # #2324 review adds ten more: execution by stem anywhere in the
+            # request (hyphen, -ing, retrain, keep training, fine-tune, again,
+            # a later sentence) and the record-to-relation shape (an upload
+            # state, a citing appendix, a table before sending) (+10). The delta
+            # review makes the whole request an allow-listed shape and adds one
+            # control per position: trailing clauses, a second sentence, a tail
+            # word, a word before the owner, the record slot, the relation, the
+            # owner and the target (+10). A quoted, code-span, curly-quoted or
+            # single-quoted trailing clause is masked before the predicate
+            # reads it, so shielded messages never admit the skill (+4).
+            expected=1186,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1414,7 +1428,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # purpose (chart styling, an architecture diagram with the code
             # structure, model serving with a serving benchmark) still
             # dispatch (+3).
-            expected=1154,
+            # repro-audit adds one HellaSwag log versus paper request (+1), and
+            # its review three more: own results, a score against a reported
+            # metric, a courtesy opener (+3), and its delta review a request
+            # that closes on the compared metric (+1).
+            expected=1159,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

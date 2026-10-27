@@ -53,7 +53,8 @@ class SkillRecordTests(unittest.TestCase):
         # market-research adds a `_SKILL_POLICIES` entry (+1 skill). show-reel adds one (+1 skill).
         # Three optional science methods each declare a curated policy.
         # The career method adds its own evidence-bound next action.
-        self.assertEqual(counts, Counter({"skill": 123, "category": 27, "role": 9}))
+        # repro-audit adds its own curated policy (+1 skill).
+        self.assertEqual(counts, Counter({"skill": 124, "category": 27, "role": 9}))
         self.assertEqual(counts["default"], 0)
 
     def test_next_action_label_is_the_action_copy_label(self) -> None:
