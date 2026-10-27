@@ -20,7 +20,7 @@ import time
 import unittest
 from unittest import mock
 
-from _tui_lines import composer_text, INFO_INSET, line_text, RULE_ROW
+from _tui_lines import info_row_index, composer_text, INFO_INSET, line_text, RULE_ROW
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
@@ -41,7 +41,7 @@ def drawn(app: App) -> list[str]:
 
 def info_row(screen: list[str]) -> int:
     """The info line's row: the last that is not blank, since every row under the region is."""
-    return max(index for index, line in enumerate(screen) if line)
+    return info_row_index(screen)
 
 
 def rule_rows(screen: list[str]) -> list[int]:
@@ -511,7 +511,7 @@ class PickerTests(unittest.TestCase):
                 app, _client = make_app(rows=rows, cols=40)
                 app._open_session_picker(SESSIONS)
                 screen = drawn(app)
-                self.assertTrue(any(line.startswith(" ● Release notes") or line.startswith("   Release notes")
+                self.assertTrue(any(line.startswith("❯ ● Release notes") or line.startswith("❯   Release notes")
                                     for line in screen), screen)
 
     def test_a_short_terminal_says_a_pickers_keys_on_the_info_line_and_not_in_its_header(self) -> None:

@@ -401,7 +401,7 @@ class AgentViewMixin:
             return wanted
         # What allocate left the view and the tail under the parts placed before them (`layout.allocate`).
         left = max_height(rows) - (
-            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot
+            budget.composer + budget.info + budget.bottom_rule + budget.rule + budget.below + budget.slot + budget.badge
         )
         return max(last_given, left - working)
 
@@ -470,7 +470,9 @@ class AgentViewMixin:
         """
         cols, rows = self.size
         shown = listed[: budget.agents]
-        self.clickable = {budget.agents - 1 - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(shown)}
+        # Counted up from the region's last row: the badge row under the view comes first.
+        self.clickable = {budget.badge + budget.agents - 1 - index: (Hit(0, cols, row_id),)
+                          for index, row_id in enumerate(shown)}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
     def _list_available(self) -> bool:

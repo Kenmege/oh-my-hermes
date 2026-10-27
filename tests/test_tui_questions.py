@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import unittest
 
-from _tui_lines import INFO_INSET, composer_text, line_text
+from _tui_lines import info_row_index, INFO_INSET, composer_text, line_text
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_app import FakePoller, ScriptedTerminal
 from test_tui_modes import RecordingClient, make_app, type_text
@@ -334,7 +334,7 @@ class WaitingTimeTests(unittest.TestCase):
 
         def status() -> str:
             screen = drawn(app)
-            return screen[max(index for index, row in enumerate(screen) if row)]  # the info line, the region's last row
+            return screen[info_row_index(screen)]  # the info line, the region's last row but the badge row
 
         app, _client, now = self.clocked()
         app.stored_id = "stored"

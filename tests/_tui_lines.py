@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import re
 
 from omh.tui.frame import INFO_INSET as INFO_INSET_CELLS, RULE
 from omh.tui.style import Line
 
 INFO_INSET = " " * INFO_INSET_CELLS  # the info line under the composer's rule starts this far in
+
+
+def is_badge_row(row: str) -> bool:
+    """The region's last row (`frame.badge_line`): `[ ⚚ OMH Native ]` on its right edge, or, too narrow for that,
+    the branch alone two cells in (`branch:` and a name right after it, never a transcript line saying "branch: ...")."""
+    return row.rstrip().endswith("[ ⚚ OMH Native ]") or re.match(rf"{INFO_INSET}branch:\S", row) is not None
+
+
+def info_row_index(screen: list[str]) -> int:
+    """The info line's row: the last that is not blank and not the badge row under it, since every row under the
+    region is blank."""
+    return max(index for index, row in enumerate(screen) if row and not is_badge_row(row))
 
 
 def line_text(line: Line) -> str:

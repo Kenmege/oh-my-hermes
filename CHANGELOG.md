@@ -60,6 +60,17 @@ All notable changes will be documented here.
   the screen went blank for a moment. The erase now goes out in the same
   synchronized update as the frame drawn after it, so a terminal that holds
   the update (DEC 2026) swaps the old screen for the new one in one step.
+- **The TUI's menus lose their bands, a sent prompt gains one, and the
+  bottom row names the branch.** The completion menu, the session, model,
+  rewind and launch-look pickers, the agent list, the delegation view and the
+  bot board's sessions draw no fill: the highlighted row is a `❯` and a bold
+  name in the skill hue, other commands keep that hue and their descriptions
+  are muted. A prompt you sent runs on a band to the right edge, tinted by
+  the launch look. From 30 rows the region's last row shows the session
+  directory's git branch with its changed and untracked counts, read off the
+  screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
+  plan and the composer get a blank row between them where the terminal has
+  one to spare.
 - **A long `/compress` is waited for, and side answers are not lost
   silently.** The TUI waits 660 s for `/compress`, Hermes' own budget,
   instead of 120 s, and past that says the compression may still land

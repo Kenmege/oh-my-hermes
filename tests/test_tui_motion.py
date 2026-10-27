@@ -130,7 +130,7 @@ class PulseTests(unittest.TestCase):
         app._on_event(ev("message.start"))
         app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
         clock.now += PULSE_SECONDS + 0.1
-        *_rest, tool, _working, _tip = app._tail(80)
+        *_rest, tool, _gap, _working, _tip = app._tail(80)
         self.assertEqual(mark(tool).style, THEME.dim)
 
     def test_without_a_clock_the_mark_holds_the_accent(self) -> None:
@@ -231,7 +231,7 @@ class ReducedMotionTests(unittest.TestCase):
         seen = set()
         for _ in range(12):
             clock.now += PULSE_SECONDS / 2
-            *_rest, tool, working, _tip = app._tail(80)
+            *_rest, tool, _gap, working, _tip = app._tail(80)
             seen.add((mark(tool).style, tuple(working)))
         self.assertEqual(len(seen), 1)  # the same rows at every moment (this turn has no start time to count from)
         ((style, working),) = seen

@@ -1944,7 +1944,7 @@ class QueueTests(unittest.TestCase):
         type_text(app, "/")
         lines = [line_text(line) for line in app._slot_lines(80, 24)]
         self.assertEqual(len(lines), slot_cap(24, 80))
-        self.assertTrue(all(line.lstrip().startswith("/") for line in lines[:4]), lines)
+        self.assertTrue(all(line.lstrip("❯ ").startswith("/") for line in lines[:4]), lines)
         self.assertEqual([line.split("  ")[0] for line in lines[4:]], ["⧗ one", "⧗ two", "⧗ three", "+1 more"])
 
     def test_a_question_or_the_session_picker_hides_the_rows(self) -> None:

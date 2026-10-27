@@ -1251,7 +1251,7 @@ class MouseReplayTests(AppTestCase):
         # Wheel, motion, a right press, a release and two near misses (the two rows under the region): still the
         # list, on the first agent, and nothing typed.
         ignored = captures["ignored"]
-        self.assertIn("▸ ", ignored[y - 2])
+        self.assertIn("❯ ", ignored[y - 2])
         self.assertEqual(captures["log"][0], "read the diff for risks")
         self.assertEqual(run.calls("subagent.tail")[0]["params"], {"session_id": LIVE_ID, "subagent_id": SECOND})
         # Off during the turn with the view shown, on with the list, off for the log, on back in the list, off once

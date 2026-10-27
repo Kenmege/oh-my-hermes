@@ -149,7 +149,7 @@ class ModelPickerTests(unittest.TestCase):
         picker = ModelPicker(model_rows(result), current="gpt-5.4-mini")
         rows = lines_text(picker.lines(100, DEFAULT_THEME, 20))
         self.assertIn("now gpt-5.4-mini", rows[0])
-        highlighted = [row for row in rows[1:] if row.lstrip().startswith("●")]
+        highlighted = [row for row in rows[1:] if row.lstrip("❯ ").startswith("●")]
         self.assertEqual(len(highlighted), 1)
         self.assertIn("gpt-5.4-mini", highlighted[0])
         self.assertEqual(picker.handle_key(Key(ENTER)).row.model, "gpt-5.4-mini")

@@ -27,6 +27,7 @@ from test_tui_modes import SID, answer, drawn, make_app, notices, type_text
 from test_tui_subagents import FRAMES, feed
 from omh.tui.gateway import Event
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key
+from omh.tui.prompts import CHOICE_MARK
 from omh.tui.subagents import Roster
 
 RUN = "sweep"
@@ -117,7 +118,8 @@ def tree_app(rows: int = 72, cols: int = 120, nodes: dict = NODES, children: boo
 
 def left(row: str) -> str:
     """A row up to its right-hand figures (two spaces or more after its text starts: the figure columns start two
-    cells after the title column), its indent kept."""
+    cells after the title column), its indent kept; the highlighted row's pointer stands in its indent."""
+    row = row.replace(CHOICE_MARK, " " * len(CHOICE_MARK), 1) if row.startswith(CHOICE_MARK) else row
     body = row.lstrip(" ")
     return row[: len(row) - len(body)] + re.split(r" {2,}", body.rstrip())[0] if body else ""
 
@@ -287,7 +289,8 @@ class FoldKeyTests(unittest.TestCase):
         self.assertIn(TREE_HINT, mode_row(app))
         self.assertEqual(len(during), len(before))
         self.assertEqual([left(row) for row in view_text(app)], DEFAULT, "the same rows, one highlighted")
-        self.assertNotIn("❯", "".join(during), "the composer's rows are blank while the tree has the keys")
+        # One `❯`, the tree's pointer: the composer's prompt mark is gone, its rows blank while the tree has the keys.
+        self.assertEqual("".join(during).count("❯"), 1, "the composer's rows are blank while the tree has the keys")
         app._on_input(Key(ESCAPE))
         self.assertIsNone(app.tree_selected)
         self.assertNotIn(TREE_HINT, mode_row(app))
@@ -1153,7 +1156,9 @@ class RunEndTests(unittest.TestCase):
         screen = drawn(app)
         self.assertGreaterEqual(box_top(screen), top, "the composer does not move up")
         info = box_top(screen) + 3
-        self.assertEqual(screen[info + 1:], [""] * (41 - info), "the tree's rows are blank under the info line")
+        # The tree's rows are blank under the info line, down to the badge row on the region's last row.
+        self.assertEqual(screen[info + 1 : 41], [""] * (40 - info), "the tree's rows are blank under the info line")
+        self.assertTrue(screen[41].rstrip().endswith("OMH Native ]"), screen[41])
         above = screen[box_top(screen) - 2 : box_top(screen)]
         self.assertTrue(above[0].strip().startswith("✻"), screen)  # the turn's summary line, then one spacer row
         self.assertEqual(drawn(app), screen, "the next frame keeps them")
