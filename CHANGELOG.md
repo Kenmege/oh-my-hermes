@@ -4,18 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **Hermes lists OMH skills again after an update.** `omh setup` registered
-  the running generation's own pack (`generations/<id>/skills`) after the
-  shared `current/skills` pointer; once the next update moved the pointer,
-  every OMH skill resolved to two files and Hermes listed none of them.
-  Setup and `omh chat --auto-apply-target-change` now register only the
-  pointer. The installer-managed command's setup and update retire every
-  generation-pack entry from the primary home and every bot profile, on
-  disk or already collected; a home naming only one is migrated to the
-  pointer, the same for the primary home as for a profile; `omh uninstall
-  --registration-only` removes them; and `omh doctor`
-  (`external_dir_ambiguity`) and the update post-check name an older pack
-  still on disk beside the pointer.
+- **A generation's own skills pack is never registered, and a home left on
+  one is moved to the pointer.** 4.0.3 stopped `omh setup` from registering
+  the running generation's pack (`generations/<id>/skills`) beside the shared
+  `current/skills` pointer -- once the next update moved the pointer, every
+  OMH skill resolved to two files and Hermes listed none of them -- and
+  retires such entries from every home. `omh chat
+  --auto-apply-target-change`, the last writer of that path, now registers
+  the pointer too. A primary home naming only an older generation's pack is
+  migrated to the pointer the way a bot profile already was, instead of
+  being read as the opt-out and losing every OMH skill once the pack is
+  collected; only the installer-managed command, which retires the pack in
+  the same write, counts it as a registration. A relative entry, which
+  Hermes anchors at its own home, never matches.
+
+## 4.0.3 - 2026-10-27
+
 - **`plan` and `ralplan` name the goal beyond the request, the raw material,
   and an outside judge.** Before splitting tasks a plan states what should
   happen once the requested result exists and whether it aims there, and adds
