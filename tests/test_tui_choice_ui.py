@@ -20,7 +20,7 @@ import time
 import unittest
 from unittest import mock
 
-from _tui_lines import composer_text, INFO_INSET, line_text, RULE_ROW
+from _tui_lines import info_row_index, composer_text, INFO_INSET, line_text, RULE_ROW
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import BELL, App
 from omh.tui.gateway import ServerRequest
@@ -41,7 +41,7 @@ def drawn(app: App) -> list[str]:
 
 def info_row(screen: list[str]) -> int:
     """The info line's row: the last that is not blank, since every row under the region is."""
-    return max(index for index, line in enumerate(screen) if line)
+    return info_row_index(screen)
 
 
 def rule_rows(screen: list[str]) -> list[int]:

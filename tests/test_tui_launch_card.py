@@ -181,8 +181,7 @@ class SkillRowTests(unittest.TestCase):
     def test_an_installed_generation_s_role_directories_still_regroup_as_omh(self) -> None:
         # An installed generation files its skills under role directories (`guide/omh-plan/SKILL.md`), so Hermes
         # names them by those categories, not `general`. The card regroups them by name and keeps those categories
-        # off the hermes row. Hermes listing none of them at all (a home naming two generations' packs, #1857's
-        # ambiguity) is what left the owner's card with the hermes row alone; the registration tests pin that.
+        # off the hermes row.
         installed = {"guide": ["omh-plan", "omh-lone"], "planner": ["dag-ulw", "ulw-plan"],
                      "reviewer": ["omh-code-review"], "devops": ["docker"], "creative": ["poem"]}
         rows = skill_rows(installed, members=lambda: MEMBERS)

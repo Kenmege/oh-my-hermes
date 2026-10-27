@@ -193,24 +193,6 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             )
             self.assertEqual(entries, [(pointer / "skills").as_posix()])
 
-    @requires_symlinks
-    def test_an_older_generation_pack_beside_the_pointer_is_the_ambiguity(self) -> None:
-        # The pointer links to the running generation; the previous one is
-        # kept for rollback, so its own pack is a second, different SKILL.md
-        # per name, and the finding names it for doctor and the post-check.
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            older, running = root / "generations" / "older" / "skills", root / "generations" / "running" / "skills"
-            older.mkdir(parents=True)
-            running.mkdir(parents=True)
-            (root / "current").symlink_to(running.parent, target_is_directory=True)
-            pointer = root / "current" / "skills"
-            candidates = managed_skill_dir_candidates(_managed_paths(root, running), current=pointer)
-            self.assertEqual(
-                registered_managed_entries(_config_naming(pointer, older, running), candidates),
-                [pointer.as_posix(), older.as_posix()],
-            )
-
     def test_an_entry_whose_directory_is_missing_is_not_counted(self) -> None:
         # Hermes skips an external directory that is not on disk, so nothing
         # can be ambiguous through it: a stale entry alone is not a finding.

@@ -205,6 +205,9 @@ LAUNCH_PALETTES: dict[str, tuple[LogoPalette, LogoPalette]] = {
                     whites=("#202429", "#2D3135", "#393E42", "#464B50", "#54595E", "#62676C"), spark="#008A8D"),
     ),
 }
+# A sent prompt's band: the launch look's card-edge colour moved this far toward the background (on a dark one, on a
+# light one), so the band is that look's tint at about 1.2-1.5:1 against the background.
+PROMPT_BAND_SHARE = (0.6, 0.8)
 LOGO_BLOCK = "█"
 # How far a drop-shadow glyph (the logo's box-drawing characters) is pulled from its face colour toward the background.
 LOGO_SHADOW_SHARE = 0.55
@@ -256,6 +259,7 @@ class Theme:
     slash: Style  # a `/name` that resolves to a command or skill, bold, in the composer and your prompt's rows
     aura: tuple[Style, ...] = ()  # a `dag-ulw` in the composer and the rules around it, bold, `AURA_STOPS` stepped
     aura_glint: tuple[Style, ...] = ()  # the same steps toward `AURA_GLINT`: the band that sweeps through them
+    prompt_band: Style = Style()  # behind a prompt you sent, edge to edge (`with_prompt_band`); none until set
 
 
 def aura_moves(theme: Theme) -> bool:
@@ -456,6 +460,19 @@ def launch_palette(name: str, surface: str) -> LogoPalette:
     unknown name."""
     dark, light = LAUNCH_PALETTES.get(name, LAUNCH_PALETTES[DEFAULT_LAUNCH])
     return light if is_light(surface) else dark
+
+
+def with_prompt_band(theme: Theme, skin: SkinTheme, background: str | None, look: str) -> Theme:
+    """`theme` with the band behind a prompt you sent (`prompt_band`, owner's pick of 2026-10-27): launch look
+    `look`'s card-edge colour mixed most of the way into the background (`PROMPT_BAND_SHARE`), so each look tints it
+    its own way. None when the terminal reported no background, as with the outcome bands: a band guessed for a dark
+    screen would be a dark bar across a light one."""
+    surface = surface_for(skin, background)
+    if surface != background:
+        return replace(theme, prompt_band=Style())
+    side = 1 if is_light(surface) else 0
+    edge = launch_palette(look, surface).edge
+    return replace(theme, prompt_band=Style(bg=_mix(edge, surface, PROMPT_BAND_SHARE[side])))
 
 
 def _logo_hyphens(rows: list[str]) -> set[int]:

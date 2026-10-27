@@ -76,10 +76,11 @@ def view_rows(app: App) -> int:
 
 def screen_info_index(app: App, screen: list[str]) -> int:
     """The info line's row on `screen`: the region's last row (where the region knows it, else the screen's last row
-    that is not blank), less the agent view's rows under it, blank ones included."""
+    that is not blank), less the badge row and the agent view's rows under it, blank ones included."""
     rows = view_rows(app)
     last = app.region.last_row(app.size[1])
-    return (info_index(screen) if last is None else last) - rows
+    badge = app.frame_budget.badge if app.frame_budget is not None else 0
+    return (info_index(screen) if last is None else last - badge) - rows
 
 
 def mode_row(app: App) -> str:
@@ -266,11 +267,16 @@ class ViewTests(unittest.TestCase):
         screen = drawn(app)
         top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         info = screen_info_index(app, screen)
-        self.assertTrue(screen[top - 2].startswith("[Plan]"), screen)
-        self.assertEqual(screen[top - 1].strip(), "[•] Ship it")
+        self.assertTrue(screen[top - 3].startswith("[Plan]"), screen)
+        self.assertEqual(screen[top - 2].strip(), "[•] Ship it")
+        self.assertEqual(screen[top - 1], "", "a blank row between the plan and the rule")
+        self.assertEqual(screen[top - 4], "", "and one between the tip and the plan")
         self.assertTrue(screen[top + 1].startswith("❯ ") and screen[top + 2].startswith(RULE_ROW), screen)
         self.assertEqual(info, top + 3)
-        self.assertEqual(screen[info + 1 :], [*VIEW, *[""] * (len(screen) - info - 1 - len(VIEW))])
+        self.assertEqual(screen[info + 1 : info + 1 + len(VIEW)], VIEW)
+        under = info + 1 + len(VIEW)
+        self.assertTrue(screen[under].rstrip().endswith("OMH Native ]"), screen)  # the badge row, the region's last
+        self.assertEqual(screen[under + 1 :], [""] * (len(screen) - under - 1))
 
     def test_a_finished_turn_keeps_its_view_with_each_agents_verdict(self) -> None:
         app, _client = agent_app(busy=False, frames=FRAMES, cols=80)

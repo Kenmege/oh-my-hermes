@@ -10,6 +10,17 @@ from omh.tui.style import Line
 INFO_INSET = " " * INFO_INSET_CELLS  # the info line under the composer's rule starts this far in
 
 
+def is_badge_row(row: str) -> bool:
+    """The row under the info line (`frame.badge_line`): the branch on its left, `[ ⚚ OMH Native ]` on its right."""
+    return row.rstrip().endswith("OMH Native ]") or row.lstrip().startswith("branch:")
+
+
+def info_row_index(screen: list[str]) -> int:
+    """The info line's row: the last that is not blank and not the badge row under it, since every row under the
+    region is blank."""
+    return max(index for index, row in enumerate(screen) if row and not is_badge_row(row))
+
+
 def line_text(line: Line) -> str:
     """The characters one styled line shows, styles dropped."""
     return "".join(span.text for span in line)

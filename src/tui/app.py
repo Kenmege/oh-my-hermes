@@ -119,7 +119,8 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import INFO_INSET, MODE_NORMAL, MODE_SHELL, Frame, build_frame, sticky_line
+from .frame import INFO_INSET, MODE_NORMAL, MODE_SHELL, Frame, badge_line, build_frame, sticky_line
+from .git_status import GitWatcher
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, SEARCH_HINTS, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -233,12 +234,14 @@ from .theme import (
     EDGE_CONTRAST,
     LAUNCH_PRESETS,
     LIGHT_STAND_IN,
+    TEXT_CONTRAST,
     WHITE,
     LaunchStyles,
     LogoPalette,
     Theme,
     aura_moves,
     build_theme,
+    with_prompt_band,
     is_light,
     launch_palette,
     launch_styles,
@@ -439,6 +442,7 @@ TERMINATE_GRACE_SECONDS = 2.0
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
+NATIVE_WORD = "Native"  # the badge under the info line's last word, in the launch look's colours
 # The block logo goes above the banner from this many rows (and as many columns as it is wide): its six rows and
 # the blank under it leave the composer region its room there.
 LOGO_MIN_ROWS = 24
@@ -1277,8 +1281,10 @@ class App(ModesMixin, AgentViewMixin):
         wall_clock: Callable[[], float] = time.time,
         pick_model_chains: Callable[..., str] = run_model_chain_picker,
         make_client: Callable[..., GatewayClient] | None = None,
+        git: GitWatcher | None = None,
     ) -> None:
         self.terminal = terminal
+        self.git = git  # the session directory's branch for the row under the info line; None draws no branch
         self.client = client
         # What spawns a gateway again after a crash (`_respawn_gateway`); None: a crash ends the TUI.
         self.make_client = make_client
@@ -1391,6 +1397,7 @@ class App(ModesMixin, AgentViewMixin):
         # while no menu is open. Decided as it opens and kept while it stays open (`_place_menu`).
         self.menu_below: bool | None = None
         self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
+        self.panel_shown = False  # the plan panel was in the slot `_slot_lines` last made: it gets its blank rows
         self.pager: Pager | None = None
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         # What reads the bot board (Ctrl+S, `/bots`) off this thread: made when it first opens, kept for the session
@@ -1544,6 +1551,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         if saved.strip().lower() in LAUNCH_PRESETS:  # a hand-edited `GRAPHITE` is graphite; it is written lowercase
             self.launch_look = saved.strip().lower()
+            self.theme = self._themed()
         elif home is not None:
             self.transcript.add_notice(LAUNCH_UNKNOWN_NOTICE.format(name=saved, path=theme_store_path(home)), NOTICE_WARN)
 
@@ -1739,7 +1747,7 @@ class App(ModesMixin, AgentViewMixin):
         named = environ or {}
         self.background = answered or background_from_colorfgbg(named)
         self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
-        self.theme = self._painted(build_theme(self._skin(), self._surface()))
+        self.theme = self._themed()
 
     def clear_launch_screen(self, row: int | None) -> None:
         """Push the rows above the cursor off the screen, erase the scrollback, and start the region on the top row.
@@ -1778,6 +1786,11 @@ class App(ModesMixin, AgentViewMixin):
         """`theme` as this terminal paints it: without colour at the `NO_COLOR` depth (`style.color_depth`)."""
         return without_colour(theme) if self.color_depth == NO_COLOR else theme
 
+    def _themed(self) -> Theme:
+        """The skin's theme against the background, with the shown launch look's band behind a sent prompt, painted."""
+        skin, surface = self._skin(), self._surface()
+        return self._painted(with_prompt_band(build_theme(skin, surface), skin, surface, self._shown_look()))
+
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
 
@@ -1803,6 +1816,8 @@ class App(ModesMixin, AgentViewMixin):
         """
         self.wake = self.client.wake_fd()
         self.poller.start(self._wake_loop)  # a new HUD snapshot wakes the loop as gateway news does
+        if self.git is not None:
+            self.git.start(self._wake_loop)  # so does a branch or a file count that moved
         try:
             if typed:
                 self._take_input(typed)
@@ -1943,6 +1958,8 @@ class App(ModesMixin, AgentViewMixin):
         finally:
             try:
                 self.poller.stop()
+                if self.git is not None:
+                    self.git.stop()
                 if self.board_reader is not None:
                     self.board_reader.close()
             finally:
@@ -2359,6 +2376,8 @@ class App(ModesMixin, AgentViewMixin):
             self._count_streamed(event.type, payload)
             if event.type == "tool.complete" and isinstance(payload, Mapping):
                 self._dag_moment(payload)
+            if event.type in ("tool.complete", "message.complete") and self.git is not None:
+                self.git.refresh()  # a tool or the turn may have changed the files or the branch
             if event.type == "message.start":
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
@@ -4565,7 +4584,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(LAUNCH_NO_NAME_NOTICE.format(
                 name=arg, themes=", ".join(theme_names()), looks=", ".join(LAUNCH_PRESETS)), NOTICE_WARN)
             return
-        self.theme = self._painted(build_theme(self._skin(), self._surface()))
+        self.theme = self._themed()
         if choice in BACKGROUND_MODES:
             self.transcript.add_notice(f"Theme {self.theme.name} {self._background_text()}.")
         else:
@@ -4575,6 +4594,23 @@ class App(ModesMixin, AgentViewMixin):
     def _shown_look(self) -> str:
         """The launch look drawn now: the /theme picker's highlight while it is open, else the one in use."""
         return self.launch_picker.highlighted if self.launch_picker is not None else self.launch_look
+
+    def _badge_line(self, cols: int) -> Line:
+        """The row under the info line (`frame.badge_line`): the branch, and `[ ⚚ OMH Native ]` in the shown look."""
+        if is_tiny(self.size[1], cols):
+            return ()
+        background = self._surface()
+        palette = launch_palette(self._shown_look(), surface_for(self._skin(), background))
+        if palette.sweep or palette.faces:  # the spectrum's hues across the letters, or the look's own colour
+            native = launch_wordmark(NATIVE_WORD, self._skin(), background, palette)
+        else:  # graphite: its turquoise, the one hue it has
+            surface = surface_for(self._skin(), background)
+            ink = BLACK if is_light(surface) else WHITE
+            native = (Span(NATIVE_WORD, Style(fg=lifted_colour(palette.spark, surface, TEXT_CONTRAST, ink), bold=True)),)
+        if self.color_depth == NO_COLOR:
+            native = tuple(Span(span.text, replace(span.style, depth=NO_COLOR)) for span in native)
+        state = self.git.state if self.git is not None else None
+        return badge_line(cols, self.theme, self._launch_paint().look.brand, native, state)
 
     def _launch_paint(self) -> LaunchPaint:
         """The shown look's card colours against the theme's background, painted at this terminal's depth."""
@@ -4613,6 +4649,7 @@ class App(ModesMixin, AgentViewMixin):
     def _keep_launch_look(self, name: str) -> None:
         """Use launch look `name` from now on, save it under the OMH home, and draw the logo and the card in it."""
         self.launch_look = name
+        self.theme = self._themed()
         home = self._omh_home()
         if home is None:
             self.transcript.add_notice(LAUNCH_SESSION_NOTICE.format(name=name))
@@ -4629,6 +4666,7 @@ class App(ModesMixin, AgentViewMixin):
     def _preview_launch(self) -> None:
         """Draw the shown look where it shows: on the launch screen, the logo by a full redraw and the live card in
         the region; past it, the compact preview above the picker (`_launch_preview`) needs only the next frame."""
+        self.theme = self._themed()  # a sent prompt's band in the shown look
         if self.card_state == CARD_LIVE:
             self._full_redraw()
         self.dirty = True
@@ -4672,11 +4710,11 @@ class App(ModesMixin, AgentViewMixin):
         """The /theme picker's look rows as the cells a click moves the highlight to, counted up from the region's
         last row like the agent list's, with mouse reports on while it is open."""
         picker = self.launch_picker
-        first = budget.pad + budget.sticky + budget.tail + (picker.first_row if picker is not None else 1)
+        first = budget.slot_top + (picker.first_row if picker is not None else 1)
         last = budget.total - 1
         self.clickable = {
             last - (first + index): (Hit(0, cols, f"launch:{index}"),)
-            for index in range(len(LAUNCH_PRESETS)) if first + index < budget.pad + budget.sticky + budget.tail + budget.slot
+            for index in range(len(LAUNCH_PRESETS)) if first + index < budget.slot_top + budget.slot
         }
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
@@ -4980,6 +5018,10 @@ class App(ModesMixin, AgentViewMixin):
             info=self._info_line(cols),
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
+            badge=self._badge_line(cols),
+            # The plan breathes: a blank row over it (where the tail does not end blank) and one between it and the rule.
+            gaps=(self.panel_shown, self.panel_shown),
+            gap_reserve=1 + int(rows >= TIP_MIN_ROWS),  # the working row and its tip, kept free as the turn ends
             below=self.menu_under,  # read after `_slot_lines` made it
             agents=self._agent_view(cols, rows),
             tail_floor=self._working_rows(),
@@ -5250,6 +5292,8 @@ class App(ModesMixin, AgentViewMixin):
                                            glint=self._aura_moves())
         if not lines and self.transcript.taken_any:
             lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
+        if self._busy() and lines and lines[-1]:  # a blank row above the working row, as between two blocks
+            lines.append(())
         if self._busy() and self.waiting_since is not None:
             # The turn waits on the person: no spinner, and one clock, the wait's.
             waited = elapsed_text(now - self.waiting_since)
@@ -5324,6 +5368,7 @@ class App(ModesMixin, AgentViewMixin):
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
         cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
         self.menu_under = []
+        self.panel_shown = False  # the plan panel is in the slot (`_menu_or_panel_lines`): it gets its blank rows
         if self.slot is not None:
             cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
         if cap <= 0:
@@ -5354,6 +5399,7 @@ class App(ModesMixin, AgentViewMixin):
         menu = self._menu_or_panel_lines(cols, cap - len(queue) - len(notice) - len(goal))
         if self.menu_below:  # the menu goes under the composer, and the panel stays away as it does for the menu
             self.menu_under, menu = menu, []
+            self.panel_shown = False
         return menu + goal + notice + queue
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
@@ -5365,13 +5411,15 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         if payload is None:
             return []
-        return panel_lines(
+        lines = panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
             show_agents=False, show_graph=False,  # the agent view under the info line draws them
             show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
             color_depth=self.color_depth,
         )
+        self.panel_shown = bool(lines)
+        return lines
 
     def _context_style(self) -> Style:
         percent = self.context_percent if self.context_percent is not None else 0.0
@@ -5511,6 +5559,7 @@ def _run(
     open_terminal: Callable[[], TerminalLike],
     make_poller: Callable[[str | None, str | None], PollerLike],
     make_client: Callable[..., GatewayClient] | None = None,
+    make_git: Callable[[str], GitWatcher] = GitWatcher,
 ) -> int:
     """Start the gateway, open the session, then run the loop on the raw terminal; the exit code.
 
@@ -5530,6 +5579,8 @@ def _run(
         poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
         theme=initial_theme(ready.payload, environ.get("OMH_HOME") or None),
         make_client=make_client,
+        # The session's directory as the launcher names it; with none named, no branch (never the TUI's own cwd).
+        git=make_git(cwd) if (cwd := environ.get("HERMES_TUI_CWD") or environ.get("HERMES_CWD")) else None,
     )
     try:
         app.startup()

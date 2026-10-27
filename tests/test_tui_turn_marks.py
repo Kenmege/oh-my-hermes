@@ -669,9 +669,13 @@ class SettledTailTests(unittest.TestCase):
                 app._render()
                 screen = app.terminal.screen.lines()
                 plan = next(index for index, line in enumerate(screen) if "[Plan]" in line)
-                # the spacer row every block opens with, then the panel
-                self.assertEqual(screen[plan - 1], "", "\n".join(screen[plan - 4 : plan + 1]))
-                self.assertTrue(screen[plan - 2].startswith("  ✻ "), "\n".join(screen[plan - 4 : plan + 1]))
+                done = max(index for index, line in enumerate(screen[:plan]) if line.startswith("  ✻ "))
+                # The spacer row every block opens with, then the panel. On the bottom rows the region keeps its
+                # height as the turn ends, so the two blank rows the running turn had (over the working row and over
+                # the plan: the owner's spacing of 2026-10-27) stay as blank rows until the next prompt: blank rows
+                # only, three at most, the done line right above them and nothing of the transcript among them.
+                self.assertIn(plan - done - 1, (1, 2, 3), "\n".join(screen[done - 1 : plan + 1]))
+                self.assertEqual(set(screen[done + 1 : plan]), {""}, "\n".join(screen[done - 1 : plan + 1]))
 
     def test_the_prompt_and_its_sticky_echo_are_never_on_screen_together(self) -> None:
         # A reply streams line by line under the prompt: the prompt shows until it scrolls off, the echo after.

@@ -10,7 +10,8 @@ import unittest
 from omh.skin_pack import SKIN_THEMES, hex_to_rgb, skin_colors
 from omh.tui.style import Style
 from omh.tui.theme import (
-    DEFAULT_THEME, GLYPH_ROLES, TEXT_CONTRAST, TEXT_ROLES, build_theme, contrast_ratio, is_light, surface_for, theme_named,
+    DEFAULT_LAUNCH, DEFAULT_THEME, GLYPH_ROLES, LAUNCH_PRESETS, TEXT_CONTRAST, TEXT_ROLES, build_theme, contrast_ratio,
+    is_light, surface_for, theme_named, with_prompt_band,
 )
 
 # The backgrounds every palette is measured on: none reported (the palette's own status-bar background stands in
@@ -47,7 +48,8 @@ class ThemeTests(unittest.TestCase):
                     # name is bold in its family's hue (`kinds`, tested in test_tui_rail_kinds.py), else the default foreground.
                     # An unhighlighted menu row's name joined them too (2026-10-27): menus have no fill, and the
                     # highlighted row is the pointer and `menu_current` (tested below).
-                    if field.name in ("name", "text", "user", "tool", "menu"):
+                    # `prompt_band` is the app's to set from the launch look (`with_prompt_band`), not the palette's.
+                    if field.name in ("name", "text", "user", "tool", "menu", "prompt_band"):
                         continue
                     if background is None and field.name in BAND_ROLES:
                         continue  # no band is painted over a background nobody reported
@@ -70,6 +72,17 @@ class ThemeTests(unittest.TestCase):
                     self.assertTrue(theme.menu_current.bold)
                     surface = background or surface_for(skin, None)
                     self.assertGreaterEqual(contrast_ratio(theme.menu_current.fg, surface), TEXT_CONTRAST)
+
+    def test_a_sent_prompt_s_band_is_each_launch_look_s_subtle_tint_and_none_without_a_background(self) -> None:
+        skin = SKIN_THEMES[0]
+        for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+            bands = {look: with_prompt_band(build_theme(skin, background), skin, background, look).prompt_band.bg
+                     for look in LAUNCH_PRESETS}
+            with self.subTest(background=background):
+                self.assertEqual(len(set(bands.values())), len(LAUNCH_PRESETS), "each look its own tint")
+                for band in bands.values():
+                    self.assertTrue(1.08 <= contrast_ratio(band, background) <= 1.8, band)  # seen, and quiet
+        self.assertEqual(with_prompt_band(build_theme(skin), skin, None, DEFAULT_LAUNCH).prompt_band, Style())
 
     def test_body_text_and_the_prompt_mark_are_the_terminals_default_foreground(self) -> None:
         # A light terminal showed near-white body text on white (1.08:1); the default foreground is readable on

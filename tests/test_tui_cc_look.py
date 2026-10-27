@@ -48,9 +48,9 @@ from omh.tui.composer import PROMPT
 from omh.tui.history import HistorySearch
 from omh.tui.keys import BACKSPACE, CHAR, Key
 from omh.tui.session_picker import FILTER_PROMPT
-from omh.tui.style import Span
+from omh.tui.style import Span, is_fill
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import build_theme, contrast_ratio, kind_style
+from omh.tui.theme import LAUNCH_PRESETS, TEXT_CONTRAST, build_theme, contrast_ratio, kind_style, with_prompt_band
 from omh.tui.transcript import (
     NOTICE_INFO,
     PULSE_SECONDS,
@@ -411,6 +411,22 @@ class PromptRowTests(unittest.TestCase):
                 self.assertEqual({span.style for row in rows for span in row[3:]}, {theme.muted})  # after the lead
                 self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no band, no fill
 
+    def test_a_sent_prompt_runs_on_the_launch_look_s_band_to_the_right_edge(self) -> None:
+        # Owner's pick of 2026-10-27 ("보낸프롬프트 배경색"): every row of a sent prompt, a wrapped and a blank one
+        # too, on one band that ends at the right edge (a fill, not padding), its words at 4.5:1 on it.
+        for background in ("#0D1117", "#FFFFFF"):
+            for look in LAUNCH_PRESETS:
+                theme = with_prompt_band(build_theme(SKIN_THEMES[0], background), SKIN_THEMES[0], background, look)
+                rows = block_rows(UserBlock("first line\n\n" + "word " * 12), 30, theme)
+                with self.subTest(background=background, look=look):
+                    self.assertEqual(len(rows), 5)  # the first line, the blank one, and the long one wrapped onto three
+                    self.assertTrue(all(is_fill(row[-1]) and row[-1].style.bg == theme.prompt_band.bg for row in rows))
+                    self.assertEqual({span.style.bg for row in rows for span in row}, {theme.prompt_band.bg})
+                    words = [span for row in rows for span in row[3:-1] if span.text.strip()]
+                    self.assertTrue(words)
+                    for span in words:
+                        self.assertGreaterEqual(contrast_ratio(span.style.fg, theme.prompt_band.bg), TEXT_CONTRAST)
+
     def test_a_prompt_the_queue_sent_says_so_in_the_same_dim(self) -> None:
         (row,) = block_rows(UserBlock("next one", from_queue=True), 40, THEME)
         self.assertEqual(line_text(row), "┃ ❯ next one  ⧗ from queue")
@@ -463,7 +479,7 @@ class InfoLineInsetTests(unittest.TestCase):
     def test_the_info_line_starts_where_the_composers_text_does(self) -> None:
         app, _client = make_app(rows=24, cols=80)
         screen = [row for row in drawn(app) if row]
-        composer, info = screen[-3], screen[-1]
+        composer, info = screen[-4], screen[-2]  # the badge row is the region's last
         self.assertTrue(composer.startswith(PROMPT), screen)
         self.assertEqual(info.index("?"), len(PROMPT))  # under the composer's text, two cells in
         self.assertTrue(info.startswith("  ? for shortcuts"), info)

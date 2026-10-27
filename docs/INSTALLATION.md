@@ -428,7 +428,18 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer between two full-width rules as Claude Code draws it (`───`,
   then `❯ …` rows, then `───`, with no side edges or corners),
   one dim info line under it, and, while there are subagents, the agent view
-  under that, always expanded (below). On a terminal 6 rows tall the composer keeps its
+  under that, always expanded (below). The region's last row, from 20 rows,
+  holds the session directory's git branch on the left (`branch:<name> | !3
+  ?128`: tracked files changed, then untracked, each only when not zero; a
+  detached HEAD by its short sha; nothing outside a repository), read by
+  `git status` off the screen's thread after each tool, each turn and every
+  15 seconds, and `[ ⚚ OMH Native ]` on the right edge in the launch look's
+  colours. As the row narrows the branch name is cut to `…` first, then the
+  badge goes, then the counts. A blank row stands between the reply and
+  the working row, between the working row's tip and the plan, and between
+  the plan and the composer's top rule, wherever the terminal has a row to
+  spare for it. Your sent prompt runs on a band to the right edge, a quiet
+  tint of the launch look's card edge. On a terminal 6 rows tall the composer keeps its
   top rule and drops its bottom one, so the slot above it still gets its
   two rows; from 7 rows it has both, and under 6 rows (or 20
   columns) the composer is a bare `❯ …` row with no rule. A `/name` you type
@@ -1372,7 +1383,7 @@ on a light background the diff bands are light tints, their words at 4.5:1 on
 each. The menus (the completion menu, the pickers, choice prompts, the agent
 list, the delegation view and the bot board) have no band on any background:
 the highlighted row is a `❯` and its name bold in the skill hue, at 4.5:1. With no answer and no `COLORFGBG` that names one, the background is
-taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
+taken as dark, and nothing that would depend on knowing it is painted: your sent prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows
 the terminal again, and each, like `/theme <name>`, redraws the screen in the

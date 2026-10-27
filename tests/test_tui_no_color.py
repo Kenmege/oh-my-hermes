@@ -26,7 +26,7 @@ from omh.tui.keys import ENTER, Key
 from omh.tui.pager import FOOTER_KEYS
 from omh.tui.panels import dag_style
 from omh.tui.style import Style
-from omh.tui.theme import build_theme, on_band, without_colour
+from omh.tui.theme import build_theme, on_band, with_prompt_band, without_colour
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TOOL_OK, NoticeBlock, ToolGroup, ToolRow, block_rows
 
 SID = "s"
@@ -169,7 +169,8 @@ class NoColourTests(unittest.TestCase):
             with self.subTest(environ=environ):
                 app = scene_app(environ)
                 app._render()
-                self.assertEqual(app.theme, build_theme(app._skin(), app._surface()))
+                built = build_theme(app._skin(), app._surface())
+                self.assertEqual(app.theme, with_prompt_band(built, app._skin(), app._surface(), app.launch_look))
                 self.assertIn("38;2;", written(app))
 
 

@@ -648,21 +648,21 @@ class UnknownRowTests(unittest.TestCase):
         self.assertTrue(reporting(app))
         self.assertEqual(app.region.last_row(24), 23)
         y = row_of(app, SECOND_ROW)
-        self.assertEqual(y, 24)  # the list's last row, under the info line: the screen's last row
+        self.assertEqual(y, 23)  # the list's last row, over the badge row on the screen's last row
         click(app, 10, y)
         self.assertEqual(app.log_agent, SECOND)
 
     def test_after_a_redraw_the_region_sits_under_the_output_and_clicks_follow_it(self) -> None:
         app, client = listing()
         screen = drawn(app)
-        last = info_index(screen)  # the list's last row is the region's
+        last = info_index(screen) + 1  # the badge row under the list's last row is the region's last
         self.assertEqual(app.region.last_row(24), last)
         self.assertLess(last, 23)
         self.assertEqual(screen[last + 1 :], [""] * (23 - last))  # nothing under the region
         y = row_of(app, SECOND_ROW)
-        self.assertEqual(y, last + 1)  # the report counts from 1, the screen from 0
+        self.assertEqual(y, last)  # the report counts from 1, the screen from 0: the row over the badge row
         before = state(app, client)
-        for off in (1, -3):  # the row under the region, the info line
+        for off in (1, -3):  # the badge row, the info line
             click(app, 10, y + off)
             self.assertEqual(state(app, client), before)
         click(app, 10, y)
@@ -672,12 +672,12 @@ class UnknownRowTests(unittest.TestCase):
         app, _client = listing()
         self.assertLess(row_of(app, SECOND_ROW), 21)
         app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
-        self.assertEqual(row_of(app, SECOND_ROW), 24)
+        self.assertEqual(row_of(app, SECOND_ROW), 23)  # over the badge row, the region's and the screen's last
         self.assertEqual(app.region.last_row(24), 23)
-        click(app, 10, 23)  # the row above the second agent's holds the first agent
+        click(app, 10, 22)  # the row above the second agent's holds the first agent
         self.assertEqual(app.log_agent, FIRST)
         app._on_input(Key(CHAR, "q"))
-        click(app, 10, 24)
+        click(app, 10, 23)
         self.assertEqual(app.log_agent, SECOND)
 
     def test_a_redraw_behind_an_open_pager_does_not_claim_the_top_row(self) -> None:

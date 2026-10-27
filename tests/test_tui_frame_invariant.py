@@ -86,7 +86,8 @@ def rows_under_composer(rows: int) -> int:
 
 
 def info_row_of(screen: list[str]) -> int:
-    """The info line's screen row: the last row that is not blank, since every row under the region is."""
+    """The region's last screen row (the badge row under the info line, or the info line where the region has no
+    badge row): the last row that is not blank, since every row under the region is."""
     return max(index for index, row in enumerate(screen) if row)
 
 
@@ -920,12 +921,14 @@ class AgentViewBelowTests(unittest.TestCase):
                         shown = view_rows(app)
                         self.assertEqual(shown, min(cap, running + done + 1))
                         top = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
-                        # The top rule, one input row, its bottom rule, the info line, then the view.
-                        self.assertEqual(top, rows - 1 - shown - 3)
-                        self.assertGreaterEqual(top, rows - 1 - cap - 3)
-                        self.assertGreaterEqual(top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3)
+                        badge = app.frame_budget.badge  # the branch and OMH Native row, the region's last
+                        # The top rule, one input row, its bottom rule, the info line, then the view and the badge.
+                        self.assertEqual(top, rows - 1 - shown - 3 - badge)
+                        self.assertGreaterEqual(top, rows - 1 - cap - 3 - badge)
+                        self.assertGreaterEqual(
+                            top, rows - 1 - max(min(AGENT_VIEW_ROWS, rows // 4), rows // 3) - 3 - badge)
                         self.assertTrue(screen[top + 3].startswith("  "), screen)  # the info line, under the composer
-                        self.assertTrue(screen[rows - 1], "the view ends on the screen's last row")
+                        self.assertTrue(screen[rows - 1], "the region ends on the screen's last row")
 
     def test_the_usual_cap_measured(self) -> None:
         # A one-row composer's input row on the bottom rows, with a view at its usual cap, 1-based as a person
@@ -964,7 +967,9 @@ class AgentViewBelowTests(unittest.TestCase):
         info = screen_info_index(app, screen)
         self.assertLess(info + len(VIEW), 23)
         self.assertEqual(screen[info + 1 : info + 1 + len(VIEW)], VIEW)
-        self.assertEqual(screen[info + 1 + len(VIEW) :], [""] * (24 - info - 1 - len(VIEW)))  # nothing padded under it
+        under = info + 1 + len(VIEW)
+        self.assertTrue(screen[under].rstrip().endswith("OMH Native ]"), screen[under])  # the badge row, the region's last
+        self.assertEqual(screen[under + 1 :], [""] * (24 - under - 1))  # nothing padded under it
         self.assertEqual(info, top + 3)
         output = max(index for index, row in enumerate(screen[:top]) if "a short output" in row)
         self.assertLessEqual(top - output, 4, "the composer follows the output, no pad rows above it")

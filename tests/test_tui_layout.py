@@ -40,6 +40,7 @@ from omh.tui.layout import (
     choice_cap,
     compose,
     composer_cap,
+    max_height,
     slot_cap,
 )
 from omh.tui.style import Line, Span
@@ -262,6 +263,39 @@ class AllocateExampleTests(unittest.TestCase):
         self.assertEqual([composer_cap(rows) for rows in (1, 2, 3, 7, 8, 24, 80)], [0, 1, 1, 1, 2, 6, 20])
         self.assertEqual([slot_cap(rows, 80) for rows in (5, 6, 24, 80)], [0, 2, 8, 26])
         self.assertEqual(slot_cap(24, MIN_COLS - 1), 0)
+
+
+class GapTests(unittest.TestCase):
+    """The blank rows around the plan (the owner's spacing of 2026-10-27): only from rows nothing else wants."""
+
+    def test_a_tall_terminal_gives_both_gaps_and_the_frame_draws_them_around_the_slot(self) -> None:
+        budget = allocate(40, 80, sticky=False, tail_rows=10, slot_rows=4, composer_rows=1, gaps=(True, True),
+                          tail_floor=2, gap_reserve=2)
+        self.assertEqual((budget.gaps, budget.slot, budget.tail), ((1, 1), 4, 10))
+        slot = [(Span("[Plan]"),), (Span("[ ] a"),), (Span("[ ] b"),), (Span("[ ] c"),)]
+        frame = build_frame(cols=80, rows=40, composer=Composer(), info=(Span("info"),),
+                            tail=[(Span("tip"),)], slot=slot, gaps=(True, True))
+        rows = lines_text(list(frame.lines))
+        start = rows.index("[Plan]")
+        self.assertEqual((rows[start - 1], rows[start + 4]), ("", ""))
+        self.assertTrue(rows[start + 5].startswith("─"))
+
+    def test_the_gaps_give_way_before_the_slot_the_agent_view_or_the_working_rows(self) -> None:
+        for rows in range(MIN_ROWS, 30):
+            with self.subTest(rows=rows):
+                spaced = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=5, composer_rows=1,
+                                  agents_rows=7, tail_floor=2, gaps=(True, True), gap_reserve=2)
+                plain = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=5, composer_rows=1,
+                                 agents_rows=7, tail_floor=2, gap_reserve=2)
+                self.assertEqual((spaced.slot, spaced.agents, spaced.floor), (plain.slot, plain.agents, plain.floor))
+                self.assertEqual(spaced.composer_top - sum(spaced.gaps) - spaced.tail,
+                                 plain.composer_top - plain.tail)
+                self.assertLessEqual(spaced.total, max_height(rows))
+
+    def test_a_tail_that_ends_blank_is_its_own_gap_above_the_slot(self) -> None:
+        frame = build_frame(cols=80, rows=40, composer=Composer(), info=(Span("info"),),
+                            tail=[(Span("done"),), ()], slot=[(Span("[Plan]"),)], gaps=(True, True))
+        self.assertEqual(frame.budget.gaps, (0, 1))
 
 
 class HiddenComposerBudgetTests(unittest.TestCase):
