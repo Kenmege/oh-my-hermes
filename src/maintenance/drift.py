@@ -879,7 +879,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The #2322 review classes: a demo, product or explainer video of
             # a fault (4), a renderer-led statement about a render (4), and
             # editing or trimming an everyday video (3) (+11).
-            expected=1134,
+            # The #2322 delta review classes: a timed, cinematic or numbered
+            # fault recording (4), a fault in a later sentence (3), a
+            # marketing noun over a fault (2), and cut or edit on a sizzle
+            # reel (2) (+11).
+            expected=1145,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

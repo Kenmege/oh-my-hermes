@@ -63,13 +63,14 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Create a product video for our new homepage.",
             "Make an animated demo video showing the setup wizard.",
             "hyperframes teaser video for the beta",
-            "Edit a sizzle reel from our client projects.",
+            "Make a sizzle reel for our booth.",
+            "Make a quick demo video showing the onboarding flow.",
+            "Create an explainer video about the memory system for the team.",
             "make a promo video of the omh TUI",
             "make a 30 second demo video of our terminal UI",
             "hyperframes promo video for the launch",
             "HyperFrames launch video for the new TUI",
             "Create a hyperframes video for the release.",
-            "Cut a sizzle reel from the conference footage.",
             "Make a 15-second teaser trailer for the release.",
             "Design an animated explainer video for the API.",
             "Could you create a product launch video for our Korean audience?",
@@ -127,20 +128,29 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "HyperFrames rendering is slow on my laptop.",
             "hyperframes",
             "Make a promo code for 20% off.",
-            # A demo, product or explainer video with neither a production
-            # marker nor a purpose adjunct may be a recording of a fault.
+            # An everyday film noun followed by anything but closed adjuncts
+            # may be a recording of a fault.
             "Make a demo video of the checkout failure for the issue tracker.",
             "Make a demo video showing the stalled import for QA.",
             "Create a product video of the outage for the postmortem.",
             "Make an explainer video of how to reproduce the hang.",
             "Make a demo video for the launch review regression.",
-            # A renderer lead with no verb is a brief only as the noun and a
-            # purpose adjunct, and nothing after it.
+            # A renderer lead with no verb is a brief only as the noun and
+            # closed adjuncts, and nothing after it.
             "Hyperframes video for the signup page does not load.",
             "hyperframes promo video of the dashboard keeps flickering",
             "HyperFrames teaser video from Friday is stuck at 70%.",
             "hyperframes launch video for the release broke",
+            # A marker says how a clip runs, not what it shows.
+            "Make a 40 second demo video of the import crash.",
+            "Make an animated explainer video of why the backup failed.",
+            "Make a promo video of the billing outage for the status page.",
+            # A later sentence may report the fault.
+            "Hyperframes video for the homepage. It renders blank.",
+            "Make a demo video for the plugin. Install hangs at step two.",
             # `cut` and `edit` lead only a reel noun.
+            "Edit a sizzle reel, then trim the intro.",
+            "Cut a sizzle reel from the conference footage.",
             "Edit a promo video for the client, just drop the last scene.",
             "Cut a launch video down to six seconds.",
             "Edit a demo video for the launch.",

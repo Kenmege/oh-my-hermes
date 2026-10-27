@@ -11,11 +11,14 @@ announcing the launch film"), a causative ("make the launch film shorter",
 "make our showreel public") or a bare noun ("showreel") is not one. Explicit
 invocation of the skill by name is the router's, not this reader's.
 
-Three narrower forms are closed rather than open. A demo, product or
-explainer video needs a production marker or a purpose adjunct, since it is as
-often a recording of a fault. A brief that opens on the renderer name instead
-of a verb needs a purpose adjunct and nothing after it. And `cut` or `edit`
-leads only a reel noun, because editing an everyday video changes one.
+The everyday film nouns this module adds to main's reel nouns (promo, launch,
+demo, product, explainer videos and trailers, sizzle reel) are closed rather
+than open, because each is as often a clip of a fault for a ticket. One is
+admitted only when the rest of its sentence is a chain of closed adjuncts
+(`_closed_adjuncts`) and that sentence is the whole message; `cut` and `edit`
+never lead one, since editing an everyday video changes an existing one. A
+brief that opens on the renderer name instead of a verb is held to the same
+form, with at least one adjunct.
 
 Stdlib only; this leaf imports no catalog or router.
 """
@@ -27,13 +30,13 @@ import unicodedata
 from .reference_regions import executable_routing_text
 from .request_lead import after_courtesy
 
-# A reel noun names an authored film whatever follows it, and these are the
-# only nouns `cut` and `edit` may lead: "cut a show reel from last year's
-# work" authors one, "edit a promo video, just trim the intro" changes one.
+# main's reel nouns. One names an authored film whatever follows it, reads
+# only its first sentence, and these are the only nouns `cut` and `edit` may
+# lead: "cut a show reel from last year's work" authors one.
 _REEL_PHRASES = (
     "show-reel", "show reel", "showreel", "product showcase video",
     "animated product film", "motion showcase", "animated portfolio",
-    "launch film", "product teaser video", "sizzle reel",
+    "launch film", "product teaser video",
 )
 # Promo, launch, teaser and trailer films by their everyday names. Each is a
 # whole phrase: "promo", "launch", "video" and "trailer" alone are not (a bare
@@ -41,12 +44,10 @@ _REEL_PHRASES = (
 _MARKETING_PHRASES = (
     "promo video", "promotional video", "promo clip", "launch video", "product launch video",
     "teaser video", "launch trailer", "teaser trailer", "promo trailer", "promotional trailer",
-    "product trailer", "hyperframes video",
+    "product trailer", "sizzle reel", "hyperframes video",
 )
-# A demo, product or explainer video is as often a recording of a fault for a
-# ticket as a film for an audience, so one is admitted only with a production
-# marker before the noun (`_PRODUCTION_MARKERS` or a duration) or a purpose
-# adjunct right after it (`_purpose_adjunct`).
+# A demo, product or explainer video also needs at least one adjunct: "make a
+# demo video" alone does not say what it shows.
 _RECORDING_PHRASES = ("demo video", "product demo video", "product video", "explainer video")
 # Only phrases built from words no other skill's catalog text uses, or that
 # show-reel already has, are also catalog triggers (`show_reel_skill`): "demo",
@@ -63,27 +64,42 @@ _MODIFIERS = frozenset({
     "arabic", "chinese", "english", "french", "german", "hindi", "italian", "japanese", "korean",
     "portuguese", "spanish", "vietnamese",
 })
-_PRODUCTION_MARKERS = frozenset({"animated", "cinematic"})
 # `-second`/`-minute` durations such as "60-second" or "2-minute", or the
 # same as two words ("30 second").
 _DURATION = re.compile(r"\d+-(?:second|sec|minute|min)")
 _DURATION_UNITS = frozenset({"second", "seconds", "sec", "minute", "minutes", "min"})
-# HyperFrames is an HTML-to-video renderer: a brief that opens on its name
-# ("hyperframes promo video for the launch") asks for a film without a verb,
-# but only as the noun and a purpose adjunct with nothing after it.
+# HyperFrames is an HTML-to-video renderer: a brief may open on its name
+# ("hyperframes promo video for the launch") in place of a verb.
 _RENDERER_LEADS = frozenset({"hyperframes"})
-# A purpose adjunct is "for", at most one determiner, at most two words from
-# these closed lists, the last one a purpose noun, and then the end of the
-# sentence: "for the landing page", "for our new TUI". "for the landing page
-# won't render" and "for the release regression" are not one.
-_PURPOSE_DETERMINERS = frozenset({"a", "an", "the", "our", "my", "your", "their"})
-_PURPOSE_NOUNS = frozenset({
-    "announcement", "api", "app", "beta", "booth", "cli", "conference", "customers", "dashboard", "docs",
-    "event", "extension", "feature", "features", "homepage", "instagram", "investors", "keynote", "launch",
-    "linkedin", "marketing", "newsletter", "page", "pitch", "platform", "plugin", "product", "readme",
-    "release", "sales", "sdk", "site", "social", "tiktok", "tool", "tui", "twitter", "ui", "website", "youtube",
+# A closed adjunct is a preposition from `_ADJUNCT_PREPOSITIONS`, at most one
+# determiner, then one to three words from these closed lists ending on an
+# `_ADJUNCT_NOUNS` word: "of our terminal UI", "for the sales team", "about
+# the memory system". The words name an audience, a channel, an occasion or a
+# product surface, never a state, so "of the login failure", "for the release
+# regression" and "showing the checkout hang" are not one.
+_ADJUNCT_PREPOSITIONS = frozenset({"about", "covering", "featuring", "for", "of", "showing"})
+_ADJUNCT_DETERMINERS = frozenset({"a", "an", "the", "our", "my", "your", "their"})
+_ADJUNCT_NOUNS = frozenset({
+    "agents", "announcement", "api", "app", "audience", "beta", "board", "booth", "cli", "conference", "customers",
+    "dashboard", "docs", "editor", "event", "extension", "feature", "features", "flow", "game", "hackathon",
+    "hero", "homepage", "instagram", "integration", "investors", "keynote", "launch", "linkedin", "marketing",
+    "marketplace", "meetup", "newsletter", "onboarding", "page", "pitch", "platform", "plugin", "product",
+    "readme", "release", "sales", "sdk", "site", "social", "submission", "system", "team", "tier", "tiktok",
+    "tool", "tui", "twitter", "ui", "users", "website", "wizard", "workflow", "youtube",
 })
-_PURPOSE_MODIFIERS = frozenset({"app", "landing", "launch", "new", "next", "product", "store", "upcoming"})
+_ADJUNCT_MODIFIERS = frozenset({
+    "agent", "app", "hackathon", "landing", "launch", "memory", "new", "next", "omh", "onboarding", "plugin",
+    "pricing", "product", "sales", "setup", "store", "terminal", "upcoming",
+    "arabic", "chinese", "english", "french", "german", "hindi", "italian", "japanese", "korean",
+    "portuguese", "spanish", "vietnamese",
+})
+# A "v4" version may qualify a closed noun. A bare number may not: "the 404
+# page" is a fault.
+_VERSION = re.compile(r"v\d+")
+_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
+_NOUN_PHRASES = tuple(sorted({tuple(_WORD.findall(phrase)) for phrase in SHOW_REEL_PHRASES}, key=len, reverse=True))
+_REEL_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _REEL_PHRASES)
+_RECORDING_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _RECORDING_PHRASES)
 # "and", "in" and "with" are left out: "make the show reel in the README link
 # work" and "make the launch film with subtitles the default" continue a
 # causative, not a brief.
@@ -96,10 +112,6 @@ _CHAINED_VERBS = frozenset({
     "add", "build", "create", "deploy", "do", "email", "file", "fix", "make", "open", "post", "publish",
     "review", "schedule", "send", "share", "submit", "translate", "update", "upload", "write",
 })
-_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
-_NOUN_PHRASES = tuple(sorted({tuple(_WORD.findall(phrase)) for phrase in SHOW_REEL_PHRASES}, key=len, reverse=True))
-_REEL_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _REEL_PHRASES)
-_RECORDING_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _RECORDING_PHRASES)
 
 
 def _fold(text: str) -> str:
@@ -126,20 +138,28 @@ _NATIVE_PRODUCTION = re.compile(_fold(
 ))
 
 
-def _purpose_adjunct(rest: list[str]) -> bool:
-    if not rest or rest[0] != "for":
-        return False
-    words = rest[1:]
-    if words and words[0] in _PURPOSE_DETERMINERS:
-        words = words[1:]
-    return (
-        0 < len(words) <= 2
-        and words[-1] in _PURPOSE_NOUNS
-        and all(word in _PURPOSE_NOUNS or word in _PURPOSE_MODIFIERS for word in words[:-1])
-    )
+def _closed_adjuncts(rest: list[str]) -> int:
+    """How many closed adjuncts make up all of `rest`; -1 when it is anything else."""
+    count = 0
+    index = 0
+    while index < len(rest):
+        if rest[index] not in _ADJUNCT_PREPOSITIONS:
+            return -1
+        index += 1
+        if index < len(rest) and rest[index] in _ADJUNCT_DETERMINERS:
+            index += 1
+        start = index
+        while index < len(rest) and (
+            rest[index] in _ADJUNCT_NOUNS or rest[index] in _ADJUNCT_MODIFIERS or _VERSION.fullmatch(rest[index])
+        ):
+            index += 1
+        if not 0 < index - start <= 3 or rest[index - 1] not in _ADJUNCT_NOUNS:
+            return -1
+        count += 1
+    return count
 
 
-def _english_production_lead(sentence: str) -> bool:
+def _english_production_lead(sentence: str, *, whole_message: bool) -> bool:
     words = _WORD.findall(sentence)
     if not words or (words[0] not in _REEL_LEAD_VERBS and words[0] not in _RENDERER_LEADS):
         return False
@@ -148,17 +168,16 @@ def _english_production_lead(sentence: str) -> bool:
     index = 0 if verbless else 1
     if index < len(words) and words[index] in _DETERMINERS:
         index += 1
-    marked = False
     # The noun is tried before each modifier is taken, so "animated" can open
     # "animated product film" as well as qualify "launch film".
     for _ in range(3):
         for phrase in _NOUN_PHRASES:
             if tuple(words[index:index + len(phrase)]) == phrase:
                 rest = words[index + len(phrase):]
-                if words[0] in _REEL_LEAD_VERBS - _LEAD_VERBS and phrase not in _REEL_NOUNS:
-                    return False
-                if verbless or (phrase in _RECORDING_NOUNS and not marked):
-                    return _purpose_adjunct(rest)
+                if phrase not in _REEL_NOUNS or verbless:
+                    adjuncts = _closed_adjuncts(rest)
+                    least = 1 if verbless or phrase in _RECORDING_NOUNS else 0
+                    return whole_message and words[0] in _LEAD_VERBS | _RENDERER_LEADS and adjuncts >= least
                 if rest and rest[0] not in {",", ":"} and rest[0] not in _FOLLOWERS:
                     return False
                 return not any(
@@ -167,11 +186,9 @@ def _english_production_lead(sentence: str) -> bool:
                 )
         if index + 1 < len(words) and words[index].isdigit() and words[index + 1] in _DURATION_UNITS:
             index += 2
-            marked = True
             continue
         if index >= len(words) or not (words[index] in _MODIFIERS or _DURATION.fullmatch(words[index])):
             return False
-        marked = marked or words[index] in _PRODUCTION_MARKERS or bool(_DURATION.fullmatch(words[index]))
         index += 1
     return False
 
@@ -185,7 +202,8 @@ def show_reel_request_admitted(message: str) -> bool:
     # old one", "make a launch film, right?") is a question about one, unless
     # a courtesy opener put it as a request ("can you make a show reel?").
     asked = bool(ending) and ending[0] in "?？" and text == folded
-    return (not asked and _english_production_lead(sentence)) or bool(_NATIVE_PRODUCTION.search(text))
+    whole_message = not ending or not ending[1].strip()
+    return (not asked and _english_production_lead(sentence, whole_message=whole_message)) or bool(_NATIVE_PRODUCTION.search(text))
 
 
 def show_reel_request_phrases(message: str, phrases: list[str]) -> list[str]:

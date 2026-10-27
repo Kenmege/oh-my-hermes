@@ -332,6 +332,23 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-edit-logo-timing", "Editing a product video's logo timing is an edit", "Edit a product video so the logo appears later.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-cut-down-promo", "Cutting a promo video down is a trim", "Cut a promo video down to ten seconds.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-edit-shorten-intro", "Shortening a launch video's intro is an edit", "Edit a launch video, just shorten the intro.", "answer_clarification", "", "show-reel"),
+    # A duration or a look says how a clip runs, not that it is a showcase:
+    # every everyday film noun needs a closed adjunct, marker or not.
+    RoutingPrecisionCase("show-reel-timed-payment-error", "A timed demo video of an error is a fault recording", "Make a 25 second demo video of the payment error for support.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-timed-freezing-page", "A timed demo video of a freezing page is a fault recording", "Create a 3 minute demo video showing the search page freezing.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-cinematic-incident", "A cinematic explainer of an incident is not a showcase", "Make a cinematic explainer video of the database corruption incident.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-numbered-page", "A demo video of a numbered error page is a fault recording", "Make a demo video of the 404 page.", "answer_clarification", "", "show-reel"),
+    # An admitted first sentence does not carry a message whose next sentence
+    # reports a fault.
+    RoutingPrecisionCase("show-reel-renderer-then-fonts", "A renderer brief followed by a rendering fault is a fault", "Hyperframes promo video for the homepage. The fonts render as boxes.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-demo-then-charts", "A demo video request followed by a fault report is a fault", "Make a demo video for the dashboard. Charts disappear after refresh.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-then-question", "A renderer brief followed by a why question is a fault", "HyperFrames launch video for the beta. Why does it drop frames?", "answer_clarification", "", "show-reel"),
+    # The marketing nouns take the same closed adjunct.
+    RoutingPrecisionCase("show-reel-teaser-broken-search", "A teaser video of a broken feature is a fault recording", "Make a teaser video of the broken search for the engineers.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-launch-crash-timeline", "A launch video covering a crash is not a showcase", "Create a launch video covering the crash timeline.", "answer_clarification", "", "show-reel"),
+    # `cut` and `edit` lead only main's reel nouns, not a sizzle reel.
+    RoutingPrecisionCase("show-reel-edit-sizzle-drop", "Dropping a clip from a sizzle reel is an edit", "Edit a sizzle reel and drop the second clip.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-cut-sizzle-down", "Cutting a sizzle reel down is a trim", "Cut a sizzle reel down to thirty seconds.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -8905,7 +8922,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("show-reel-renderer-lead", "A brief that opens on the renderer name asks for a film", "hyperframes promo video for the launch", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-product-video", "A product video for a page is production, not delivery", "Make a product video for the landing page.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-product-demo-video", "A product demo video to produce is not a connector check", "Produce a 90 second product demo video for investors.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
-    RoutingInterventionCase("show-reel-sizzle-reel", "Cutting a sizzle reel from footage is production", "Cut a sizzle reel from the conference footage.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-sizzle-reel", "A sizzle reel for an occasion is production", "Make a sizzle reel for the conference booth.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-launch-trailer", "A launch trailer is a film", "Make a launch trailer for the game.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-promo-video-of-board", "A promo video about a named surface is still the film", "Make a HyperFrames promo video of the agent board.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
