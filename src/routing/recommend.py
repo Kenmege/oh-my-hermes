@@ -1686,6 +1686,11 @@ _SKILL_POLICIES = {
             "with covered / next / missing before claiming coverage."
         ),
     ),
+    "repro-audit": RecommendationPolicy(
+        next_action="prepare_repro_audit",
+        evidence_boundary="A prepared audit is not imported evidence review, completed evaluation or scientific reproduction. Missing conditions and human confirmation remain unknown.",
+        wrapper_guidance="Select acc or acc_norm explicitly, import supplied local Harness results, preserve original and derived hashes, and audit normalized conditions without running a model.",
+    ),
     "paper-learning": RecommendationPolicy(
         next_action="prepare_paper_learning",
         evidence_boundary=(
@@ -2552,7 +2557,7 @@ class _RawMessageKey:
     and a miss reuses the caller's prepared query when it handed one in.
     """
 
-    __slots__ = ("raw", "query", "shielded")
+    __slots__ = ("raw", "query", "shielded", "original")
 
     def __init__(self, raw: str, query: RoutingQuery | None = None) -> None:
         self.raw = raw
@@ -2560,12 +2565,19 @@ class _RawMessageKey:
         # A caller that masked the text before passing it says so on its
         # query; the same masked text unmasked by nobody is another entry.
         self.shielded = bool(query is not None and query.shielded)
+        # So is the same text cut from a different turn (`RoutingQuery.original`).
+        self.original = query.original if query is not None and query.original else raw
 
     def __hash__(self) -> int:
         return hash(self.raw)
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, _RawMessageKey) and other.raw == self.raw and other.shielded == self.shielded
+        return (
+            isinstance(other, _RawMessageKey)
+            and other.raw == self.raw
+            and other.shielded == self.shielded
+            and other.original == self.original
+        )
 
 
 def held_back_trigger_tokens(skill: str) -> frozenset[str]:
@@ -2649,6 +2661,7 @@ def _recommend_skills_cached(key: _RawMessageKey, apply_guardrails: bool) -> tup
         explicit_skill = None
     return _scored_field(
         q.raw,
+        raw_query=q.original,
         routing_query=q.scrubbed,
         routing_text=q.routing_text,
         normalized_query=q.normalized,
@@ -2687,6 +2700,7 @@ def scored_field_winner_without_explicit_invocation(query: str | RoutingQuery, c
     prepared_definitions = _prepared_routable_definitions()
     field = _scored_field(
         q.raw,
+        raw_query=q.original,
         routing_query=q.scrubbed,
         routing_text=q.routing_text,
         normalized_query=q.normalized,
@@ -2714,6 +2728,7 @@ def confident_scored_field_winner(query: str | RoutingQuery) -> str:
     prepared_definitions = _prepared_routable_definitions()
     field = _scored_field(
         q.raw,
+        raw_query=q.original,
         routing_query=q.scrubbed,
         routing_text=q.routing_text,
         normalized_query=q.normalized,
@@ -2742,6 +2757,7 @@ def _scored_field(
     name_credited_skill: str | None = None,
     loop_timer: str = LOOP_TIMER_NONE,
     shielded: bool = False,
+    raw_query: str = "",
 ) -> tuple[Recommendation, ...]:
     ecosystem_identity_connector_match = _ecosystem_identity_connector_explicit_match(normalized_query)
     domain_signal = specialist_domain_route_signal(routing_text.scoring_text)
@@ -2763,6 +2779,7 @@ def _scored_field(
             domain_operator_override=domain_operator_override,
             name_credited_skill=name_credited_skill,
             shielded=shielded,
+            raw_query=raw_query,
         )
         if recommendation is not None:
             scored.append(replace(recommendation, suggested_prompt=_suggested_prompt(recommendation.skill, query)))
@@ -2844,7 +2861,10 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # must not turn unrelated market, customer or profile mentions into work.
     "market-research": frozenset({"market", "research", "sizing", "tam", "sam", "som", "bottom", "up", "size", "sensitivity", "customer", "evidence", "analysis", "jtbd", "matrix", "competitor", "pricing", "profiles", "competitive"}),
     # Product/video/reel words alone must not acquire a motion-production owner.
-    "show-reel": frozenset({"show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser"}),
+    "show-reel": frozenset({
+        "show", "reel", "product", "showcase", "video", "animated", "film", "motion", "portfolio", "launch", "teaser",
+        "promo", "promotional", "sizzle", "hyperframes",
+    }),
     "geospatial-analysis": frozenset({"analysis", "overlay", "spatial", "intersection", "intersect", "layers", "compute", "overlap", "area"}),
     "biomedical-evidence": frozenset({"evidence", "reconciliation", "cross", "check", "variant", "matrix", "capture"}),
     "molecular-docking": frozenset({"molecular", "docking", "rigid", "receptor", "ligand", "poses"}),
@@ -4464,6 +4484,7 @@ def _score_definition(
     domain_operator_override: DomainOperatorOverride | None,
     name_credited_skill: str | None = None,
     shielded: bool = False,
+    raw_query: str = "",
 ) -> Recommendation | None:
     definition = prepared.definition
     policy = prepared.policy
@@ -4482,7 +4503,7 @@ def _score_definition(
     # eighth meant editing the function every skill is scored by. The rules
     # live in `_SKILL_OFFERS_ITSELF` at the foot of this module now: same
     # predicates, same evaluation order, one row per skill.
-    offers_itself = _offers_itself_predicate(definition.name, shielded=shielded)
+    offers_itself = _offers_itself_predicate(definition.name, shielded=shielded, raw=raw_query)
     if (
         offers_itself is not None
         and (
@@ -6024,6 +6045,77 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
     return False
 
 
+# `repro-audit` compares a HellaSwag record the person holds with what a paper
+# reported. Its phrases name the benchmark only, so they count on one request
+# shape alone, and the whole request must be that shape: one sentence that
+# leads with a comparison verb, names the person's own record, goes straight
+# from the record to a comparison relation and the paper or reported target,
+# and ends in a closed tail of what is compared ("my HellaSwag log against the
+# paper's reported few-shot setting"). Every position is an allow list, so a
+# trailing clause ("... and rescore it", "... with the paper's first author"),
+# a second sentence, or anything outside the record slot refuses; the
+# sentence then routes as it did before the skill. Asking for new numbers
+# cannot fit the shape today, since no position admits a verb; the execution
+# check below is the second, independent guard, so a later widening of any
+# slot still refuses a run, re-run, retrain, fine-tune, benchmark or "again".
+_REPRO_AUDIT_WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
+_REPRO_AUDIT_LEAD_VERBS = frozenset({"compare", "check", "audit", "verify", "reconcile", "diff"})
+_REPRO_AUDIT_LEAD_FILLERS = frozenset({"whether", "if"})
+_REPRO_AUDIT_OWNERS = frozenset({"my", "our", "this", "these"})
+_REPRO_AUDIT_OWNER_MODIFIERS = frozenset({"own", "local", "latest", "lm-eval", "lm-evaluation-harness", "harness"})
+_REPRO_AUDIT_RECORD_WORDS = frozenset(
+    {"log", "logs", "result", "results", "score", "scores", "number", "numbers", "accuracy",
+     "acc", "norm", "acc-norm", "output", "outputs", "json", "file"}
+)
+_REPRO_AUDIT_RELATIONS = frozenset(
+    {"against", "with", "to", "vs", "versus", "match", "matches", "differ", "differs", "from"}
+)
+_REPRO_AUDIT_RELATION_FILLERS = frozenset({"the", "a", "what", "its", "their"})
+_REPRO_AUDIT_TARGETS = frozenset({"paper", "paper's", "papers", "reported", "published"})
+_REPRO_AUDIT_TAIL = frozenset(
+    {"reported", "conditions", "condition", "settings", "setting", "setup", "numbers", "number", "score",
+     "scores", "results", "result", "table", "few-shot", "count", "acc", "norm", "acc-norm", "metric"}
+)
+_REPRO_AUDIT_EXECUTION = re.compile(
+    r"(?:re-?)?(?:run|runs|running|ran|execut(?:e|es|ed|ing)|evaluat(?:e|es|ed|ing)|train|trains|trained|training"
+    r"|generat(?:e|es|ed|ing)|comput(?:e|es|ed|ing)|download(?:s|ed|ing)?|benchmark(?:s|ed|ing)?)"
+    r"|fine-?tun(?:e|es|ed|ing)|produc(?:e|es|ed|ing)|re-?do(?:es|ing|ne)?|again"
+)
+
+
+def _repro_audit_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    """Admit a request that is exactly one comparison of the person's HellaSwag record with a paper."""
+    del query_tokens
+    request = after_courtesy(normalized_query.strip()).rstrip("?.! ")
+    if re.search(r"[.!?;,:](?:\s|$)", request):
+        return False
+    words = _REPRO_AUDIT_WORD.findall(request)
+
+    def skip(index: int, allowed: frozenset[str], limit: int = len(words)) -> int:
+        end = index
+        while end < len(words) and end - index < limit and words[end] in allowed:
+            end += 1
+        return end
+
+    if not words or words[0] not in _REPRO_AUDIT_LEAD_VERBS:
+        return False
+    index = skip(1, _REPRO_AUDIT_LEAD_FILLERS, 1)
+    if index == len(words) or words[index] not in _REPRO_AUDIT_OWNERS:
+        return False
+    index = skip(index + 1, _REPRO_AUDIT_OWNER_MODIFIERS)
+    if index == len(words) or words[index] != "hellaswag":
+        return False
+    index = skip(index + 1, _REPRO_AUDIT_RECORD_WORDS)
+    if index == len(words) or words[index] not in _REPRO_AUDIT_RELATIONS:
+        return False
+    index = skip(index + 1, _REPRO_AUDIT_RELATION_FILLERS, 2)
+    if index == len(words) or words[index] not in _REPRO_AUDIT_TARGETS:
+        return False
+    if skip(index + 1, _REPRO_AUDIT_TAIL) != len(words):
+        return False
+    return not any(_REPRO_AUDIT_EXECUTION.fullmatch(word) for word in words)
+
+
 @lru_cache(maxsize=1)
 def _spend_gate_trigger_phrases() -> tuple[str, ...]:
     definition = next(item for item in builtin_definitions() if item.name == "spend-gate")
@@ -6099,6 +6191,10 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # (`_market_research_offers_itself`). Like the two gates above it has no
     # boost and stands down no guard.
     "market-research": _market_research_offers_itself,
+    # `repro-audit`: the whole request is one comparison of the person's own
+    # HellaSwag record with a paper's report, every word from an allow list
+    # (`_repro_audit_offers_itself`). No boost, no stand-down.
+    "repro-audit": _repro_audit_offers_itself,
 }
 # A skill whose admission reads where the data goes reads a stricter predicate
 # when the masker removed quoted, code, link or relayed text from the message
@@ -6108,9 +6204,35 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
 # (`awareness._rule_suppressed_by_context`).
 _SHIELDED_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     "data-share-review": lambda normalized_query, query_tokens: data_share_request_admitted(normalized_query, shielded=True),
+    # `repro-audit` admits a whole request only when every word is in its
+    # shape; a masked quote, code span or link is words the predicate cannot
+    # read, such as a trailing "then rerun it". It never admits a shielded
+    # message, at the cost of a quoted paper title or an arXiv link (#2324).
+    "repro-audit": lambda normalized_query, query_tokens: False,
+    # A closed show-reel form must be the whole message; masked text after it
+    # may be the fault it shows (`show_reel_cues`).
+    "show-reel": lambda normalized_query, query_tokens: show_reel_request_admitted(normalized_query, shielded=True),
 }
 
 
-def _offers_itself_predicate(skill: str, *, shielded: bool) -> Callable[[str, set[str]], bool] | None:
-    """The offers-itself predicate for `skill`, the stricter one when the masker removed text from the message."""
+# A skill whose admission must also hold on the message as the user sent it.
+# Every stage between the raw text and `normalized_query` removes something
+# (masking, status-line scrubbing, path stripping, reply pointers), and only
+# the first reports it as `shielded`; a closed show-reel form is checked on
+# the raw text too, so no stage can hide the fault a clip would show.
+_RAW_TEXT_OFFERS_ITSELF: dict[str, Callable[[str, str, bool], bool]] = {
+    "show-reel": lambda normalized_query, raw, shielded: show_reel_request_admitted(
+        normalized_query, shielded=shielded, raw=raw
+    ),
+}
+
+
+def _offers_itself_predicate(skill: str, *, shielded: bool, raw: str = "") -> Callable[[str, set[str]], bool] | None:
+    """The offers-itself predicate for `skill`, the stricter one when the masker removed text from the message.
+
+    `raw`: the message as sent, for a skill in `_RAW_TEXT_OFFERS_ITSELF`.
+    """
+    raw_reader = _RAW_TEXT_OFFERS_ITSELF.get(skill) if raw else None
+    if raw_reader is not None:
+        return lambda normalized_query, query_tokens: raw_reader(normalized_query, raw, shielded)
     return (shielded and _SHIELDED_OFFERS_ITSELF.get(skill)) or _SKILL_OFFERS_ITSELF.get(skill)

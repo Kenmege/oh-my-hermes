@@ -536,6 +536,22 @@ def person_request_text(message: str, *, messaging: bool = False) -> str:
     return text
 
 
+# A reply pointer, and an attachment or image note: material a person's words
+# may point at ("make a demo video of this") that routing does not read.
+_CONTEXT_BLOCK_OPENERS = ("[Replying to", "[The user sent", "[If you need a closer look", "[Image attached")
+
+
+def host_context_removed(message: str) -> bool:
+    """Whether `person_request_text` removes a reply pointer or an attachment note from this turn.
+
+    Routing reads only the person's words; a reader that must prove the request
+    whole (a closed show-reel form) treats removed context like masked text.
+    """
+    text = _after_gateway_material(message)
+    removed = message[: len(message) - len(text)] if message.endswith(text) else message
+    return any(opener in removed for opener in _CONTEXT_BLOCK_OPENERS)
+
+
 def handed_on_text(message: str) -> str:
     """The turn as OMH hands it on (a coding handoff, a plan's statement): whole, except that the scaffold of a
     slash skill of OMH's own is the invocation typed, after any gateway material and sender prefix before it.

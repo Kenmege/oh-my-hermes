@@ -24,6 +24,8 @@ from .memory_governance import (
     stable_artifact_identity,
 )
 from .iso_datetime import strict_fromisoformat
+from .memory_state_files import write_text_atomic
+from .memory_store_io import guard_store_write
 
 SYSTEM_TIER = "system"
 REFERENCE_TIER = "reference"
@@ -233,8 +235,9 @@ def write_memory_block(omh_home: str | Path, block: MemoryBlock) -> Path:
     _validate_block(block)
     approved = block.admission.get("state") in {"approved_manual", "approved_auto_safe"}
     path = block_path(omh_home, block.label, block.tier) if approved else _candidate_path(omh_home, block.label, block.tier)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(block.to_dict(), ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    # A linked store directory or block file is refused, never written through.
+    guard_store_write(path, omh_home=Path(omh_home).expanduser())
+    write_text_atomic(path, json.dumps(block.to_dict(), ensure_ascii=False, sort_keys=True))
     if approved:
         _write_review(omh_home, block)
     return path
@@ -538,8 +541,8 @@ def _write_review(omh_home: str | Path, block: MemoryBlock) -> None:
         "classifier_version": admission["classifier_version"],
     }
     path = _reviews_dir(omh_home) / f"{admission['review_id']}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(review, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    guard_store_write(path, omh_home=Path(omh_home).expanduser())
+    write_text_atomic(path, json.dumps(review, ensure_ascii=False, sort_keys=True))
 
 
 def _opaque_id() -> str:

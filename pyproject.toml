@@ -72,6 +72,7 @@ packages = [
   "omh.surfaces",
   "omh.system",
   "omh.workflows",
+  "omh.workflows.repro_audit",
   "omh.wrapper",
 ]
 
@@ -101,9 +102,11 @@ packages = [
 "omh.tui" = "src/tui"
 "omh.tui.attach" = "src/tui/attach"
 "omh.workflows" = "src/workflows"
+"omh.workflows.repro_audit" = "src/workflows/repro_audit"
 "omh.wrapper" = "src/wrapper"
 
 [tool.setuptools.package-data]
+"omh.workflows.repro_audit" = ["data/contract.json"]
 # Closed optional companion data, not packages/imported production modules.
 "omh.skills" = [
   "ai_job_search_toolkit/README.md", "ai_job_search_toolkit/scripts/job_state.py",

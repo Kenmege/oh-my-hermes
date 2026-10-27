@@ -109,6 +109,67 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("career-employer-reference", "An employer campaign named as a phrase is reference input", 'Explain the phrase "our recruiting team runs a job search campaign".', "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("career-financial-definition", "Financial terms do not request career work", "Explain what a salary bond is in finance.", "answer_directly", "direct_answer", "ai-job-search"),
     RoutingPrecisionCase("career-resume-process", "Resume as a verb is not career tailoring", "Explain how to resume a paused process.", "answer_directly", "direct_answer", "ai-job-search"),
+    # repro-audit (#2242 review): each control says a phrase the PR once
+    # triggered on, or one of the HellaSwag phrases, in a sense that is not a
+    # comparison of the person's own record with a paper. A clarify that only
+    # lists the workflow as an option passes; forbidden_candidate pins the
+    # sentences where it is not even listed today.
+    RoutingPrecisionCase("repro-audit-score-explainer", "Explaining a benchmark score is a direct answer", "Explain how HellaSwag score is computed", "answer_directly", "direct_answer", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-patient-conditions", "A patient's reported conditions are not paper conditions", "List the reported conditions for this patient", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-insurance-conditions", "An insurance claim's conditions are not evaluation evidence", "Write up the reported conditions for the insurance claim", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-weather-conditions", "Weather conditions are not evaluation conditions", "Summarize the reported conditions from the weather report", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-soccer-evaluations", "Player evaluations are not benchmark records", "Compare evaluation results for our soccer players this season", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-student-evaluations", "Student evaluations are not benchmark records", "Compare evaluation results for my students between midterm and final", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-sales-evaluations", "A sales team review is not a paper comparison", "Compare evaluation results for our sales team", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-rag-eval", "An app eval run is outside the HellaSwag contract", "Compare evaluation results of our RAG pipeline eval run", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-hiring-log", "A hiring log is not an evaluation log", "Check the evaluation log comparison for the hiring process", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-ci-harness", "CI harness results are not paper evidence", "audit harness results from CI", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-survey-audit", "A survey audit is not a benchmark audit", "Run a research result audit of our marketing survey", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-run-request", "Producing a new score is evaluation, which the audit never runs", "Run HellaSwag on my model and report the HellaSwag score", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-generate-log", "Generating a log is evaluation, not an audit of one", "Generate a HellaSwag log for my checkpoint", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-tweet", "Writing about reported results is not comparing a record", "Draft a tweet about the HellaSwag results our paper reported", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-spreadsheet", "Copying published numbers is not comparing a record", "Add the published HellaSwag results to my spreadsheet", "answer_clarification", ""),
+    # One control per clause of `_repro_audit_offers_itself`: no comparison
+    # lead verb, no own record, no paper or reported target, a request to rerun.
+    RoutingPrecisionCase("repro-audit-format-table", "Formatting results for a paper is writing, not a comparison", "Format my HellaSwag results table for the paper's appendix", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-two-papers", "Two papers' numbers are not the person's own record", "Compare the HellaSwag results reported by two different papers", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-last-week", "Comparing two own runs has no paper target", "Compare my HellaSwag results with last week's", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-then-rerun", "A rerun request asks for new numbers", "Compare this HellaSwag log to the paper and then rerun it with 10-shot", "answer_clarification", "", "repro-audit"),
+    # Execution is read by stem over the whole request (#2324 review): a
+    # hyphen, an -ing form, retraining, fine-tuning, "again" and a later
+    # sentence each ask for new numbers too.
+    RoutingPrecisionCase("repro-audit-hyphen-rerun", "A hyphenated rerun asks for new numbers", "Check my HellaSwag log against the paper and re-run whatever looks off", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-rerunning", "An -ing rerun asks for new numbers", "Compare this HellaSwag results file to the paper before rerunning the job", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-retrain", "Retraining is producing a new model", "Verify my HellaSwag score against the paper and retrain the head if it is lower", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-fine-tune", "Fine-tuning is producing a new model", "Compare our HellaSwag results with the paper so we can fine-tune further", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-again", "Doing the eval again asks for new numbers", "Check my HellaSwag score against the paper, then do the eval again", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-keep-training", "Training the model is producing new numbers", "Check this HellaSwag log against the paper while I keep training the model", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-later-sentence-run", "A run asked in a later sentence still asks for new numbers", "Audit my HellaSwag log against the paper. After that, run it once more on the new checkpoint.", "answer_clarification", ""),
+    # Only record words may sit between the benchmark and the comparison
+    # relation: a file's upload state or a table before a deadline is not a
+    # comparison with the paper.
+    RoutingPrecisionCase("repro-audit-upload-state", "Whether a log is uploaded is not a comparison", "Verify this HellaSwag log file is uploaded with the paper artifacts", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-cited-log", "Without a comparison relation the paper only cites the log", "Check my HellaSwag log the paper appendix cites", "answer_clarification", "", "repro-audit"),
+    # The whole request is the admitted shape or nothing (#2324 delta review):
+    # a trailing clause of any kind, a second sentence, a tail word that is not
+    # a compared quantity, or a word before the owner each refuse.
+    RoutingPrecisionCase("repro-audit-rescore-clause", "A trailing rescore asks for new numbers", "Compare this HellaSwag log to the paper and rescore it afterwards", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-benchmark-clause", "Benchmarking another model is new work", "Audit our HellaSwag score against the paper and benchmark the distilled model", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-second-sentence", "Any second sentence is a follow-up request", "Check my HellaSwag results against the paper. Then try the 13B checkpoint as well.", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-style-guide", "A style guide is not a compared quantity", "Compare my HellaSwag score with the paper's style guide", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-paper-editor", "Checking with the paper's editor is not a comparison", "Verify my HellaSwag numbers with the paper editor before Friday", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-formatting-prefix", "Formatting checked before the record is document work", "Check the formatting of my HellaSwag results against the paper", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-results-slide", "A results slide is a document, not the record", "Check my HellaSwag results slide against the paper", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-no-relation", "Results a paper reported are not compared with it", "Check my HellaSwag results the paper reported", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-no-owner", "The benchmark's results are not the person's record", "Compare the HellaSwag results with the published numbers", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-leaderboard", "A leaderboard is not the paper's report", "Compare my HellaSwag score with the leaderboard results", "answer_clarification", "", "repro-audit"),
+    # Quoted, code and link text is masked before the predicate reads the
+    # message, so a shielded message never admits repro-audit.
+    RoutingPrecisionCase("repro-audit-double-quoted-tail", "A quoted trailing clause is unread, not absent", 'Compare my HellaSwag log against the paper "and then retrain it overnight"', "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-backticked-tail", "A code-span trailing clause is unread, not absent", "Check our HellaSwag results against the paper `then kick off a fresh eval`", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-curly-quoted-tail", "A curly-quoted trailing clause is unread, not absent", "Verify my HellaSwag score with the paper \u201cand redo the sweep\u201d", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-single-quoted-tail", "A single-quoted trailing clause is unread, not absent", "Compare this HellaSwag log to the paper 'then score the bigger model'", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-score-table", "A table checked before sending a paper is writing work", "Check our HellaSwag score table before sending the paper to reviewers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),
     RoutingPrecisionCase("docking-boat-reservation", "Boat docking is not a molecular search", "Explain the boat docking reservation policy.", "answer_directly", "direct_answer", "molecular-docking"),
@@ -304,6 +365,80 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-asked-doubted", "Make a film asked and then doubted is not a request", "Make a new launch film? Should we even?", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-asked-alternative", "A film weighed against hiring an agency is a question", "Make a launch film, or should I hire an agency?", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-causative-on-site", "A reel on the website made faster is a page fix", "Make a showreel on the website load faster.", "answer_clarification", "", "show-reel"),
+    # The promo, demo, launch and trailer names are whole phrases; the same
+    # words in another sense, or the phrase inside another request, are not a
+    # film to author.
+    RoutingPrecisionCase("show-reel-demo-video-playback", "A demo video that will not play is a playback fault", "The demo video won't play in Safari.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-promo-video-causative", "A definite promo video made shorter is an edit", "Make the promo video shorter.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-promo-video-upload", "Uploading a promo video is a file move", "Upload the promo video to the drive.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-launch-video-convert", "Converting a launch video is a format operation", "Convert the launch video to webm.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-demo-video-chained-post", "A demo video chained to a Slack post is not this skill's", "Make a demo video and post it to Slack.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-towed-trailer", "A bare trailer is also the one you tow", "Build a trailer for my boat.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-video-call", "A video call is not a film", "Make a video call to the client.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-install", "Installing the renderer is not a brief", "Install hyperframes on my laptop.", "answer_clarification", "", "show-reel"),
+    # A demo, product or explainer video of a fault is a recording for a
+    # report; it needs a production marker or a purpose adjunct to be a film.
+    RoutingPrecisionCase("show-reel-recording-frozen-screen", "A product video of a frozen screen is a fault recording", "Create a product video showing the frozen settings screen for the vendor.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-recording-repro-steps", "An explainer of how to reproduce a glitch is a fault recording", "Make an explainer video of how to reproduce the sync glitch.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-recording-timeout", "A demo video of a timeout is a fault recording", "Make a demo video of the login timeout.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-recording-flicker", "A demo video of a flicker for a designer is a fault recording", "Make a demo video showing the dropdown flicker for the designer.", "answer_clarification", "", "show-reel"),
+    # A renderer-led sentence is a brief only as the noun and a purpose
+    # adjunct; a statement about a render is not one.
+    RoutingPrecisionCase("show-reel-renderer-export-fault", "A renderer video that fails to export is a fault", "Hyperframes video for the pricing page fails to export.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-black-frames", "A renderer video from a past day rendering black is a fault", "HyperFrames launch video from Monday renders black frames.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-bare-noun", "The bare renderer noun is not a request", "hyperframes video", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-not-found", "A renderer video that is missing on a CDN is a fault", "hyperframes promo video is 404 on the CDN", "answer_clarification", "", "show-reel"),
+    # Editing or trimming an everyday video changes one; it does not author a
+    # film. `cut` and `edit` lead only a reel noun.
+    RoutingPrecisionCase("show-reel-edit-logo-timing", "Editing a product video's logo timing is an edit", "Edit a product video so the logo appears later.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-cut-down-promo", "Cutting a promo video down is a trim", "Cut a promo video down to ten seconds.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-edit-shorten-intro", "Shortening a launch video's intro is an edit", "Edit a launch video, just shorten the intro.", "answer_clarification", "", "show-reel"),
+    # A duration or a look says how a clip runs, not that it is a showcase:
+    # every everyday film noun needs a closed adjunct, marker or not.
+    RoutingPrecisionCase("show-reel-timed-payment-error", "A timed demo video of an error is a fault recording", "Make a 25 second demo video of the payment error for support.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-timed-freezing-page", "A timed demo video of a freezing page is a fault recording", "Create a 3 minute demo video showing the search page freezing.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-cinematic-incident", "A cinematic explainer of an incident is not a showcase", "Make a cinematic explainer video of the database corruption incident.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-numbered-page", "A demo video of a numbered error page is a fault recording", "Make a demo video of the 404 page.", "answer_clarification", "", "show-reel"),
+    # An admitted first sentence does not carry a message whose next sentence
+    # reports a fault.
+    RoutingPrecisionCase("show-reel-renderer-then-fonts", "A renderer brief followed by a rendering fault is a fault", "Hyperframes promo video for the homepage. The fonts render as boxes.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-demo-then-charts", "A demo video request followed by a fault report is a fault", "Make a demo video for the dashboard. Charts disappear after refresh.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-renderer-then-question", "A renderer brief followed by a why question is a fault", "HyperFrames launch video for the beta. Why does it drop frames?", "answer_clarification", "", "show-reel"),
+    # The marketing nouns take the same closed adjunct.
+    RoutingPrecisionCase("show-reel-teaser-broken-search", "A teaser video of a broken feature is a fault recording", "Make a teaser video of the broken search for the engineers.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-launch-crash-timeline", "A launch video covering a crash is not a showcase", "Create a launch video covering the crash timeline.", "answer_clarification", "", "show-reel"),
+    # `cut` and `edit` lead only main's reel nouns, not a sizzle reel.
+    RoutingPrecisionCase("show-reel-edit-sizzle-drop", "Dropping a clip from a sizzle reel is an edit", "Edit a sizzle reel and drop the second clip.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-cut-sizzle-down", "Cutting a sizzle reel down is a trim", "Cut a sizzle reel down to thirty seconds.", "answer_clarification", "", "show-reel"),
+    # Masked text reads as nothing, so a closed form beside a quote, code,
+    # a `>` line or a link may be showing the fault that text names.
+    RoutingPrecisionCase("show-reel-shielded-backtick", "A backticked error after a closed form is a fault", "Make a demo video for the plugin `ImportError: no module named yaml`", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-double-quote", "A quoted symptom after a closed form is a fault", 'Make a demo video for the app "upload spins forever"', "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-curly-quote", "A curly-quoted symptom after a closed form is a fault", "Make a demo video for the app \u2018login loops back\u2019", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-block-quote", "A quoted crash line after a closed form is a fault", "Make a demo video for the beta\n\n> Segmentation fault (core dumped)", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-fence", "A fenced traceback after a closed form is a fault", "Make a demo video for the plugin\n```\nTraceback (most recent call last):\n  File x\n```", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-issue-link", "An issue link after a closed form is a fault", "Make a launch video for the release https://github.com/acme/app/issues/812", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-renderer-code", "A backticked exit code after a renderer brief is a fault", "hyperframes teaser video for the app `exit status 137`", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-renderer-quote-line", "A quoted render error after a renderer brief is a fault", "HyperFrames promo video for the beta\n> render failed: timeout", "answer_clarification", "", "show-reel"),
+    # A version qualifies a closed noun only as v plus one or two digits.
+    RoutingPrecisionCase("show-reel-long-version-page", "A demo video of a v-numbered error page is a fault recording", "Make a demo video of the v500 page.", "answer_clarification", "", "show-reel"),
+    # A with-adjunct must end the sentence like any other.
+    RoutingPrecisionCase("show-reel-with-music-default", "Making music the default is a setting", "Make a demo video with music the default.", "answer_clarification", "", "show-reel"),
+    # A closed form must hold on the request as written: a path, a file and
+    # line, a bare domain or a script the router strips after masking, a
+    # reply pointer or attachment note cut from the turn, and an emoji may
+    # each name the fault. `with` takes only a production track.
+    RoutingPrecisionCase("show-reel-raw-source-path", "A source path after a closed form is a fault pointer", "Make a demo video for the plugin, see src/plugin/loader.py", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-raw-file-line", "A file and line after a closed form is a fault pointer", "Make a demo video for the dashboard api/routes.py:118", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-raw-bare-domain", "A bare-domain incident link after a closed form is a fault", "Make a demo video for the app status.example.org/incidents/42", "answer_clarification", "", "show-reel"),
+    # main's model-selection shortlist already names show-reel here by word
+    # overlap after a declined dispatch; it is not a route or a card.
+    RoutingPrecisionCase("show-reel-raw-script", "A repro script after a closed form is a fault", "Make a demo video for the plugin ./scripts/repro.sh", "answer_clarification", ""),
+    RoutingPrecisionCase("show-reel-reply-pointer-fault", "A closed form replying to a fault report is a recording", '[Replying to: "checkout freezes after the coupon step"]\n\nMake a demo video for the app', "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-attachment-note-fault", "A closed form under an attachment note may show what it shows", "[The user sent an image~ a stack trace in a terminal ~]\n\nMake a demo video for the plugin", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-emoji-tail", "An emoji after a closed form is unread text", "Make a demo video for the beta \U0001F4A5", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-with-customers", "A promo video with customers is a meeting, not a track", "Create a promo video with our customers.", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-with-marketing-team", "A launch video with a team is a meeting, not a track", "Make a launch video with the marketing team.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -9092,6 +9227,11 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("career-tailoring", "Resume tailoring reaches real drafts", "Tailor my resume to this library coordinator posting using my supplied facts.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("career-interview", "Interview preparation reaches versioned evidence", "Prepare for my job interview from the selected application version.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
     RoutingInterventionCase("career-tracking", "Outcome tracking requires confirmed events", "Track my job applications and record my explicitly confirmed outcome.", "dispatch", "ai-job-search", "prepare_ai_job_search", "ai_job_search"),
+    RoutingInterventionCase("repro-audit-log-conditions", "Compare retained results to reported conditions", "Compare this HellaSwag log to the paper's reported conditions", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-own-results", "The person's own HellaSwag results against the paper", "Audit my lm-eval HellaSwag results against the paper", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-score-metric", "A score check against a paper's reported metric", "Check whether my HellaSwag score matches the paper's reported acc_norm", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-metric-tail", "The compared metric may close the request", "Compare my HellaSwag score with the paper's reported metric", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
+    RoutingInterventionCase("repro-audit-courtesy-lead", "A courtesy opener still leads with the comparison", "Can you compare my HellaSwag log with the paper's numbers?", "dispatch", "repro-audit", "prepare_repro_audit", "repro_audit"),
     RoutingInterventionCase("gis-metric-overlay", "Supplied geometry requires actual metric computation", "Intersect these two GeoJSON layers in a metric CRS and compute overlap area.", "dispatch", "geospatial-analysis", "prepare_geospatial_analysis", "geospatial_analysis"),
     RoutingInterventionCase("bio-public-source-comparison", "Public claims require source-labelled reconciliation", "Cross-check this public BRAF V600E melanoma query with a ClinVar cross-check and trial registry records, retaining disagreements and update dates.", "dispatch", "biomedical-evidence", "prepare_biomedical_evidence", "biomedical_evidence"),
     RoutingInterventionCase("docking-prepared-search", "Prepared inputs require actual bounded pose search", "Run rigid-receptor docking for these prepared PDBQT inputs and declared binding box, returning real poses and replay settings.", "dispatch", "molecular-docking", "prepare_molecular_docking", "molecular_docking"),
@@ -9134,6 +9274,18 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("show-reel-make-motion-showcase", "Make with an indefinite object is production", "Make a motion showcase for the new dashboard.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-cut-production", "Cutting a new reel from source work is production", "Cut a show reel from last year's client work.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-produce-using-source", "Courtesy and a source adjunct keep the production lead", "Please produce a product showcase video using our brand guide.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    # Promo, demo, launch and trailer films by their everyday names. Before
+    # these phrases joined the admission each one dispatched another lane or
+    # asked.
+    RoutingInterventionCase("show-reel-promo-video", "A promo video of a product is production, not delivery", "make a promo video of the omh TUI", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-spaced-duration-demo-video", "A two-word duration qualifies a demo video", "make a 30 second demo video of our terminal UI", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-renderer-lead", "A brief that opens on the renderer name asks for a film", "hyperframes promo video for the launch", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-product-video", "A product video for a page is production, not delivery", "Make a product video for the landing page.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-product-demo-video", "A product demo video to produce is not a connector check", "Produce a 90 second product demo video for investors.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-sizzle-reel", "A sizzle reel for an occasion is production", "Make a sizzle reel for the conference booth.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-with-subtitles", "A production adjunct closes a promo video brief", "Make a promo video for the beta with subtitles.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-launch-trailer", "A launch trailer is a film", "Make a launch trailer for the game.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-promo-video-of-board", "A promo video about a named surface is still the film", "Make a HyperFrames promo video of the agent board.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
     RoutingInterventionCase("show-reel-transcript-owner", "An existing launch film transcript stays with media input", "Summarize this launch film transcript for the weekly report.", "dispatch", "media-input-operator", "prepare_media_input_card", "media_input"),
     # A film named inside another skill's request keeps that skill. Each of
