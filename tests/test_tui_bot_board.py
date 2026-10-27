@@ -1146,6 +1146,55 @@ class ReviewBoundaryTests(unittest.TestCase):
                 self.assertGreaterEqual(contrast_ratio(edge.fg, background), EDGE_CONTRAST)
 
 
+class DeltaReviewTests(unittest.TestCase):
+    """The #2321 delta review: the highlight on mid-tone pages, gateway words built whole, chips kept together, and
+    a totals label that gives way before its figures."""
+
+    MID_TONES = ("#444444", "#666666", "#808080", "#929292", "#B2B2B2", "#13773D", "#224FBC", "#504945")
+
+    def test_the_highlighted_edge_never_turns_back_into_a_mid_tone_page(self) -> None:
+        from omh.skin_pack import SKIN_THEMES
+
+        for skin in SKIN_THEMES:
+            for background in (*self.MID_TONES, "#FCF9FD", "#0F1B2D"):
+                with self.subTest(skin=skin.short_name, background=background):
+                    theme = build_theme(skin, background)
+                    edge = bot_board._highlight(theme).fg
+                    self.assertGreaterEqual(contrast_ratio(edge, background), 4.5, "it reads on the page")
+                    reached = contrast_ratio(edge, theme.rule.fg) >= EDGE_CONTRAST
+                    self.assertTrue(reached or edge in ("#000000", "#FFFFFF"), "3:1 from the rule, or as far as ink goes")
+
+    def test_gateway_words_are_whole_parts_never_split_out_of_rendered_text(self) -> None:
+        stopped = bot_board.Gateway("stopped", False, 52417, exit_reason="signal · SIGTERM",
+                                    platforms=(bot_board.Platform("discord", "connected"),))
+        profile = replace(bots()[2], gateway=stopped)
+        for cols in (150, 135, 120, 117, 80, 60):
+            with self.subTest(cols=cols):
+                bottom = squeeze(lines_text(profile_lines([profile], 0, NOW, cols, DEFAULT_THEME)[0])[-2])
+                self.assertIn("gateway stopped (signal · SIGTERM)", bottom, "its reason is part of its state")
+                self.assertEqual(bottom.count("("), bottom.count(")"))
+
+    def test_restart_requested_never_splits_the_chips(self) -> None:
+        names = ["discord", "telegram", "slack", "whatsapp", "signal", "matrix", "mattermost", "x"]
+        gateway = replace(bots()[2].gateway, restart_requested=True,
+                          platforms=tuple(bot_board.Platform(name, "connected", current=True) for name in names))
+        profile = replace(bots()[2], gateway=gateway)
+        for cols in (150, 135, 120):
+            with self.subTest(cols=cols):
+                bottom = squeeze(lines_text(profile_lines([profile], 0, NOW, cols, DEFAULT_THEME)[0])[-2])
+                self.assertLess(bottom.index("restart requested"), bottom.index("discord"))
+                words = [word for word in bottom.replace("─", " ").replace("┴", " ").split() if word in names]
+                self.assertEqual(words, names[: len(words)], "the chips in one run, the last ones dropped whole")
+                if cols >= 135:
+                    self.assertEqual(words, names)
+
+    def test_the_totals_label_shortens_before_its_figures_go(self) -> None:
+        wide = squeeze(lines_text(profile_lines(bots(), 0, NOW, 150, DEFAULT_THEME)[0])[1])
+        self.assertIn("lifetime of those active in 24 h: 6.1M in", wide)
+        narrow = squeeze(lines_text(profile_lines(bots(), 0, NOW, 120, DEFAULT_THEME)[0])[1])
+        self.assertIn("lifetime (active 24 h): 6.1M in · 459.7k out", narrow)
+
+
 class AvatarTests(unittest.TestCase):
     def test_a_name_draws_the_same_face_on_every_run(self) -> None:
         self.assertEqual(avatar("miku"), [" █▀▄▄▀█ ", " █    █ ", "█▀████▀█", " ▀ ▀▀ ▀ "])  # pinned: sha256 of the name

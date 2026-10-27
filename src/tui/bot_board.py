@@ -108,6 +108,7 @@ import time
 from typing import Any, ClassVar
 
 from ..plugin_bundle.omh import runtime_paths
+from ..skin_pack import hex_to_rgb
 from ..plugin_bundle.omh.hud_text import compact_count
 from ..plugin_bundle.omh.iso_datetime import strict_fromisoformat
 from ..plugin_bundle.omh.sqlite_readonly import connect_readonly
@@ -119,7 +120,7 @@ from .pager import Pager
 from .prompts import CHOICE_MARK
 from .session_picker import age_text
 from .style import Line, Span, Style
-from .theme import BLACK, EDGE_CONTRAST, TEXT_CONTRAST, WHITE, Theme, contrast_ratio, lifted_colour
+from .theme import BLACK, EDGE_CONTRAST, TEXT_CONTRAST, WHITE, Theme, contrast_ratio
 from .width import cell_width, cluster_width, clusters, line_width, truncate, truncate_line, wrap_line
 
 BOARD_TITLE = "Hermes bots"
@@ -194,6 +195,8 @@ COST_RANK = 4
 # The active sessions' tokens and cost are each session's lifetime totals (Hermes keeps no per-call time), and the
 # board says so wherever it shows them.
 LIFETIME_WORD = "lifetime"
+TOTALS_LABELS = (f"{LIFETIME_WORD} of those active in 24 h: ", f"{LIFETIME_WORD} (active 24 h): ")
+HIGHLIGHT_STEPS = 20  # the highlighted edge's one-way mix from the accent to black or white, in twentieths
 SPARK_GAP = "   "
 GAUGE_CELLS = 10
 GAUGE_WARN, GAUGE_ERROR = 70, 90  # ok below 70 %, warn through 90 %, error past it
@@ -1071,29 +1074,35 @@ def _short_model(model: str) -> str:
     return model.rsplit("/", 1)[-1]
 
 
-def _gateway_words(profile: Profile, served_by: str, theme: Theme) -> tuple[str, str, Style]:
-    """The gateway's glyph, what it says, and the style both take."""
+def _gateway_parts(profile: Profile, served_by: str, theme: Theme) -> tuple[str, list[str], Style]:
+    """The gateway's glyph, what it says as whole parts (its state first, then why), and the style they take."""
     gateway = profile.gateway
     if gateway.problem:
         if served_by:
-            return "●", f"served by the {served_by} gateway", theme.ok
-        return "○", gateway.problem, theme.warn if "unreadable" in gateway.problem else theme.muted
+            return "●", [f"served by the {served_by} gateway"], theme.ok
+        return "○", [gateway.problem], theme.warn if "unreadable" in gateway.problem else theme.muted
     if gateway.live:
-        words = [f"gateway {gateway.state}"]
+        parts = [f"gateway {gateway.state}"]
         if gateway.pid is not None:
-            words.append(f"pid {gateway.pid}")
+            parts.append(f"pid {gateway.pid}")
         if gateway.active_agents:
-            words.append(f"{_count(gateway.active_agents, 'agent')} running")
-        return "●", " · ".join(words), theme.ok if gateway.state == GATEWAY_RUNNING else theme.warn
+            parts.append(f"{_count(gateway.active_agents, 'agent')} running")
+        return "●", parts, theme.ok if gateway.state == GATEWAY_RUNNING else theme.warn
     if served_by:
-        return "●", f"served by the {served_by} gateway", theme.ok
+        return "●", [f"served by the {served_by} gateway"], theme.ok
     if gateway.elsewhere:
-        return "◌", f"gateway not running here · its record is another home's ({gateway.elsewhere})", theme.warn
+        return "◌", ["gateway not running here", f"its record is another home's ({gateway.elsewhere})"], theme.warn
     if gateway.state == GATEWAY_STOPPED:
         reason = f" ({gateway.exit_reason})" if gateway.exit_reason else ""
-        return "○", f"gateway stopped{reason}", theme.muted
+        return "○", [f"gateway stopped{reason}"], theme.muted
     pid = f"pid {gateway.pid} is gone" if gateway.pid is not None else "no pid recorded"
-    return "◌", f"gateway not running · its record still says {gateway.state} ({pid})", theme.warn
+    return "◌", ["gateway not running", f"its record still says {gateway.state} ({pid})"], theme.warn
+
+
+def _gateway_words(profile: Profile, served_by: str, theme: Theme) -> tuple[str, str, Style]:
+    """The gateway's glyph, what it says in one line, and the style both take."""
+    glyph, parts, style = _gateway_parts(profile, served_by, theme)
+    return glyph, " · ".join(parts), style
 
 
 # A row's piece: its drop rank (the highest goes first on a narrow row; 0 never goes), the gap before it, its spans.
@@ -1351,14 +1360,16 @@ def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, c
     """For the box's bottom edge: what the gateway says when it is not plainly running, each platform as a chip
     coloured by its state, and a restart Hermes was asked for; the last chips go first when they do not fit."""
     gateway = profile.gateway
-    _glyph, words, style = _gateway_words(profile, served_by, theme)
+    _glyph, parts, style = _gateway_parts(profile, served_by, theme)
     pieces: list[Piece] = []
     if not gateway.live or gateway.state != GATEWAY_RUNNING:
         # The state first and whole; the why after it (`its record still says ...`) goes before any chip does, and
-        # level 2's box says it in full.
-        first, *why = words.split(" · ")
+        # level 2's box says it in full. Parts are built whole, never split out of rendered text.
+        first, *why = parts
         pieces.append((0, "", (Span(first, style),)))
         pieces += [(EDGE_WHY_RANK + number, " · ", (Span(part, style),)) for number, part in enumerate(why)]
+    if gateway.restart_requested:  # before the chips, so the chips stay one run however many spill on
+        pieces.append((1, "  ", (Span("restart requested", theme.warn),)))
     live, stale = CHIP_GLYPHS[charset]
     for number, platform in enumerate(gateway.platforms):
         if not platform.current:
@@ -1370,8 +1381,6 @@ def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, c
         else:
             chip = (Span(f"{platform.name} ", theme.text), Span(live, theme.ok if platform.state == "connected" else theme.warn))
         pieces.append((2 + number, "  ", chip))  # the last chip goes first
-    if gateway.restart_requested:
-        pieces.append((1, "  ", (Span("restart requested", theme.warn),)))
     kept = list(pieces)
     while line_width(_fit((), kept, 1 << 20)) > width and [piece for piece in kept if piece[0]]:
         kept.remove(max((piece for piece in kept if piece[0]), key=lambda piece: piece[0]))
@@ -1506,12 +1515,21 @@ def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, wid
 
 def _highlight(theme: Theme) -> Style:
     """The highlighted card's edge: the theme's accent, moved away from the rule's colour until the two edges stand
-    3:1 apart (WCAG's floor for a non-text mark), darker on a light page and lighter on a dark one."""
+    3:1 apart (WCAG's floor for a non-text mark), darker when the accent is the darker of the two and lighter when
+    it is the lighter. One way only: where 3:1 is out of reach it ends at black or white, and never turns back
+    toward the page, so on a mid-tone background the edge keeps the contrast the accent had there."""
     accent, rule = theme.brand.fg, theme.rule.fg
-    if not accent or not rule:
+    start, against = hex_to_rgb(accent or ""), hex_to_rgb(rule or "")
+    if start is None or against is None:
         return theme.brand
     ink = BLACK if contrast_ratio(accent, BLACK) < contrast_ratio(rule, BLACK) else WHITE
-    return replace(theme.brand, fg=lifted_colour(accent, rule, EDGE_CONTRAST, ink))
+    end = hex_to_rgb(ink)
+    for step in range(HIGHLIGHT_STEPS + 1):
+        share = step / HIGHLIGHT_STEPS
+        candidate = "#" + "".join(f"{round(a + (b - a) * share):02X}" for a, b in zip(start, end, strict=True))
+        if contrast_ratio(candidate, rule) >= EDGE_CONTRAST:
+            return replace(theme.brand, fg=candidate)
+    return replace(theme.brand, fg=ink)
 
 
 def _edge_room(widths: Sequence[int], after_first: bool) -> int:
@@ -1578,10 +1596,15 @@ def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme, charset: s
             sum(costs) if costs else None, any(usage.estimated for usage in usages),
             sum(usage.included for usage in usages), sum(usage.unpriced for usage in usages),
         )
-        day: list[Span] = [Span(f"{LIFETIME_WORD} of those active in 24 h: ", theme.muted)]
+        figures: list[Span] = []
         for number, (_rank, gap, piece) in enumerate(_usage_pieces(total, theme, cached=False)):
-            day += [*((Span(gap),) if number else ()), *piece]
-        pieces.append((3, " · ", tuple(day)))
+            figures += [*((Span(gap),) if number else ()), *piece]
+        # The long label while it fits, the short one before the figures give way.
+        for label in TOTALS_LABELS:
+            day = (3, " · ", (Span(label, theme.muted), *figures))
+            if line_width(_fit((), [*pieces, day], 1 << 20)) <= width:
+                break
+        pieces.append(day)
     return _panel([width], [[_fit((), pieces, width)]], theme.rule, charset, top=((Span(BOARD_TITLE, theme.heading),), ()))
 
 
