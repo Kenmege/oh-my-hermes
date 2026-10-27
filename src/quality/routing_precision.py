@@ -150,6 +150,19 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # comparison with the paper.
     RoutingPrecisionCase("repro-audit-upload-state", "Whether a log is uploaded is not a comparison", "Verify this HellaSwag log file is uploaded with the paper artifacts", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-cited-log", "Without a comparison relation the paper only cites the log", "Check my HellaSwag log the paper appendix cites", "answer_clarification", "", "repro-audit"),
+    # The whole request is the admitted shape or nothing (#2324 delta review):
+    # a trailing clause of any kind, a second sentence, a tail word that is not
+    # a compared quantity, or a word before the owner each refuse.
+    RoutingPrecisionCase("repro-audit-rescore-clause", "A trailing rescore asks for new numbers", "Compare this HellaSwag log to the paper and rescore it afterwards", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-benchmark-clause", "Benchmarking another model is new work", "Audit our HellaSwag score against the paper and benchmark the distilled model", "answer_clarification", ""),
+    RoutingPrecisionCase("repro-audit-second-sentence", "Any second sentence is a follow-up request", "Check my HellaSwag results against the paper. Then try the 13B checkpoint as well.", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-style-guide", "A style guide is not a compared quantity", "Compare my HellaSwag score with the paper's style guide", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-paper-editor", "Checking with the paper's editor is not a comparison", "Verify my HellaSwag numbers with the paper editor before Friday", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-formatting-prefix", "Formatting checked before the record is document work", "Check the formatting of my HellaSwag results against the paper", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-results-slide", "A results slide is a document, not the record", "Check my HellaSwag results slide against the paper", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-no-relation", "Results a paper reported are not compared with it", "Check my HellaSwag results the paper reported", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-no-owner", "The benchmark's results are not the person's record", "Compare the HellaSwag results with the published numbers", "answer_clarification", "", "repro-audit"),
+    RoutingPrecisionCase("repro-audit-leaderboard", "A leaderboard is not the paper's report", "Compare my HellaSwag score with the leaderboard results", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("repro-audit-score-table", "A table checked before sending a paper is writing work", "Check our HellaSwag score table before sending the paper to reviewers", "answer_clarification", "", "repro-audit"),
     RoutingPrecisionCase("gis-map-metaphor", "Map prose needs no coordinate computation", "Explain the map metaphor in this essay.", "answer_directly", "direct_answer", "geospatial-analysis"),
     RoutingPrecisionCase("bio-ui-variant", "Variant vocabulary alone is not biological evidence", "Explain the word variant in a UI experiment.", "answer_directly", "direct_answer", "biomedical-evidence"),

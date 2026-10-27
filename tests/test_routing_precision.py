@@ -70,8 +70,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Actor/objective follow-up adds seven employer contrasts.
         # repro-audit adds one vocabulary control; its review replaces it with
         # 19 controls that each say a phrase the skill once dispatched on;
-        # the #2324 review adds ten more for its execution and relation clauses.
-        self.assertEqual(payload["summary"]["case_count"], 1144)
+        # the #2324 review adds ten more for its execution and relation clauses,
+        # and its delta review ten more, one per position of the allow-listed shape.
+        self.assertEqual(payload["summary"]["case_count"], 1154)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

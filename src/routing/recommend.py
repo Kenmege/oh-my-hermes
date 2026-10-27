@@ -5975,59 +5975,64 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
 
 # `repro-audit` compares a HellaSwag record the person holds with what a paper
 # reported. Its phrases name the benchmark only, so they count on one request
-# shape alone, read on the first sentence: it leads with a comparison verb,
-# names the person's own record (`my`, `our`, `this`, `these` before
-# `hellaswag`), and goes straight from the record to a comparison relation and
-# the paper or reported target -- "my HellaSwag log against the paper". Only
-# record words may sit between the benchmark and the relation, so a slide, a
-# section, a spreadsheet or an attachment checked before a paper deadline is
-# not admitted. And the whole request, every sentence of it, may ask for no
-# new numbers -- the workflow never runs a model. Execution is matched by stem
-# with an optional `re`/`re-` (run, re-run, rerunning, retrain, fine-tune,
-# re-evaluating, ...), and `again` or `redo` count as asking to do it once
-# more, so no inflection or later sentence reopens it.
+# shape alone, and the whole request must be that shape: one sentence that
+# leads with a comparison verb, names the person's own record, goes straight
+# from the record to a comparison relation and the paper or reported target,
+# and ends in a closed tail of what is compared ("my HellaSwag log against the
+# paper's reported few-shot setting"). Every position is an allow list, so a
+# trailing clause ("... and rescore it", "... with the paper's first author"),
+# a second sentence, or anything outside the record slot refuses; the
+# sentence then routes as it did before the skill. Asking for new numbers
+# cannot fit the shape, since no position admits a verb.
 _REPRO_AUDIT_WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
 _REPRO_AUDIT_LEAD_VERBS = frozenset({"compare", "check", "audit", "verify", "reconcile", "diff"})
+_REPRO_AUDIT_LEAD_FILLERS = frozenset({"whether", "if"})
 _REPRO_AUDIT_OWNERS = frozenset({"my", "our", "this", "these"})
+_REPRO_AUDIT_OWNER_MODIFIERS = frozenset({"own", "local", "latest", "lm-eval", "lm-evaluation-harness", "harness"})
 _REPRO_AUDIT_RECORD_WORDS = frozenset(
     {"log", "logs", "result", "results", "score", "scores", "number", "numbers", "accuracy",
-     "acc", "norm", "acc-norm", "output", "outputs", "json", "file"}
+     "acc", "norm", "acc-norm", "output", "outputs", "json", "file", "run"}
 )
 _REPRO_AUDIT_RELATIONS = frozenset(
-    {"against", "with", "to", "vs", "versus", "match", "matches", "matching", "differ", "differs", "from"}
+    {"against", "with", "to", "vs", "versus", "match", "matches", "differ", "differs", "from"}
 )
-_REPRO_AUDIT_RELATION_FILLERS = frozenset({"the", "a", "an", "what", "those", "its", "their"})
+_REPRO_AUDIT_RELATION_FILLERS = frozenset({"the", "a", "what", "its", "their"})
 _REPRO_AUDIT_TARGETS = frozenset({"paper", "paper's", "papers", "reported", "published"})
-_REPRO_AUDIT_EXECUTION = re.compile(
-    r"(?:re-?)?(?:run|runs|running|ran|execut(?:e|es|ed|ing)|evaluat(?:e|es|ed|ing)|train|trains|trained|training"
-    r"|generat(?:e|es|ed|ing)|comput(?:e|es|ed|ing)|download(?:s|ed|ing)?|benchmark(?:s|ed|ing))"
-    r"|fine-?tun(?:e|es|ed|ing)|produc(?:e|es|ed|ing)|re-?do(?:es|ing|ne)?|again"
+_REPRO_AUDIT_TAIL = frozenset(
+    {"reported", "conditions", "condition", "settings", "setting", "setup", "numbers", "number", "score",
+     "scores", "results", "result", "table", "few-shot", "count", "acc", "norm", "acc-norm"}
 )
 
 
 def _repro_audit_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """Admit a comparison of the person's own HellaSwag record with a paper's report."""
+    """Admit a request that is exactly one comparison of the person's HellaSwag record with a paper."""
     del query_tokens
-    request = after_courtesy(normalized_query.strip())
-    if any(_REPRO_AUDIT_EXECUTION.fullmatch(word) for word in _REPRO_AUDIT_WORD.findall(request)):
+    request = after_courtesy(normalized_query.strip()).rstrip("?.! ")
+    if re.search(r"[.!?;,:](?:\s|$)", request):
         return False
-    sentence = re.split(r"[.!?;](?:\s|$)", request, maxsplit=1)[0]
-    words = _REPRO_AUDIT_WORD.findall(sentence)
-    if not words or words[0] not in _REPRO_AUDIT_LEAD_VERBS or "hellaswag" not in words:
+    words = _REPRO_AUDIT_WORD.findall(request)
+
+    def skip(index: int, allowed: frozenset[str], limit: int = len(words)) -> int:
+        end = index
+        while end < len(words) and end - index < limit and words[end] in allowed:
+            end += 1
+        return end
+
+    if not words or words[0] not in _REPRO_AUDIT_LEAD_VERBS:
         return False
-    benchmark = words.index("hellaswag")
-    if not _REPRO_AUDIT_OWNERS.intersection(words[1:benchmark]):
+    index = skip(1, _REPRO_AUDIT_LEAD_FILLERS, 1)
+    if index == len(words) or words[index] not in _REPRO_AUDIT_OWNERS:
         return False
-    index = benchmark + 1
-    while index < len(words) and words[index] in _REPRO_AUDIT_RECORD_WORDS:
-        index += 1
+    index = skip(index + 1, _REPRO_AUDIT_OWNER_MODIFIERS)
+    if index == len(words) or words[index] != "hellaswag":
+        return False
+    index = skip(index + 1, _REPRO_AUDIT_RECORD_WORDS)
     if index == len(words) or words[index] not in _REPRO_AUDIT_RELATIONS:
         return False
-    index += 1
-    for _ in range(2):
-        if index < len(words) and words[index] in _REPRO_AUDIT_RELATION_FILLERS:
-            index += 1
-    return index < len(words) and words[index] in _REPRO_AUDIT_TARGETS
+    index = skip(index + 1, _REPRO_AUDIT_RELATION_FILLERS, 2)
+    if index == len(words) or words[index] not in _REPRO_AUDIT_TARGETS:
+        return False
+    return skip(index + 1, _REPRO_AUDIT_TAIL) == len(words)
 
 
 @lru_cache(maxsize=1)
@@ -6105,9 +6110,9 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # (`_market_research_offers_itself`). Like the two gates above it has no
     # boost and stands down no guard.
     "market-research": _market_research_offers_itself,
-    # `repro-audit`: a lead comparison verb over the person's own HellaSwag
-    # record, related straight to a paper's report, with no request anywhere
-    # for new numbers (`_repro_audit_offers_itself`). No boost, no stand-down.
+    # `repro-audit`: the whole request is one comparison of the person's own
+    # HellaSwag record with a paper's report, every word from an allow list
+    # (`_repro_audit_offers_itself`). No boost, no stand-down.
     "repro-audit": _repro_audit_offers_itself,
 }
 # A skill whose admission reads where the data goes reads a stricter predicate
