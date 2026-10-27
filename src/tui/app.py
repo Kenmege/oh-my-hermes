@@ -134,6 +134,7 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
+from .herdr import HerdrReporter
 from .keys import (
     BUTTON_LEFT,
     BACKSPACE,
@@ -483,6 +484,8 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
+# What each state is in herdr's agent list, when the TUI runs in a herdr pane (`herdr.py`).
+HERDR_STATES = {STATE_IDLE: "idle", STATE_RUNNING: "working", STATE_WAITING: "blocked"}
 WAITING_GLYPH = "? "  # in place of the spinner while a question waits on the person
 
 # The prompts waiting for the running turn, listed above the composer's top rule.
@@ -1468,6 +1471,7 @@ class App(ModesMixin, AgentViewMixin):
         # The info line's right side last composed: what it showed, and the theme and HUD snapshot it was composed with.
         self.info_held: tuple[tuple[object, ...], Theme, HudSnapshot | None, tuple[Line, ...]] | None = None
         self.title_pushed = False
+        self.herdr = HerdrReporter(self.environ)  # the title's state, told to herdr inside a herdr pane
         self.background_mode = BACKGROUND_AUTO
         self.dirty = True
         self.last_render = -math.inf
@@ -1896,7 +1900,7 @@ class App(ModesMixin, AgentViewMixin):
             self.dirty = True
 
     def _shutdown(self) -> None:
-        """Hand the screen back to the shell, then stop the HUD poller and turn off yolo the TUI set.
+        """Hand the screen back to the shell, then stop the HUD poller, turn off yolo the TUI set and release herdr.
 
         The terminal writes come first (reports off, the alternate screen
         left, the live region erased whatever the last lines' rendering
@@ -1935,8 +1939,11 @@ class App(ModesMixin, AgentViewMixin):
                 if self.board_reader is not None:
                     self.board_reader.close()
             finally:
-                if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
-                    self._turn_off_yolo_set_here(self.sid)
+                try:
+                    if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
+                        self._turn_off_yolo_set_here(self.sid)
+                finally:
+                    self.herdr.release()  # herdr keeps the pane's agent after the TUI exits until told
 
     def _set_mouse(self, enabled: bool) -> None:
         """Turn mouse reports on or off, noting when they went off: reports sent before the off still arrive after it."""
@@ -2410,6 +2417,7 @@ class App(ModesMixin, AgentViewMixin):
     def _write_title(self) -> None:
         """The terminal title, `<session title> · <state>`, written only when it changed (the first one pushes the old)."""
         state = STATE_WAITING if self.slot is not None else STATE_RUNNING if self._busy() else STATE_IDLE
+        self.herdr.report(HERDR_STATES[state])
         words = f"{self.session_title or TITLE_DEFAULT} · {state}"
         if words == self.title_words:
             return  # every frame asks; most change nothing here
