@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **3D and canvas scenes have a craft and QA bar.** A user ran the same voxel
+  pagoda garden prompt through two agents: both consoles were clean, and the
+  OMH build was judged less colorful. Its first frame was flat noon under its
+  own "golden hour" subtitle, and its birds read as floating black cubes, and
+  nothing in the catalog named a 3D scene, so neither the build nor its own
+  visual review checked for either. `frontend` gains
+  `references/rendered-scene-craft.md` (the first frame keeps the scene's own
+  promise; a warm-or-cool key light, a sky fill, explicit tone mapping,
+  shadows and fog before more geometry; small animated objects read as what
+  they are; the capture matrix), one body line pointing at it, and the
+  phrases `three.js scene`, `threejs scene`, `webgl scene`, `voxel scene` and
+  `voxel art scene`, with `scene`, `voxel`, `art` and `three` held back to
+  whole phrases. `visual-qa` captures a scene's booted first frame, its
+  camera presets and each advertised time of day, and records a claim the
+  frame does not show, an unreadable small object, or flat light as a
+  difference.
+- **A finished `/goal` leaves its whole time in the OMH TUI.** When a goal
+  shown above the composer turns done, the transcript keeps `✓ goal done ·
+  46m 2s · 7/20 turns · <title>`, timed from the goal's own `created_at` to
+  `updated_at`, so a goal that ran across many turns is not read off the last
+  turn's `✻` line. It is said once, sends nothing, and leaves the time out
+  when either stamp is missing.
+
 - **The OMH TUI shows up in herdr's agent list.** herdr lists each pane's
   agent as idle, working or blocked, but reads Hermes' state from Hermes' own
   title and screen, which the OMH TUI does not draw, so a pane running `omh`

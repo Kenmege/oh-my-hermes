@@ -64,8 +64,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # model-setup row refresh (-3); no other row moved.
             # Then the promo postmortem's visual-qa quality-bar rule grows that
             # sibling row: 522328 -> 523199.
+            # The rendered-scene lane moves only the frontend row (same
+            # length, so 523199 holds) and the digest is re-derived.
             (skill_capabilities, 523199, FULL_ROW_DELTA_CAP,
-             '80fb2cf05bd70a7d63102cf7df8e60a10b9435f99d572e6d468f6e7279f22b96',
+             '1d1f7526e7ee5d2d91682e5a0f1bb914f5b9c5e564f47c19c00bbdd74e4167be',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -130,7 +132,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # and role-slot wording); only model-setup moves versus main.
         # Then the promo postmortem in content-operator, design-quality-gate,
         # show-reel, and visual-qa.
-        self.assertEqual(_digest(legacy_hashes), 'e0b95cb486a60fe02d063d2afde0f842a911135c370e4c1f7bc63b3d3d9cc40a')
+        # Then the rendered-scene lane in frontend and visual-qa; only those
+        # two bodies move versus main (tests/fixtures/agent_skills_hermes_digests.json).
+        self.assertEqual(_digest(legacy_hashes), 'b9be176463c58e71b68c394d69ab825d47334a529905994b9d217199cff529d8')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.

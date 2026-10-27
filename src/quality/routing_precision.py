@@ -1608,6 +1608,41 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         forbidden_candidate="frontend",
     ),
+    # The rendered-scene lane's phrases are built from `scene`, `voxel`, `art`
+    # and the `three` of three.js, held back to whole phrases; each of these
+    # named frontend while they were creditable alone.
+    RoutingPrecisionCase(
+        "voxel-morphometry-stays-out-of-frontend",
+        "Voxel-based morphometry is neuroimaging, not a voxel scene",
+        "Voxel-based morphometry of the MRI scans shows atrophy.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "crime-scene-stays-out-of-frontend",
+        "A crime scene never names the frontend workflow",
+        "The crime scene photos were filed.",
+        "answer_directly",
+        "direct_answer",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "city-art-scene-stays-out-of-frontend",
+        "A city's art scene never names the frontend workflow",
+        "Our art scene in Berlin is growing.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
+    RoutingPrecisionCase(
+        "three-reviewers-stay-out-of-frontend",
+        "The number three beside the word scene is not three.js",
+        "Three of us will review the scene.",
+        "answer_clarification",
+        "",
+        forbidden_candidate="frontend",
+    ),
     # `websearch-setup` triggers on "web search backend", the Hermes setting
     # that picks which provider serves search. `backend` is held back in
     # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`: measured without the hold, this
@@ -9157,6 +9192,61 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-logo-marquee-names-frontend",
         "A Korean logo-marquee request names frontend as the clarify candidate",
         "랜딩에 로고 마키 흐르게 해줘.",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "frontend",
+    ),
+    # The rendered-scene lane: a 3D or canvas scene request reaches frontend,
+    # whose rendered-scene reference carries the first-frame, lighting and
+    # small-object checks. On main each of these clarified elsewhere.
+    RoutingInterventionCase(
+        "voxel-art-scene-reaches-frontend",
+        "A voxel art scene build reaches the frontend workflow",
+        "Design and create a very creative, elaborate, and detailed voxel art scene of a pagoda in a beautiful garden.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "webgl-scene-reaches-frontend",
+        "A WebGL scene build reaches the frontend workflow",
+        "Make a WebGL scene with a day-night cycle.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "flat-threejs-scene-reaches-frontend",
+        "Flat lighting in a three.js scene reaches the frontend workflow",
+        "Polish the lighting in our three.js scene, it looks flat.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    RoutingInterventionCase(
+        "washed-out-threejs-scene-reaches-frontend",
+        "A washed-out threejs scene reaches the frontend workflow",
+        "Our threejs scene looks washed out; give it more atmosphere.",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+        "frontend",
+    ),
+    # One phrase and a complaint: the voxel-scene question names frontend as
+    # the clarify candidate instead of a web lookup.
+    RoutingInterventionCase(
+        "voxel-scene-birds-name-frontend",
+        "Birds that read as black cubes in a voxel scene name frontend as the clarify candidate",
+        "The voxel scene birds look like black cubes.",
         "clarify",
         "oh-my-hermes",
         "answer_clarification",
