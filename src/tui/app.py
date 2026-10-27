@@ -4938,6 +4938,9 @@ class App(ModesMixin, AgentViewMixin):
         self.redraw_at = self.clock() + RESIZE_SETTLE_SECONDS
 
     def _redraw_when_settled(self) -> None:
+        """The settled size redraws the session, even one back where it was printed: a shrink and restore close
+        together (a tab shown again, a split laid out again) reaches the loop as one signal at the old size, and the
+        terminal has reflowed its rows by then."""
         if self.redraw_at is not None and self.clock() >= self.redraw_at:
             self.redraw_at = None
             self._full_redraw()
@@ -4952,11 +4955,14 @@ class App(ModesMixin, AgentViewMixin):
         no more than that. Scrollback from before the TUI started is erased
         with it.
         """
-        self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
-        # The clear homes the cursor, so the next first frame starts on the screen's top row: unless a
-        # pager is open, when it cleared the alternate screen and the main screen's cursor is where it was.
-        self.region = LiveRegion(self.terminal.write, at_top=self.pager is None)
-        if self.pager is not None:
+        # The clear homes the cursor, so the next first frame starts on the screen's top row; it goes out in that
+        # frame's synchronized update, so the blank screen never shows. Unless a pager is open, when it clears the
+        # alternate screen now and the main screen's cursor is where it was.
+        if self.pager is None:
+            self.region = LiveRegion(self.terminal.write, at_top=True, lead=CLEAR_SCREEN_AND_SCROLLBACK)
+        else:
+            self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
+            self.region = LiveRegion(self.terminal.write)
             self.pager.invalidate()  # the clear took its rows too
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
         if self.banner_record is not None:

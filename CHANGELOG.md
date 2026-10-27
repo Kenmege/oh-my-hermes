@@ -53,6 +53,13 @@ All notable changes will be documented here.
   `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` and
   `/config`, through the gateway call Hermes' own TUI uses. `/topup` goes to
   Hermes, and the commands only Hermes' classic CLI runs leave completion.
+- **The OMH TUI no longer shows a blank screen when you switch to its
+  terminal and back.** A resize signal (a tab shown again, a split laid out
+  again) redraws the session from memory, and the erase that starts that
+  redraw was written on its own before the session was printed again, so
+  the screen went blank for a moment. The erase now goes out in the same
+  synchronized update as the frame drawn after it, so a terminal that holds
+  the update (DEC 2026) swaps the old screen for the new one in one step.
 - **The TUI's menus lose their bands, a sent prompt gains one, and the
   bottom row names the branch.** The completion menu, the session, model,
   rewind and launch-look pickers, the agent list, the delegation view and the
