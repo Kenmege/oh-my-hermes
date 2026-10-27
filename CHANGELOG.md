@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The gateway-attach child no longer aborts when Hermes' gateway hangs up
+  first (#2327, reported and first fixed by @skihyeon in #2328).** Its
+  `omh-attach-stdin` thread read the TUI's input through `sys.stdin.buffer`
+  and so held that buffer's lock while it waited. When the owner's side of
+  the WebSocket ended before the TUI closed its input, interpreter
+  finalization closed stdin on the main thread, waited a second for that
+  lock and aborted the process (`Fatal Python error: _enter_buffered_busy`,
+  exit -6), on every Python from 3.11 to 3.14. The TUI then reported
+  `the Hermes gateway exited (code -6)` instead of the child's own code 1.
+  The thread now reads the stdin descriptor directly, which holds no lock,
+  and frames lines as before. The child exits with the code `main()`
+  computes, and normal shutdown still runs, including the atexit handlers
+  that Hermes' in-process stdio entry registers.
+
 - **The OMH TUI shows up in herdr's agent list.** herdr lists each pane's
   agent as idle, working or blocked, but reads Hermes' state from Hermes' own
   title and screen, which the OMH TUI does not draw, so a pane running `omh`
