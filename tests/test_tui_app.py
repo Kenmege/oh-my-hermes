@@ -923,7 +923,7 @@ class SessionTests(AppTestCase):
                 self.assertEqual(sum(line.startswith("╭─ session") for line in screen), 1 if card else 0, screen)
                 self.assertEqual(sum(line.count("╭") for line in card), sum(line.count("╰") for line in card), screen)
                 self.assertEqual(drawn[: len(logo)], logo, screen)
-                badge = int(rows >= BADGE_MIN_ROWS)  # the badge row under the info line, from 20 rows
+                badge = int(rows >= BADGE_MIN_ROWS)  # the badge row under the info line, from BADGE_MIN_ROWS rows
                 self.assertEqual(len(drawn), 5 + badge + len(logo) + len(card), screen)
                 self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))

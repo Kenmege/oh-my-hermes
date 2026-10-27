@@ -63,6 +63,9 @@ class StatusTests(unittest.TestCase):
             def kill(self) -> None:
                 self.killed = True
 
+            def wait(self, timeout=None) -> int:
+                return -9
+
         def missing(*_args, **_kwargs):
             raise FileNotFoundError("git")
 
@@ -71,6 +74,43 @@ class StatusTests(unittest.TestCase):
             with self.subTest(popen=popen):
                 self.assertIsNone(read_status("/somewhere", popen=popen))
         self.assertTrue(slow.killed, "a git past its timeout is killed, not left running")
+
+    def test_output_that_is_not_utf8_never_kills_the_reader(self) -> None:
+        # #2342 delta review: a ref or a path that is not UTF-8 raised UnicodeDecodeError out of the read, the
+        # watcher's thread died with a traceback on the TUI's terminal, and the row never updated again.
+        class Undecodable:
+            returncode, killed = 0, False
+
+            def communicate(self, timeout=None):
+                raise UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte")
+
+            def kill(self) -> None:
+                self.killed = True
+
+            def wait(self, timeout=None) -> int:
+                return -9
+
+        answer = Undecodable()
+        self.assertIsNone(read_status("/repo", popen=lambda *_a, **_k: answer))
+        self.assertTrue(answer.killed)
+
+    @requires_posix
+    def test_a_real_branch_that_is_not_utf8_reads_and_the_watcher_lives_on(self) -> None:
+        with TemporaryDirectory() as tmp:
+            git = ["git", "-c", "init.defaultBranch=main", "-C", tmp]
+            subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
+            subprocess.run([b"git", b"-C", tmp.encode(), b"symbolic-ref", b"HEAD", b"refs/heads/caf\xe9"],
+                           check=True, capture_output=True)
+            self.assertEqual(read_status(tmp), GitState("caf\ufffd", 0, 0))
+            changed = threading.Event()
+            watcher = GitWatcher(tmp)
+            watcher.start(changed.set)
+            try:
+                self.assertTrue(changed.wait(5.0))
+                self.assertEqual(watcher.state, GitState("caf\ufffd", 0, 0))
+                self.assertTrue(watcher._thread is not None and watcher._thread.is_alive())
+            finally:
+                watcher.stop()
 
     def test_the_read_is_read_only_and_bounded(self) -> None:
         seen = {}

@@ -62,16 +62,17 @@ def read_status(
     """One read in `cwd`; None for anything but a clean answer from git (see the module docstring). `started` is
     handed the running git, then None once it is done, so a watcher that stops can kill it."""
     try:
+        # A ref or a path that is not UTF-8 (an unborn `caf\xe9`, core.quotePath=false) reads as U+FFFD, not a crash.
         process = popen(list(ARGV), cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL, text=True)
+                        stderr=subprocess.DEVNULL, encoding="utf-8", errors="replace")
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
     started(process)
     try:
         out, _err = process.communicate(timeout=TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
+    except (OSError, ValueError, subprocess.SubprocessError):  # a timeout, or output it cannot read: no branch
         process.kill()
-        process.communicate()
+        process.wait()
         return None
     finally:
         started(None)
