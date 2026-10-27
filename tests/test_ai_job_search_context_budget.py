@@ -181,7 +181,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Re-derived again on the tree merged with main (both sides' bodies).
         # Then the rendered-scene lane in frontend and visual-qa; on the merged
         # tree both sides' bodies (tests/fixtures/agent_skills_hermes_digests.json).
-        self.assertEqual(_digest(legacy_hashes), 'b2495003a0ebd85139f9af7bdf0b0bb2a026a370bfe1973668344e75793e76af')
+        # Re-derived for the human-voice pass: the router body gains one
+        # Progressive Disclosure pointer to `references/human-voice.md`;
+        # removing that line alone restores main's digest (db2c9bd4...).
+        self.assertEqual(_digest(legacy_hashes), 'e399f371d3d721f217296091be78ec4733c60d46fac2649c037bb094e5cb8fb7')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.
@@ -211,9 +214,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             'skill_index_line_max_chars': 100,
             'plugin_tool_schema_chars': 69186,  # #2277 prepare fields, then parked DAG waits (+429).
             'pre_llm_call_context_chars_max': 5786,  # The pi-family runtime rename (+6).
-            'pre_llm_call_context_fallback_chars_max': 7222,  # The same rename (+6).
-            'awareness_primer_markdown_chars': 3520,
-            'awareness_primer_context_chars': 1440,
+            'pre_llm_call_context_fallback_chars_max': 7338,  # The same rename (+6), then the human-voice primer sentence (+116).
+            'awareness_primer_markdown_chars': 3630,  # Human-voice reply sentence (+110).
+            'awareness_primer_context_chars': 1560,  # The same sentence (+120).
             'awareness_workflow_context_chars_max': 1500,
             'role_context_chars_max': 2600,
             'full_capability_skill_item_chars_max': 9000,
