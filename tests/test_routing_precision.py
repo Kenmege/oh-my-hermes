@@ -198,8 +198,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
         # repro-audit adds one HellaSwag log versus paper request, and its
-        # review three more requests in the admitted shape.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1135)
+        # review three more requests in the admitted shape, then one that
+        # closes on the compared metric.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1136)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

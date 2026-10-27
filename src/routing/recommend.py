@@ -5983,7 +5983,9 @@ def _market_research_offers_itself(normalized_query: str, query_tokens: set[str]
 # trailing clause ("... and rescore it", "... with the paper's first author"),
 # a second sentence, or anything outside the record slot refuses; the
 # sentence then routes as it did before the skill. Asking for new numbers
-# cannot fit the shape, since no position admits a verb.
+# cannot fit the shape today, since no position admits a verb; the execution
+# check below is the second, independent guard, so a later widening of any
+# slot still refuses a run, re-run, retrain, fine-tune, benchmark or "again".
 _REPRO_AUDIT_WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
 _REPRO_AUDIT_LEAD_VERBS = frozenset({"compare", "check", "audit", "verify", "reconcile", "diff"})
 _REPRO_AUDIT_LEAD_FILLERS = frozenset({"whether", "if"})
@@ -5991,7 +5993,7 @@ _REPRO_AUDIT_OWNERS = frozenset({"my", "our", "this", "these"})
 _REPRO_AUDIT_OWNER_MODIFIERS = frozenset({"own", "local", "latest", "lm-eval", "lm-evaluation-harness", "harness"})
 _REPRO_AUDIT_RECORD_WORDS = frozenset(
     {"log", "logs", "result", "results", "score", "scores", "number", "numbers", "accuracy",
-     "acc", "norm", "acc-norm", "output", "outputs", "json", "file", "run"}
+     "acc", "norm", "acc-norm", "output", "outputs", "json", "file"}
 )
 _REPRO_AUDIT_RELATIONS = frozenset(
     {"against", "with", "to", "vs", "versus", "match", "matches", "differ", "differs", "from"}
@@ -6000,7 +6002,12 @@ _REPRO_AUDIT_RELATION_FILLERS = frozenset({"the", "a", "what", "its", "their"})
 _REPRO_AUDIT_TARGETS = frozenset({"paper", "paper's", "papers", "reported", "published"})
 _REPRO_AUDIT_TAIL = frozenset(
     {"reported", "conditions", "condition", "settings", "setting", "setup", "numbers", "number", "score",
-     "scores", "results", "result", "table", "few-shot", "count", "acc", "norm", "acc-norm"}
+     "scores", "results", "result", "table", "few-shot", "count", "acc", "norm", "acc-norm", "metric"}
+)
+_REPRO_AUDIT_EXECUTION = re.compile(
+    r"(?:re-?)?(?:run|runs|running|ran|execut(?:e|es|ed|ing)|evaluat(?:e|es|ed|ing)|train|trains|trained|training"
+    r"|generat(?:e|es|ed|ing)|comput(?:e|es|ed|ing)|download(?:s|ed|ing)?|benchmark(?:s|ed|ing)?)"
+    r"|fine-?tun(?:e|es|ed|ing)|produc(?:e|es|ed|ing)|re-?do(?:es|ing|ne)?|again"
 )
 
 
@@ -6032,7 +6039,9 @@ def _repro_audit_offers_itself(normalized_query: str, query_tokens: set[str]) ->
     index = skip(index + 1, _REPRO_AUDIT_RELATION_FILLERS, 2)
     if index == len(words) or words[index] not in _REPRO_AUDIT_TARGETS:
         return False
-    return skip(index + 1, _REPRO_AUDIT_TAIL) == len(words)
+    if skip(index + 1, _REPRO_AUDIT_TAIL) != len(words):
+        return False
+    return not any(_REPRO_AUDIT_EXECUTION.fullmatch(word) for word in words)
 
 
 @lru_cache(maxsize=1)

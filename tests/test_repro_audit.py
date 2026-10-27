@@ -269,6 +269,29 @@ class ChatDiscovery(unittest.TestCase):
             other = build_chat_interaction_payload(message, source='discord')
             self.assertNotEqual(other['route'].get('selected_skill'), 'repro-audit')
 
+class ExecutionBackstop(unittest.TestCase):
+    def test_execution_words_refuse_and_domain_nouns_do_not(self):
+        # The second guard behind the allow-listed shape (#2324 review): it
+        # must hold even if a later change widens a slot.
+        from omh.routing.recommend import _REPRO_AUDIT_EXECUTION
+        for word in ('benchmark', 're-benchmark', 'rebenchmark', 'run', 're-run', 'rerunning', 'retrain',
+                     'fine-tune', 'finetuning', 're-evaluating', 'again', 'redo', 'produce'):
+            with self.subTest(word=word):
+                self.assertTrue(_REPRO_AUDIT_EXECUTION.fullmatch(word))
+        for word in ('evaluation', 'results', 'score', 'paper', 'reported', 'metric', 'reproduce'):
+            with self.subTest(word=word):
+                self.assertIsNone(_REPRO_AUDIT_EXECUTION.fullmatch(word))
+
+    def test_a_widened_slot_still_refuses_an_execution_word(self):
+        from omh.routing import recommend
+        message = recommend.normalized_phrase("Compare this HellaSwag run with the paper's reported metric")
+        widened = recommend._REPRO_AUDIT_RECORD_WORDS | {'run'}
+        with patch.object(recommend, '_REPRO_AUDIT_RECORD_WORDS', widened):
+            self.assertFalse(recommend._repro_audit_offers_itself(message, set()))
+            self.assertTrue(recommend._repro_audit_offers_itself(
+                message.replace(' run ', ' log '), set()))
+
+
 class PlatformBoundary(unittest.TestCase):
     def test_unsupported_platform_is_controlled_and_writes_nothing(self):
         from argparse import Namespace

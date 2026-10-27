@@ -1392,8 +1392,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # checks executor readiness (+1).
             # repro-audit adds one HellaSwag log versus paper request (+1), and
             # its review three more: own results, a score against a reported
-            # metric, a courtesy opener (+3).
-            expected=1135,
+            # metric, a courtesy opener (+3), and its delta review a request
+            # that closes on the compared metric (+1).
+            expected=1136,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
