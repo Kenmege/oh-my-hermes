@@ -71,6 +71,15 @@ All notable changes will be documented here.
   screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
+- **A long `/compress` is waited for, and side answers are not lost
+  silently.** The TUI waits 660 s for `/compress`, Hermes' own budget,
+  instead of 120 s, and past that says the compression may still land
+  rather than inviting a second one. A command Hermes refuses while it
+  compresses says so. `/stop` reports an interrupt only when it stopped a
+  turn, and stops the session's processes even when its read fails. A `/bg`
+  or `/btw` answer for a session left meanwhile names that session, and
+  leaving a session with one still running says it will not show.
+  `/topup` goes to Hermes only on a shared gateway.
 - **The live region reads more calmly while a turn runs.** A mid-turn
   `↳ you:` row and a steer run on your sent prompt's band, with a blank row
   over the sticky prompt. Hermes' background review is one dim row naming

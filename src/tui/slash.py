@@ -104,6 +104,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("theme", LOCAL, "Pick the launch look (a picker), or /theme <look|palette|auto|light|dark>",
                  echo_bare=False),
     SlashCommand("omh-model", LOCAL, "Pick OMH model chains"),
+    SlashCommand("topup", LOCAL, "Nous credit balance and the top-up link (Hermes' /topup)"),
     SlashCommand("reload-skills", LOCAL, "Re-scan Hermes' skills, so one installed since the start runs as /<name>",
                  ("reload_skills",)),
     # Claude Code's names for Hermes' commands.
