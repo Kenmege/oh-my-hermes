@@ -46,6 +46,13 @@ All notable changes will be documented here.
   collected; only the installer-managed command, which retires the pack in
   the same write, counts it as a registration. A relative entry, which
   Hermes anchors at its own home, never matches.
+- **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
+  shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
+  the TUI said Hermes could not run it in a TUI session. The gateway child
+  now runs it, and `/branch`, `/retry`, `/undo`, `/stop`, `/bg`, `/btw`,
+  `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` and
+  `/config`, through the gateway call Hermes' own TUI uses. `/topup` goes to
+  Hermes, and the commands only Hermes' classic CLI runs leave completion.
 
 ## 4.0.3 - 2026-10-27
 
