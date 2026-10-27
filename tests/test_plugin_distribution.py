@@ -1144,6 +1144,8 @@ print(json.dumps(observed, ensure_ascii=False))
             self.assertEqual(
                 plugin["registered_tools"],
                 [
+                    "hashline_edit",
+                    "hashline_read",
                     "omh_agent_board",
                     "omh_capabilities",
                     "omh_context",

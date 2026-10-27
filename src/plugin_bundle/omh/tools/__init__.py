@@ -7,6 +7,8 @@ from typing import Any
 # without importing the Hermes registration context; parity with the
 # `register()` body is a test, not a convention.
 BUILTIN_TOOL_NAMES: tuple[str, ...] = (
+    "hashline_edit",
+    "hashline_read",
     "omh_agent_board",
     "omh_capabilities",
     "omh_context",
@@ -50,6 +52,7 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
     from .decision_gate_tool import OMH_DECISION_GATE_SCHEMA
     from .document_plan_tool import OMH_DOCUMENT_PLAN_SCHEMA
     from .evidence_tool import OMH_EVIDENCE_SCHEMA
+    from .hashline_tool import HASHLINE_EDIT_SCHEMA, HASHLINE_READ_SCHEMA
     from .hud_tool import OMH_HUD_SCHEMA
     from .jev_ask_tool import OMH_JEV_ASK_SCHEMA
     from .loop_tool import OMH_LOOP_SCHEMA
@@ -75,6 +78,8 @@ def builtin_tool_schemas() -> tuple[dict[str, Any], ...]:
         OMH_DECISION_GATE_SCHEMA,
         OMH_DOCUMENT_PLAN_SCHEMA,
         OMH_EVIDENCE_SCHEMA,
+        HASHLINE_EDIT_SCHEMA,
+        HASHLINE_READ_SCHEMA,
         OMH_HUD_SCHEMA,
         OMH_INTERACT_SCHEMA,
         OMH_JEV_ASK_SCHEMA,

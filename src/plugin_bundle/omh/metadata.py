@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 PROVIDED_TOOLS = (
+    "hashline_edit",
+    "hashline_read",
     "omh_agent_board",
     "omh_capabilities",
     "omh_context",
@@ -47,6 +49,8 @@ OPTIONAL_HOOKS = (
 PROVIDED_HOOKS = tuple(sorted(REQUIRED_HOOKS + OPTIONAL_HOOKS))
 
 TOOL_FILE_STEMS = {
+    "hashline_edit": "hashline_tool",
+    "hashline_read": "hashline_tool",
     "omh_agent_board": "agent_board_tool",
     "omh_capabilities": "capability_tool",
     "omh_context": "context_tool",

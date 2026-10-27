@@ -224,6 +224,14 @@ def register(ctx: _PluginContext) -> None:
     from .tools.document_plan_tool import OMH_DOCUMENT_PLAN_SCHEMA, omh_document_plan_handler
     from .tools.evidence_tool import OMH_EVIDENCE_SCHEMA, omh_evidence_handler
     from .tools.hud_tool import OMH_HUD_SCHEMA, omh_hud_handler
+    from .tools.hashline_tool import (
+        HASHLINE_EDIT_SCHEMA,
+        HASHLINE_READ_SCHEMA,
+        HASHLINE_TOOLSET,
+        _hashline_tools_enabled,
+        hashline_edit_handler,
+        hashline_read_handler,
+    )
     from .tools.jev_ask_tool import OMH_JEV_ASK_SCHEMA, jev_ask_available, omh_jev_ask_handler
     from .tools.loop_tool import OMH_LOOP_SCHEMA, omh_loop_handler
     from .tools.memory_tool import OMH_MEMORY_SCHEMA, omh_memory_handler
@@ -301,6 +309,25 @@ def register(ctx: _PluginContext) -> None:
         OMH_HUD_SCHEMA,
         omh_hud_handler,
         description=OMH_HUD_SCHEMA["description"],
+    )
+    # Opt-in hash-anchored edit tools. A dedicated toolset (`omh-hashline`,
+    # NOT the shared `omh` toolset) plus `check_fn` keep their schema out of
+    # every turn unless the operator sets OMH_HASHLINE_TOOLS=1/true.
+    _ = ctx.register_tool(
+        "hashline_read",
+        HASHLINE_TOOLSET,
+        HASHLINE_READ_SCHEMA,
+        hashline_read_handler,
+        check_fn=_hashline_tools_enabled,
+        description=HASHLINE_READ_SCHEMA["description"],
+    )
+    _ = ctx.register_tool(
+        "hashline_edit",
+        HASHLINE_TOOLSET,
+        HASHLINE_EDIT_SCHEMA,
+        hashline_edit_handler,
+        check_fn=_hashline_tools_enabled,
+        description=HASHLINE_EDIT_SCHEMA["description"],
     )
     # The one tool that sends data off the machine. `check_fn` keeps its
     # schema out of every turn unless a route resolves (a TypeSafe key, or an
