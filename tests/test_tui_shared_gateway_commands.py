@@ -1,0 +1,105 @@
+"""The OMH TUI's side of the commands Hermes' shared gateway runs through a verb of its own.
+
+The gateway child (`attach/gateway_attach.py`, tested in `test_tui_gateway_attach`) answers `/compress`, `/branch`,
+`/bg`, `/btw` and the rest in `slash.exec`'s shape; here the TUI says a compression is under way, opens the session a
+`/branch` made, and shows a side agent's answer when it arrives. Driven through the recording client of
+`test_tui_modes`, answering each call by hand.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from test_tui_command_output import last, send
+from test_tui_modes import SID, answer, make_app, notices
+from omh.tui.app import BRANCHED_NOTICE, COMPRESS_STARTED_NOTICE, REFUSAL_SENTENCES
+from omh.tui.gateway import Event
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, CommandBlock
+
+BUSY = {"code": 4001, "message": "session_busy", "data": {"reason": "session_busy"}}
+
+
+class CompressTests(unittest.TestCase):
+    def test_compact_runs_hermes_compress_and_says_it_is_under_way_until_the_report(self) -> None:
+        app, client = make_app()
+        send(app, "/compact here 2")
+        self.assertEqual(client.calls, [("slash.exec", {"command": "compress here 2", "session_id": SID})])
+        block = last(app)
+        self.assertIsInstance(block, CommandBlock)
+        self.assertEqual((block.command, block.parts, block.done),
+                         ("/compact here 2", [(COMPRESS_STARTED_NOTICE, NOTICE_INFO)], False))
+        report = "✓ Compressed: 24 → 12 messages\n  Approx request size: ~816 → ~1,040 tokens"
+        answer(app, client, {"type": "exec", "output": report})
+        self.assertEqual((block.parts[-1], block.done), ((report, NOTICE_INFO), True))
+
+    def test_a_preview_or_a_running_turn_says_nothing_is_under_way(self) -> None:
+        for line, busy in (("/compress --preview", False), ("/compact --dry-run", False), ("/compress", True)):
+            with self.subTest(line=line, busy=busy):
+                app, client = make_app(busy=busy)
+                send(app, line)
+                self.assertEqual(client.calls[-1][0], "slash.exec")
+                self.assertNotIn(COMPRESS_STARTED_NOTICE, notices(app))
+
+    def test_a_compress_during_a_turn_is_refused_in_words(self) -> None:
+        app, client = make_app(busy=True)
+        send(app, "/compress")
+        answer(app, client, error=BUSY)
+        self.assertIn(REFUSAL_SENTENCES["session_busy"], notices(app, NOTICE_ERROR))
+
+
+class BranchTests(unittest.TestCase):
+    def test_the_session_a_branch_made_is_opened_and_says_where_it_came_from(self) -> None:
+        app, client = make_app()
+        app.stored_id = "stored-1"
+        send(app, "/branch side quest")
+        answer(app, client, {"type": "exec", "output": "⑂ Branched into session local-child.",
+                             "branched_session_id": "local-child"})
+        self.assertEqual(client.calls[-1], ("session.resume", {"session_id": "local-child", "cols": 80}))
+        answer(app, client, {"session_id": "live-2", "stored_session_id": "local-child", "info": {}, "messages": []})
+        self.assertEqual(app.stored_id, "local-child")
+        self.assertIn(BRANCHED_NOTICE.format(parent="stored-1"), notices(app))
+
+    def test_output_with_no_new_session_opens_nothing(self) -> None:
+        app, client = make_app()
+        send(app, "/branch")
+        answer(app, client, {"type": "exec", "output": "Hermes branched the session but named no new session."})
+        self.assertEqual([method for method, _params in client.calls], ["slash.exec"])
+
+
+class SideAnswerTests(unittest.TestCase):
+    def test_a_bg_or_btw_answer_is_shown_when_it_arrives(self) -> None:
+        app, _client = make_app()
+        done = {"task_id": "bg_7b76c3", "text": "## Done\nTests pass.\x1b[2J"}
+        app._on_event(Event("background.complete", SID, done))
+        app._on_event(Event("btw.complete", SID, {"task_id": "btw_1", "question": "what did I say first?",
+                                                  "text": "hello number 0"}))
+        app._on_event(Event("btw.complete", "other-session", {"task_id": "btw_2", "text": "not this one"}))
+        self.assertEqual(notices(app)[-2:], ["[bg bg_7b76c3] ## Done\nTests pass.",
+                                             '[btw "what did I say first?"] hello number 0'])
+
+
+class RoutedToHermesTests(unittest.TestCase):
+    def test_topup_and_the_classic_commands_go_to_hermes_as_typed(self) -> None:
+        for line, command in (("/topup", "topup"), ("/handoff telegram", "handoff telegram")):
+            with self.subTest(line=line):
+                app, client = make_app()
+                send(app, line)
+                self.assertEqual(client.calls, [("slash.exec", {"command": command, "session_id": SID})])
+
+    def test_a_classic_commands_refusal_carries_hermes_own_pointer(self) -> None:
+        app, client = make_app()
+        send(app, "/handoff")
+        hint = "Hand off from the classic CLI: `hermes --cli --resume <session>`, then /handoff <platform>."
+        answer(app, client, error={"code": 4001, "message": "unsupported_command",
+                                   "data": {"reason": "unsupported_command", "detail": hint}})
+        self.assertEqual(notices(app, NOTICE_ERROR), [f"{REFUSAL_SENTENCES['unsupported_command']} {hint}"])
+
+    def test_timestamps_sends_nothing(self) -> None:
+        app, client = make_app()
+        send(app, "/timestamps on")
+        self.assertEqual(client.calls, [])
+        self.assertIn("/timestamps is an Ink display setting; the OMH TUI has no equivalent.", notices(app))
+
+
+if __name__ == "__main__":
+    unittest.main()
