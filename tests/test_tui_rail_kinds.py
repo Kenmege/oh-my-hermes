@@ -414,15 +414,19 @@ class SlashTokenTests(unittest.TestCase):
         self.assertEqual(prompt_tokens(app), [[], ["/model"]])  # what the first frame prints
         app.transcript.add_user("/dag-ulw now", known=app.known_slash)  # a live prompt keeps what it was sent with
         answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+        tokens = prompt_tokens(app)  # read before the frame below prints them
+        app._render()  # the redraw's erase goes out with its first frame
         self.assertIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
-        self.assertEqual(prompt_tokens(app), [["/dag-ulw"], ["/model"], []])
+        self.assertEqual(tokens, [["/dag-ulw"], ["/model"], []])
 
     def test_a_catalog_that_resolves_no_resumed_prompt_otherwise_redraws_nothing(self) -> None:
         app, client = resumed([{"role": "user", "text": "/model x"}, {"role": "user", "text": "read src/dag-ulw"}])
         self.assertEqual(prompt_tokens(app), [["/model"], []])
         answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+        tokens = prompt_tokens(app)  # read before the frame below prints them
+        app._render()  # a redraw's erase would go out with this frame
         self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
-        self.assertEqual(prompt_tokens(app), [])  # nothing is printed again
+        self.assertEqual(tokens, [])  # nothing is printed again
 
     def test_a_moved_prompt_above_the_redrawn_tail_redraws_nothing(self) -> None:
         # #2225 review F1: a full redraw reprints only the last `REDRAW_TAIL_ROWS` rows; one for a prompt above them
@@ -433,6 +437,7 @@ class SlashTokenTests(unittest.TestCase):
             app, client = resumed(history)
             self.assertEqual(prompt_tokens(app), [])  # the tail the first frame prints holds no prompt
             answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+        app._render()  # a redraw's erase would go out with this frame
         self.assertNotIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
         (prompt,) = [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
         self.assertIn("dag-ulw", prompt.known)  # /history draws it with the catalog's names
@@ -445,8 +450,10 @@ class SlashTokenTests(unittest.TestCase):
             app, client = resumed(history)
             self.assertEqual(prompt_tokens(app), [[]])  # only the second prompt is in the tail
             answer_catalog(app, client, [["/dag-ulw", "Graph work"]])
+            tokens = prompt_tokens(app)  # read before the frame below prints them
+            app._render()  # the redraw's erase goes out with its first frame
             self.assertIn(CLEAR_SCREEN_AND_SCROLLBACK, "".join(app.terminal.writes))
-            self.assertEqual(prompt_tokens(app), [["/dag-ulw"]])
+            self.assertEqual(tokens, [["/dag-ulw"]])
 
     def test_the_composer_draws_a_known_name_bold_in_the_skill_hue(self) -> None:
         # `/dag-ulw` itself is drawn in the aura (`test_tui_aura`), over its `/name` colour: `/model` stands for the rest.

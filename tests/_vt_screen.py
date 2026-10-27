@@ -74,8 +74,23 @@ class VTScreen:
         A shorter screen first drops the rows below the cursor, then pushes rows
         off the top into scrollback until the cursor row fits; a taller one adds
         blank rows at the bottom. A narrower screen cuts every row (a 2-cell
-        glyph cut in half is blanked), a wider one pads it.
+        glyph cut in half is blanked), a wider one pads it. While the alternate
+        screen shows, the saved main screen is resized the same way, as a
+        terminal resizes both; it is what comes back when the alternate one goes.
         """
+        if self._saved_main is not None:
+            shown = (self._text, self._attrs, self._row, self._col)
+            self._text, self._attrs, self._row, self._col = self._saved_main
+            self._fit(rows, cols)
+            self._saved_main = (self._text, self._attrs, self._row, self._col)
+            self._text, self._attrs, self._row, self._col = shown
+        self._fit(rows, cols)
+        self.rows = rows
+        self.cols = cols
+        self._at_margin = False
+
+    def _fit(self, rows: int, cols: int) -> None:
+        """The grid now showing cut or padded from `self.rows` x `self.cols` to `rows` x `cols` (see `resize`)."""
         overflow = max(self._row + 1 - rows, 0)
         for _ in range(overflow):
             self.scrollback.append(self.line(0))
@@ -96,10 +111,7 @@ class VTScreen:
             else:
                 self._text[row] += [BLANK] * (cols - self.cols)
                 self._attrs[row] += [() for _ in range(cols - self.cols)]
-        self.rows = rows
-        self.cols = cols
         self._col = min(self._col, cols - 1)
-        self._at_margin = False
 
     # -- reading the model ---------------------------------------------------
 
