@@ -436,6 +436,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'frontend/references/scroll-motion-libraries.md',
     'frontend/references/component-registry-adoption.md',
     'frontend/references/chart-styling.md',
+    'frontend/references/rendered-scene-craft.md',
     'design-quality-gate/references/design-critique-rubric.md',
     'visual-qa/references/visual-verdict-contract.md',
     'visual-qa/references/motion-continuity.md',

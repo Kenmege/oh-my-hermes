@@ -89,8 +89,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # Merged with main: 526234 + 3195 (sprite-forge row and the
             # deliverable-package states) = 529429 and 142629 + 960 = 143589,
             # both digests re-derived from the producers on the merged tree.
+            # The rendered-scene lane moves only the frontend row (same length).
             (skill_capabilities, 529429, FULL_ROW_DELTA_CAP,
-             '2bd9d62ea775a1192e1d3707acc28c4857211afc19c75100d60e8f38cf85a0ee',
+             'fe15e7c1bbd7901f9cbde1c206c4865c5a20df486565f89c1b7ceef8af9a063d',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 143589, STANDALONE_ROW_DELTA_CAP,
              '7971eca9f1c5df22ac9edb2065bc66e967fed6471a7400c016d0beb166617476',
@@ -178,7 +179,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # sibling bodies; HEAD c532cd5c4 reproduces the previous pin
         # 5db03a78a37d515ad0f54df6fd2eab2533b9f80c800aed8619a9debd78bce9b3.
         # Re-derived again on the tree merged with main (both sides' bodies).
-        self.assertEqual(_digest(legacy_hashes), 'd447c9e049feee6971b106d5637b3836f52077a8926638abe3b8154a0b74c53d')
+        # Then the rendered-scene lane in frontend and visual-qa; on the merged
+        # tree both sides' bodies (tests/fixtures/agent_skills_hermes_digests.json).
+        self.assertEqual(_digest(legacy_hashes), 'b2495003a0ebd85139f9af7bdf0b0bb2a026a370bfe1973668344e75793e76af')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.

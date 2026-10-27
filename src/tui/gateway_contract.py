@@ -227,7 +227,8 @@ REVIEW_SUMMARY_TEXT = "text"
 # `control` holds `goal`, `contracts/config_free_tier_control.py` GoalSnapshot or None. A goal row shows while its
 # `status` is one of GOAL_SHOWN_STATUSES (`ui-tui/src/app/goalStatus.ts::goalLine`), from `title`, `turns_used`,
 # `max_turns`, `paused_reason` and `wait_barrier` (`type` "until" with `until_at` epoch seconds, or "session" / "pid"
-# with `target`; both with `reason`).
+# with `target`; both with `reason`). When a shown goal turns `done`, its `created_at` (set at `/goal`) and
+# `updated_at` (Hermes' `last_turn_at`, the end of the judged turn), both epoch seconds, give its whole wall clock.
 SESSION_CONTROL = "control"
 CONTROL_GOAL = "goal"
 GOAL_TITLE = "title"
@@ -236,8 +237,11 @@ GOAL_TURNS_USED = "turns_used"
 GOAL_MAX_TURNS = "max_turns"
 GOAL_PAUSED_REASON = "paused_reason"
 GOAL_WAIT_BARRIER = "wait_barrier"
+GOAL_CREATED_AT = "created_at"
+GOAL_UPDATED_AT = "updated_at"
 GOAL_ACTIVE = "active"
 GOAL_PAUSED = "paused"
+GOAL_DONE = "done"
 GOAL_SHOWN_STATUSES = frozenset({GOAL_ACTIVE, GOAL_PAUSED})
 BARRIER_TYPE = "type"
 BARRIER_UNTIL = "until"

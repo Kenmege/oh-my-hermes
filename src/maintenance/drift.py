@@ -920,7 +920,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (4), under a reply pointer or an attachment note (2), with an
             # emoji (1), and a with-adjunct naming people (2) (+9).
             # sprite-forge adds CSS pixel, soda brand and spreadsheet-sheet controls (+3).
-            expected=1238,
+            # The rendered-scene lane: voxel morphometry, a crime scene, a city art
+            # scene and two everyday "three"/"scene" lines stay out of frontend (+4).
+            expected=1242,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1456,7 +1458,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # or asked on main (+8).
             # A with-adjunct closes a promo video brief (+1).
             # sprite-forge adds one game character sprite sheet request (+1).
-            expected=1169,
+            # The rendered-scene lane: four scene requests and one scene-polish
+            # request dispatch frontend (+5).
+            expected=1174,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
