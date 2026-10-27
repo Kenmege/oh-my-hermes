@@ -440,7 +440,7 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-reply-pointer-fault", "A closed form replying to a fault report is a recording", '[Replying to: "checkout freezes after the coupon step"]\n\nMake a demo video for the app', "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-attachment-note-fault", "A closed form under an attachment note may show what it shows", "[The user sent an image~ a stack trace in a terminal ~]\n\nMake a demo video for the plugin", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-emoji-tail", "An emoji after a closed form is unread text", "Make a demo video for the beta \U0001F4A5", "answer_clarification", "", "show-reel"),
-    RoutingPrecisionCase("show-reel-modifier-symbol-tail", "A modifier symbol folding drops is unread text", "Make a launch video for the app \u02c7", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-modifier-symbol-tail", "A modifier symbol folding drops is unread text", "Make a launch video for the app \u02dc", "answer_clarification", "", "show-reel"),
     # A closed form after the channel backfill a gateway puts before
     # `[New message]` may be showing the fault the backfill reports.
     RoutingPrecisionCase("show-reel-backfill-fault", "A closed form after a channel backfill of a fault is a recording", "Mia: the invoice PDF comes out blank since this morning\nTeo: same on staging\n\n[New message]\nMake a demo video for the app", "answer_clarification", "", "show-reel"),
