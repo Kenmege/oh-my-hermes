@@ -59,8 +59,9 @@ def record_target_observation(
 ) -> dict[str, object]:
     """Record one target observation; with `ensure_config`, register its skills directory.
 
-    `registered_dir` is the directory the caller's own registration wrote,
-    and setup passes it. Without it this registers `paths.skills_dir`, which
+    `registered_dir` is the directory setup's own registration writes, and
+    both callers that register (setup and chat's target auto-apply) pass it.
+    Without it this registers `paths.skills_dir`, which
     on an installer-managed command is the running generation's own pack:
     beside the shared pointer that one resolves to the same files only until
     the next update moves the pointer, and from then on Hermes lists no OMH

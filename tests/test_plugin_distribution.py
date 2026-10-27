@@ -3152,6 +3152,37 @@ class HermesProfileSyncTests(unittest.TestCase):
             # The post-check re-reads every home and finds nothing to name.
             self.assertNotIn("OMH-managed skills directories", stdout)
 
+    def test_chat_target_auto_apply_registers_the_pointer_too(self) -> None:
+        # The second writer of the same registration: `omh chat ...
+        # --auto-apply-target-change` registers the skills directory in the
+        # Hermes home the event names, and used `paths.skills_dir` as well.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer, first, _second, _gone = self._generation_layout(root)
+            other_home = root / ".hermes-b"
+            event = root / "event.json"
+            event.write_text(
+                json.dumps(
+                    {
+                        "message": {"id": "m1", "content": "status", "channel": "c1"},
+                        "agent": {"id": "agent-b"},
+                        "runtime": {"hermes_home": str(other_home), "agent_count": 2},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self._managed_install(pointer, pack=first):
+                status, stdout, stderr = run_cli(
+                    self._base(root)
+                    + ["chat", "interact", "--source", "discord", "--event-json", str(event), "--auto-apply-target-change"]
+                )
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertEqual(json.loads(stdout)["target_notice"]["action"], "target_change_applied")
+            self.assertEqual(
+                external_dirs((other_home / "config.yaml").read_text(encoding="utf-8")), [pointer.as_posix()]
+            )
+
     def test_a_profile_naming_only_an_older_generation_is_registered_not_opted_out(self) -> None:
         # A generation's pack is an OMH-managed directory like the other
         # two: a profile left on one is moved to the pointer, not frozen as
