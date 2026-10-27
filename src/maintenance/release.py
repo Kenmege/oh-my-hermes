@@ -844,7 +844,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # fill (full-bleed minus the edge inset without subtitles, the body safe area
 # with them), logo clear space, decorative meta text and per-locale count
 # agreement are measured. No other row changed. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 526271
+# 526271 -> 526315: the shipped `ru` (Russian) trigger language pack, after
+# its review (#2301) dropped the phrases everyday sentences contain and kept
+# one phrase of each nested held-back pair. Its Cyrillic phrases merge into
+# rows' trigger previews: `dag-ulw` shows `даг ультраворк` and `+2 more
+# triggers`, `running-work-board` trades its eighth trigger for a `+N more
+# triggers` count, and other rows' `+N more` counts move. Re-derived from the
+# producer on the tree merged with main.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 526315
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

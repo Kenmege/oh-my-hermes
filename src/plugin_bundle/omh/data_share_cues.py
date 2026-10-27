@@ -696,10 +696,10 @@ def data_share_request_admitted(text: str, *, shielded: bool = False) -> bool:
 def data_share_phrases_said(text: str, phrases: Iterable[str] = DATA_SHARE_REVIEW_PHRASES) -> list[str]:
     """Which of `phrases` `text` says: an English one as whole words, a Korean one anywhere.
 
-    The router's reading of a trigger (`phrase_is_spoken` checks Latin edges
-    only): Korean writes compounds without a space, so "업체" in "협력업체"
-    and "개인정보" in "고객개인정보" start mid-word, and a whole-word reader
-    found neither in "고객개인정보 지우고 협력업체에 공유해줘", which the router
+    The router's reading of a trigger (`phrase_is_spoken` checks Latin,
+    Cyrillic and Greek edges only): Korean writes compounds without a space,
+    so "업체" in "협력업체" and "개인정보" in "고객개인정보" start mid-word,
+    and a whole-word reader found neither in "고객개인정보 지우고 협력업체에 공유해줘", which the router
     dispatches here.
     """
     folded = composed(text)

@@ -61,6 +61,7 @@
           "script": "latin",
           "trigger_support": "trigger_backed",
           "trigger_backed_scripts": [
+            "cyrillic",
             "han",
             "hangul",
             "kana",

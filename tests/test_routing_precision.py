@@ -68,8 +68,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Three science vocabulary controls remain direct answers.
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
+        # The Russian trigger pack adds three negatives its held-back words guard,
+        # and its review twenty-five everyday Russian turns.
         # The rendered-scene lane adds four everyday senses of scene, voxel, art and three.
-        self.assertEqual(payload["summary"]["case_count"], 1119)
+        self.assertEqual(payload["summary"]["case_count"], 1147)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -194,8 +196,10 @@ class RoutingPrecisionTests(unittest.TestCase):
         # two negatives that hold broad wording out (a red-team hiring
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
+        # The Russian trigger pack adds eleven interventions, its review nine,
+        # and three Korean ones that pin its scoring rule to Russian.
         # The rendered-scene lane adds four frontend dispatches and one clarify candidate.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1136)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1159)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

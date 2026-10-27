@@ -181,6 +181,7 @@ Case = Callable[[Any], Callable[[str], object]]
 SITES: dict[tuple[str, str], tuple[str, list[Case]]] = {
     ("src/coding/action_gate.py", "_stamp_age_seconds._parse"): (
         "omh.coding.action_gate", [lambda m: lambda s: m._stamp_age_seconds(s, "2020-01-03T00:00:00Z")]),
+    ("src/tui/bot_board.py", "_record_time"): ("omh.tui.bot_board", [lambda m: m._record_time]),
     ("src/coding/executor_auth_signals.py", "_age_seconds"): (
         "omh.coding.executor_auth_signals", [lambda m: m._age_seconds]),
     ("src/coding/executor_capability_snapshots.py", "_is_timestamp"): (

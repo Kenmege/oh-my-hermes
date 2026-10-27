@@ -57,7 +57,7 @@ from omh.routing.route_question import (  # noqa: E402
     message_digest,
 )
 
-UNDECIDABLE_MESSAGE = "почему сборка падает на main"
+UNDECIDABLE_MESSAGE = "main पर बिल्ड क्यों फेल हो रहा है"
 
 
 def _digest(source: str = "hermes") -> str:
