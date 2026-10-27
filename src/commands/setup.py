@@ -101,6 +101,7 @@ from ..local_store import atomic_write_text
 from ..install.installer import DEFAULT_SKILL_PROFILE, LEDGER_COPY_PARTIAL_KEY, PRUNE_SKIP_REASONS, SKILL_PROFILES
 from ..manifest import read_manifest
 from .update_change_note import record_update_change_note, update_change_note_lines
+from .update_file_changes import update_file_changes, update_file_changes_lines
 from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninstall_menubar_app
 from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
@@ -496,6 +497,7 @@ def _install_result(args: argparse.Namespace) -> dict[str, object]:
             current_manifest=result,
             previous_version=str((previous_manifest or {}).get("version") or ""),
         )
+        result["update_file_changes"] = update_file_changes()
     if not args.dry_run:
         operation_log = _install_operation_log(result, source=source)
         state_patch: dict[str, object] = {
@@ -5360,6 +5362,13 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         if note_lines:
             print(_color(note_lines[0], "1;32", use_color))
             for line in note_lines[1:]:
+                print(line)
+            print("")
+        file_changes = payload.get("update_file_changes")
+        stat_lines = update_file_changes_lines(file_changes, language=language, color=use_color) if isinstance(file_changes, dict) else []
+        if stat_lines:
+            print(_color(stat_lines[0], "1;32", use_color))
+            for line in stat_lines[1:]:
                 print(line)
             print("")
     print(_color(tr(language, "summary"), "1;32", use_color))
