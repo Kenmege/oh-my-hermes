@@ -75,8 +75,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # row to each producer (+2990 full, +929 standalone).
             # 526233 -> 526234 and the digest re-derived: the show-reel
             # row's trigger count went +5 -> +13 (+1); no other row moved.
+            # The rendered-scene lane moves only the frontend row (same length).
             (skill_capabilities, 526234, FULL_ROW_DELTA_CAP,
-             '2b435141c0603289a60b99d1dd9d0111a2a25cc47887216e341b4a04a6d7fe0e',
+             '824fce6c98db0a5b193b7db79c3fbbb225dd7629710167104004e5ffad6461d0',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 142629, STANDALONE_ROW_DELTA_CAP,
              'a130544228a3583763e8b987f2a2e07983015ff8f6b832cdc72c230f5f069019',
@@ -152,7 +153,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
         # Re-derived again for repro-audit: its own body joins the legacy set
         # (and again for its review's confirmation-wording fix).
-        self.assertEqual(_digest(legacy_hashes), '055021f66e10653f53baa63fa5bd7e01dd84882116802e1f7c32cdcf104a79f3')
+        # Then the rendered-scene lane in frontend and visual-qa; only those two
+        # bodies move versus main (tests/fixtures/agent_skills_hermes_digests.json).
+        self.assertEqual(_digest(legacy_hashes), 'db2c9bd48e24d11b357617e73e44fb6796445a530ce179f31d2fbe840408a504')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.

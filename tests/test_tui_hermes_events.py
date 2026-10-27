@@ -14,10 +14,10 @@ import unittest
 from _tui_lines import line_text, RULE_ROW
 from test_tui_modes import SID, drawn, make_app
 
-from omh.tui.app import goal_line
+from omh.tui.app import goal_done_text, goal_line
 from omh.tui.gateway import Event
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.transcript import NoticeBlock, ThinkingBlock, Transcript, block_rows
+from omh.tui.transcript import NOTICE_OK, NoticeBlock, ThinkingBlock, Transcript, block_rows
 
 REVIEW = "💾 Self-improvement review: saved 1 memory (the user prefers tabs)"
 
@@ -107,10 +107,57 @@ class GoalRowTests(unittest.TestCase):
         rule = next(index for index, row in enumerate(screen) if row.startswith(RULE_ROW))
         self.assertEqual(screen[rule - 1], "⊙ goal · 3/20 turns · ship the parity round")
         app._on_event(control(goal(status="done")))
-        self.assertFalse([row for row in drawn(app) if "goal" in row])
+        self.assertFalse([row for row in drawn(app) if row.startswith("⊙ goal")])  # the row goes; GoalDoneTests owns the line it leaves
         app._on_event(control(goal()))
         app._on_event(control(None))
-        self.assertFalse([row for row in drawn(app) if "goal" in row])
+        self.assertFalse([row for row in drawn(app) if row.startswith("⊙ goal")])
+        self.assertEqual(client.calls, [])
+
+
+class GoalDoneTests(unittest.TestCase):
+    """A finished goal leaves its whole wall clock in the scrollback, not only the last turn's.
+
+    A goal that ran 46 minutes across many turns otherwise shows only the final
+    turn's `✻ 42s` line, and a person comparing two agents reads that, or
+    nothing, as the goal's time.
+    """
+
+    def test_the_total_runs_from_the_goals_own_stamps(self) -> None:
+        before = goal()
+        after = goal(status="done", turns_used=7, created_at=1000.0, updated_at=1000.0 + 46 * 60 + 2)
+        self.assertEqual(goal_done_text(before, after), "goal done · 46m 2s · 7/20 turns · ship the parity round")
+        paused = goal(status="paused")
+        self.assertEqual(goal_done_text(paused, after), "goal done · 46m 2s · 7/20 turns · ship the parity round")
+
+    def test_missing_or_backwards_stamps_leave_the_time_out(self) -> None:
+        before = goal()
+        for name, fields in {
+            "no stamps": {},
+            "only the start": {"created_at": 1000.0},
+            "backwards": {"created_at": 2000.0, "updated_at": 1000.0},
+            "a bool": {"created_at": True, "updated_at": 2000.0},
+        }.items():
+            with self.subTest(case=name):
+                self.assertEqual(goal_done_text(before, goal(status="done", **fields)),
+                                 "goal done · 3/20 turns · ship the parity round")
+
+    def test_only_a_shown_goal_turning_done_says_it(self) -> None:
+        done = goal(status="done", created_at=1000.0, updated_at=1060.0)
+        self.assertEqual(goal_done_text(None, done), "")  # first seen done: a resumed session
+        self.assertEqual(goal_done_text(goal(status="done"), done), "")  # already done: said once
+        self.assertEqual(goal_done_text(goal(), goal()), "")
+        self.assertEqual(goal_done_text(goal(), None), "")  # cleared, not done
+        self.assertEqual(goal_done_text(goal(), goal(status="cleared")), "")
+
+    def test_the_row_goes_and_one_ok_line_stays_and_nothing_is_sent(self) -> None:
+        app, client = make_app()
+        app._on_event(control(goal(created_at=1000.0)))
+        app._on_event(control(goal(status="done", turns_used=7, created_at=1000.0, updated_at=1000.0 + 80 * 60)))
+        said = [(block.text, block.level) for block in app.transcript.blocks if isinstance(block, NoticeBlock)]
+        self.assertEqual(said, [("goal done · 1h 20m · 7/20 turns · ship the parity round", NOTICE_OK)])
+        self.assertFalse([row for row in drawn(app) if row.startswith("⊙ goal")])
+        app._on_event(control(goal(status="done", turns_used=7, created_at=1000.0, updated_at=1000.0 + 80 * 60)))
+        self.assertEqual(len([block for block in app.transcript.blocks if isinstance(block, NoticeBlock)]), 1)
         self.assertEqual(client.calls, [])
 
 

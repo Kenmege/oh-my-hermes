@@ -75,7 +75,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # the #2324 review adds ten more for its execution and relation clauses,
         # and its delta review ten more, one per position of the allow-listed shape,
         # then four quoted or code-span trailing clauses.
-        self.assertEqual(payload["summary"]["case_count"], 1235)
+        # The rendered-scene lane adds four negatives.
+        self.assertEqual(payload["summary"]["case_count"], 1239)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -146,7 +147,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # The three science vocabulary controls also answer directly.
         # The two quoted employer controls are answered directly.
         # repro-audit's score explainer is answered directly (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 350)
+        # The rendered-scene lane's crime-scene control is a direct answer (+1).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 351)
         # show-reel's README-link control is answered as a file lookup (+1).
         self.assertEqual(payload["summary"]["file_lookup_count"], 11)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
@@ -205,7 +207,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # repro-audit adds one HellaSwag log versus paper request, and its
         # review three more requests in the admitted shape, then one that
         # closes on the compared metric.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1168)
+        # The rendered-scene lane adds five frontend interventions.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1173)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
