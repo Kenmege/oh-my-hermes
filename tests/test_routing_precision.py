@@ -76,7 +76,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and its delta review ten more, one per position of the allow-listed shape,
         # then four quoted or code-span trailing clauses.
         # The rendered-scene lane adds four negatives.
-        self.assertEqual(payload["summary"]["case_count"], 1239)
+        # A show-reel closed form beside a modifier symbol, and one after a
+        # channel backfill, add two.
+        self.assertEqual(payload["summary"]["case_count"], 1241)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

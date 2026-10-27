@@ -921,7 +921,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # emoji (1), and a with-adjunct naming people (2) (+9).
             # The rendered-scene lane: voxel morphometry, a crime scene, a city art
             # scene and two everyday "three"/"scene" lines stay out of frontend (+4).
-            expected=1239,
+            # A closed show-reel form beside a modifier symbol that folding
+            # drops (1), and one after a channel backfill of a fault (1) (+2).
+            expected=1241,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

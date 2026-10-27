@@ -536,13 +536,14 @@ def person_request_text(message: str, *, messaging: bool = False) -> str:
     return text
 
 
-# A reply pointer, and an attachment or image note: material a person's words
-# may point at ("make a demo video of this") that routing does not read.
-_CONTEXT_BLOCK_OPENERS = ("[Replying to", "[The user sent", "[If you need a closer look", "[Image attached")
+# A reply pointer, an attachment or image note, and the channel backfill a
+# gateway puts before `[New message]`: material a person's words may point at
+# ("make a demo video of this") that routing does not read.
+_CONTEXT_BLOCK_OPENERS = ("[Replying to", "[The user sent", "[If you need a closer look", "[Image attached", "[New message]")
 
 
 def host_context_removed(message: str) -> bool:
-    """Whether `person_request_text` removes a reply pointer or an attachment note from this turn.
+    """Whether `person_request_text` removes a reply pointer, an attachment note or the channel backfill from this turn.
 
     Routing reads only the person's words; a reader that must prove the request
     whole (a closed show-reel form) treats removed context like masked text.

@@ -160,6 +160,7 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a demo video for the plugin src/cli/main.py:77",
             "Make a demo video for the app ./bin/repro",
             "Make a demo video for the beta \U0001F41B",
+            "Make a demo video for the app \u02dc",
             # `with` takes only a production track.
             "Make a promo video with the sales team.",
             # Only v plus one or two digits is a version.
@@ -207,6 +208,10 @@ class ShowReelAdmissionTests(unittest.TestCase):
         turn = '[Replying to: "login loops back"]\n\nMake a demo video for the app'
         self.assertTrue(host_context_removed(turn))
         self.assertFalse(host_context_removed("Make a demo video for the app"))
+        backfill = "Kai: the sync job drops rows again\n\n[New message]\nMake a demo video for the app"
+        self.assertTrue(host_context_removed(backfill))
+        self.assertNotEqual(route_chat_message(backfill, source="discord").get("selected_skill"), "show-reel")
+        self.assertNotEqual(awareness_route_hint(backfill)["primary_workflow"], "show-reel")
         self.assertNotEqual(route_chat_message(turn, source="discord").get("selected_skill"), "show-reel")
         self.assertNotEqual(awareness_route_hint(turn)["primary_workflow"], "show-reel")
 
