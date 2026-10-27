@@ -59,7 +59,8 @@ from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key
 from omh.skin_pack import default_theme, skin_colors
 from omh.tui.style import Style
 from omh.tui.theme import DEFAULT_THEME, EDGE_CONTRAST, TEXT_CONTRAST, build_theme, contrast_ratio, is_light
-from omh.tui.width import line_width
+from omh.tui.style import Span
+from omh.tui.width import cluster_width, clusters, line_width
 
 NOW = 1_800_000_000.0
 DAY = 24 * 3600
@@ -461,7 +462,8 @@ class ReadOnlyTests(FixtureRoot):
         self.assertEqual(tree_state(self.root), before)
 
 
-HEAD = bot_board.BOARD_HEAD_ROWS  # level 1's totals box and the gap after it
+HEAD = bot_board.BOARD_HEAD_ROWS
+BOX_CORNERS = {"unicode": "╮", "ascii": "+"}  # a box's top-right corner in each charset  # level 1's totals box and the gap after it
 
 
 def field(rows: list[str], label: str, separator: str = "│") -> str:
@@ -561,8 +563,8 @@ class SummaryTests(FixtureRoot):
         self.assertEqual(profile.active, 5)
         self.assertEqual(profile.usage, bot_board.Usage(1_251_000, 244_500, 12_400_000, 4.12, True, 1, 1))
         self.assertTrue(self.row(profile, "day").endswith(" 5 active · 6 stored"))
-        self.assertEqual(self.row(profile, "tokens"), "tokens 1.3M in · 244.5k out · 12.4M cached")
-        self.assertEqual(self.row(profile, "cost"), "cost ~$4.12 + 1 unpriced")
+        self.assertEqual(self.row(profile, "tokens"), "tokens lifetime 1.3M in · 244.5k out · 12.4M cached")
+        self.assertEqual(self.row(profile, "cost"), "cost lifetime ~$4.12 + 1 unpriced")
 
     def test_a_cost_hermes_never_priced_is_never_shown_as_zero(self) -> None:
         for statuses, said in (
@@ -573,8 +575,8 @@ class SummaryTests(FixtureRoot):
                 write_usage_store(self.root, [
                     (f"s{n}", "cli", "t", NOW - 60, 2, "m", 10, 10, 0, 0.0, None, status) for n, status in enumerate(statuses)
                 ])
-                self.assertEqual(self.row(self.profile(), "tokens"), "tokens 20 in · 20 out · 0 cached")
-                self.assertEqual(self.row(self.profile(), "cost"), f"cost {said}")
+                self.assertEqual(self.row(self.profile(), "tokens"), "tokens lifetime 20 in · 20 out · 0 cached")
+                self.assertEqual(self.row(self.profile(), "cost"), f"cost lifetime {said}")
 
     def test_older_stores_without_the_columns_show_less_and_no_number_they_lack(self) -> None:
         # The fixture's own store has no model, token or cost column at all.
@@ -594,8 +596,8 @@ class SummaryTests(FixtureRoot):
         write_usage_store(self.root, [("t", "cli", "t", NOW - 60, 2, 5, 7)], "input_tokens INTEGER, output_tokens INTEGER")
         profile = self.profile()
         self.assertEqual(profile.usage, bot_board.Usage(5, 7, None, None, False, 0, 1))
-        self.assertEqual(self.row(profile, "tokens"), "tokens 5 in · 7 out", "no cache read column")
-        self.assertEqual(self.row(profile, "cost"), "cost cost unknown")
+        self.assertEqual(self.row(profile, "tokens"), "tokens lifetime 5 in · 7 out", "no cache read column")
+        self.assertEqual(self.row(profile, "cost"), "cost lifetime cost unknown")
 
     def test_levels_two_and_three_show_each_sessions_model_tokens_and_cost(self) -> None:
         write_usage_store(self.root, [
@@ -825,7 +827,7 @@ class LayoutTests(unittest.TestCase):
         rows = self.rows(150)
         self.assertTrue(rows[0].startswith("╭─ Hermes bots ─") and rows[0].endswith("─╮"))
         self.assertEqual(squeeze(rows[1]), "│ 3 profiles · 2 gateways up · 4 agents running · "
-                                           "24 h: 6.1M in · 459.7k out · ~$6.73 + 1 unpriced │")
+                                           "lifetime of those active in 24 h: 6.1M in · 459.7k out · ~$6.73 + 1 unpriced │")
         self.assertTrue(rows[2].startswith("╰─") and rows[2].endswith("─╯"))
         self.assertEqual(squeeze(self.rows(60)[1]), "│ 3 profiles · 2 gateways up · 4 agents running │",
                          "the day's totals give way first")
@@ -856,8 +858,8 @@ class LayoutTests(unittest.TestCase):
                 self.assertEqual([right.split()[0] for _left, right in cells], ["24", "memory", "user", "OMH"])
                 self.assertTrue(cells[1][0].startswith("now #live-stage"))
                 self.assertTrue(cells[1][0].endswith("discord · just now"), "source and age at the right")
-                self.assertEqual(cells[2][0], "tokens 5.9M in · 418k out · 41.3M cached")
-                self.assertEqual(cells[3][0], "cost ~$4.87 + 1 unpriced")
+                self.assertTrue(cells[2][0].startswith("tokens lifetime 5.9M in · 418k out"), "cache reads go first")
+                self.assertEqual(cells[3][0], "cost lifetime ~$4.87 + 1 unpriced")
                 self.assertTrue(cells[0][1].endswith("█ 31 active · 1,032 stored"))
                 self.assertEqual(cells[1][1], f"memory {gauge(89, 8)}")
                 self.assertEqual(cells[2][1], f"user {gauge(90, 9)}")
@@ -880,7 +882,7 @@ class LayoutTests(unittest.TestCase):
     def test_the_selected_card_takes_the_accent_and_the_rest_the_rule(self) -> None:
         lines = self.lines(150)
         edges = lambda line: {span.style for span in line if span.text.strip() and set(span.text) <= set("╭╮╰╯─┬┴│ ")}
-        self.assertEqual(edges(lines[HEAD + 6 + 1 + 6 + 1]), {DEFAULT_THEME.brand}, "miku's top edge")
+        self.assertEqual(edges(lines[HEAD + 6 + 1 + 6 + 1]), {bot_board._highlight(DEFAULT_THEME)}, "miku's top edge")
         self.assertEqual(edges(lines[HEAD]), {DEFAULT_THEME.rule})
 
     def test_a_narrow_card_gives_up_its_figures_its_face_and_its_last_chips(self) -> None:
@@ -1011,6 +1013,137 @@ class MessageBoxTests(unittest.TestCase):
         text = self.page(120, "ascii")
         self.assertFalse({character for row in text for character in row if ord(character) > 127} - {"·", "›", "…"})
         self.assertTrue(text[0].startswith("+- miku"))
+
+
+# Emoji built with chr(): a ZWJ family (five code points, one two-cell cluster) and VS16 emoji (two code points each).
+FAMILY = chr(0x1F468) + chr(0x200D) + chr(0x1F469) + chr(0x200D) + chr(0x1F467)
+HEART = chr(0x2764) + chr(0xFE0F)
+SUN = chr(0x2600) + chr(0xFE0F)
+WIDTHS = (150, 135, 120, 117, 116, 80, 60, 40)
+JOINT_GLYPHS = {"unicode": ("┬", "│┼", "┴"), "ascii": ("+", "|+", "+")}
+
+
+def cell_columns(line) -> dict[int, str]:
+    """Each cluster's text by the display column it starts at."""
+    at, columns = 0, {}
+    for span in line:
+        for cluster in clusters(span.text):
+            columns[at] = cluster
+            at += cluster_width(cluster)
+    return columns
+
+
+class GraphemeEdgeTests(unittest.TestCase):
+    """Edge text is sized per grapheme cluster, as `truncate_line` sizes it: emoji in a title or a display name never
+    overflow a box's edge, move a joint or end the TUI (#2321 review, HIGH)."""
+
+    def boxes(self, lines, charset: str) -> list[list]:
+        """Each box in `lines`: the board separates its boxes with one blank row."""
+        found, current = [], []
+        for line in [*lines, ()]:
+            if line:
+                current.append(line)
+            elif current:
+                found.append(current)
+                current = []
+        return found
+
+    def assert_whole(self, lines, cols: int, charset: str) -> None:
+        self.assertEqual({line_width(line) for line in lines if line} - {cols}, set(), "every row is the width")
+        down, through, up = JOINT_GLYPHS[charset]
+        for box in self.boxes(lines, charset):
+            top = cell_columns(box[0])
+            joints = [column for column, glyph in top.items() if glyph == down and 0 < column < cols - 1]
+            for row in box[1:-1]:
+                self.assertEqual({cell_columns(row).get(column) in tuple(through) for column in joints}, {True} if joints else set(),
+                                 f"a divider moved at {cols}: {line_text(row)}")
+            self.assertEqual({cell_columns(box[-1]).get(column) for column in joints}, {up} if joints else set())
+            self.assertEqual(cell_columns(box[0]).get(cols - 1), BOX_CORNERS[charset], "the corner stands")
+
+    def test_emoji_titles_and_display_names_keep_every_box_whole_at_every_width(self) -> None:
+        title = (FAMILY + " stage " + HEART + SUN) * 12
+        profile = replace(bots()[2], display=HEART + " Miku " + FAMILY * 3, newest=replace(bots()[2].newest, title=title))
+        session = replace(profile.newest, title=title)
+        messages = (bot_board.MessageRow("user", title, NOW - 60), bot_board.MessageRow("tool", FAMILY * 50, NOW - 30))
+        for charset in ("unicode", "ascii"):
+            for cols in WIDTHS:
+                with self.subTest(charset=charset, cols=cols):
+                    level_one, _span = profile_lines((bots()[0], profile), 1, NOW, cols, DEFAULT_THEME, charset)
+                    self.assert_whole(level_one, cols, charset)
+                    listed = BoardSnapshot(BoardView("miku"), (profile,), (session,), read_at=NOW)
+                    level_two, _span = session_lines(listed, 0, NOW, cols, DEFAULT_THEME, charset)
+                    self.assert_whole(level_two, cols, charset)
+                    opened = BoardSnapshot(BoardView("miku", "s1"), (profile,), (session,), messages=messages, read_at=NOW)
+                    self.assert_whole(message_lines(opened, session, NOW, cols, DEFAULT_THEME, charset), cols, charset)
+
+    def test_the_reviewers_family_title_draws_and_does_not_raise(self) -> None:
+        session = bot_board.SessionRow("s1", FAMILY * 40, "x", 0, 1)
+        for cols in (80, 60, 40):
+            with self.subTest(cols=cols):
+                lines = message_lines(BoardSnapshot(BoardView("p", "s1"), (), (session,), read_at=0), session, 0, cols, DEFAULT_THEME)
+                self.assertEqual({line_width(line) for line in lines if line}, {cols})
+                self.assertIn(FAMILY, line_text(lines[0]), "the title is drawn, cut where it must be")
+
+    def test_place_never_writes_at_or_past_its_stop(self) -> None:
+        cells = [("-", DEFAULT_THEME.rule)] * 10
+        end = bot_board._place(cells, 2, (Span(FAMILY * 5, DEFAULT_THEME.text),), 7)
+        self.assertEqual((end, [cell[0] for cell in cells[7:]]), (6, ["-", "-", "-"]), "a cluster that would reach it waits")
+
+
+class ChipEdgeTests(unittest.TestCase):
+    """A two-column card's bottom edge holds whole chips only, spilling past the second joint (#2321 review, MEDIUM)."""
+
+    def test_every_chip_is_whole_with_its_mark_at_every_width(self) -> None:
+        names = ["discord", "telegram", "slack", "whatsapp", "signal", "matrix", "mattermost", "x"]
+        platforms = tuple(bot_board.Platform(name, "connected", current=True, needs_attention=number % 3 == 1)
+                          for number, name in enumerate(names))
+        profile = replace(bots()[2], gateway=replace(bots()[2].gateway, platforms=platforms))
+        for cols in (150, 135, 120, 117, 116, 100, 80):
+            with self.subTest(cols=cols):
+                bottom = lines_text(profile_lines([profile], 0, NOW, cols, DEFAULT_THEME)[0])[-2]
+                self.assertNotIn("…", bottom, "never a cut chip")
+                words = squeeze(bottom.replace("─", " ").replace("┴", " ").replace("╰", " ").replace("╯", " ")).split()
+                shown = [word for word in words if word in names]
+                self.assertEqual(shown, names[: len(shown)], "whole chips, in order")
+                for name in shown:
+                    self.assertEqual(words[words.index(name) + 1], "●!" if names.index(name) % 3 == 1 else "●")
+                if cols >= 117:
+                    self.assertEqual(shown, names, "the second segment takes what the first cannot")
+
+
+class ReviewBoundaryTests(unittest.TestCase):
+    """The boundaries the review found no test held (#2321 review, LOW)."""
+
+    def test_cards_split_into_two_field_columns_from_117_columns(self) -> None:
+        self.assertEqual(bot_board._card_widths(117)[1:], (True, True))
+        self.assertEqual(bot_board._card_widths(116)[1:], (True, False))
+        self.assertEqual(sum(1 for glyph in lines_text(profile_lines(bots(), 0, NOW, 117, DEFAULT_THEME)[0])[HEAD] if glyph == "┬"), 2)
+        self.assertEqual(sum(1 for glyph in lines_text(profile_lines(bots(), 0, NOW, 116, DEFAULT_THEME)[0])[HEAD] if glyph == "┬"), 1)
+
+    def test_words_on_the_light_selection_band_take_its_ink_when_their_own_would_not_read(self) -> None:
+        theme = build_theme(default_theme(), "#FCF9FD")
+        self.assertLess(contrast_ratio(theme.muted.fg, theme.menu_current.bg), TEXT_CONTRAST, "the case the fallback is for")
+        sessions = [bot_board.SessionRow(f"s{n}", f"chat {n}", "cli", NOW - n, 1, "glm-5.3", bot_board.Usage(10, 10))
+                    for n in range(3)]
+        lines, span = session_lines(BoardSnapshot(BoardView("miku"), bots(), tuple(sessions), read_at=NOW), 1, NOW, 120, theme)
+        for item in lines[span[0]][1:-1]:
+            if any(character.isalnum() for character in item.text):
+                self.assertGreaterEqual(contrast_ratio(item.style.fg, item.style.bg), TEXT_CONTRAST, item)
+
+    def test_a_profile_named_in_bytes_that_are_not_utf8_still_draws(self) -> None:
+        name = "bot" + chr(0xDC80)  # how Linux hands Python a directory name that is not UTF-8
+        self.assertEqual(len(avatar(name)), bot_board.AVATAR_ROWS)
+        lines, _span = profile_lines([replace(bots()[2], name=name)], 0, NOW, 120, DEFAULT_THEME)
+        self.assertEqual({line_width(line) for line in lines if line}, {120})
+
+    def test_the_highlighted_edge_stands_3_to_1_from_the_others_on_light_and_dark(self) -> None:
+        for background in ("#FCF9FD", "#FFFFFF", "#F3F8FD", "#0F1B2D", "#1E1E1E"):
+            with self.subTest(background=background):
+                theme = build_theme(default_theme(), background)
+                lines, span = profile_lines(bots(), 2, NOW, 150, theme)
+                edge = lines[span[0]][0].style
+                self.assertGreaterEqual(contrast_ratio(edge.fg, theme.rule.fg), EDGE_CONTRAST)
+                self.assertGreaterEqual(contrast_ratio(edge.fg, background), EDGE_CONTRAST)
 
 
 class AvatarTests(unittest.TestCase):
@@ -1148,7 +1281,7 @@ class DrawingTests(FixtureRoot):
                     self.assertIn("24 h sessions: no state.db", text)
                     self.assertIn("╰──────────┴─ gateway stopped (signal) ─", text)
                     self.assertTrue(lines_text(lines)[span[0]].startswith("╭──────────┬─ ○ broken"), "the highlighted card")
-                    self.assertEqual(lines[span[0]][0].style, DEFAULT_THEME.brand, "takes the accent")
+                    self.assertEqual(lines[span[0]][0].style, bot_board._highlight(DEFAULT_THEME), "takes the accent")
 
     @POSIX_ONLY
     def test_a_profile_the_default_gateway_serves_reads_as_served(self) -> None:

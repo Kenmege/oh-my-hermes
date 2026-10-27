@@ -44,8 +44,9 @@ sessions' sum is what those sessions spent in their lifetime, not in the last
 24 hours alone: Hermes keeps no per-call time for them. A cost is summed only
 over sessions Hermes priced (`cost_status` actual or estimated, `~` when any
 is an estimate), and the sessions it could not price are counted beside it,
-never as $0. Every column is optional: a store without one shows less, never a
-number it did not read.
+never as $0; the board labels these figures `lifetime` (`LIFETIME_WORD`).
+Every column is optional: a store without one shows less, never a number it
+did not read.
 
 "Active in the last 24 hours" is what the board counts instead of open
 sessions: a messaging gateway leaves `ended_at` unset on every chat it
@@ -118,8 +119,8 @@ from .pager import Pager
 from .prompts import CHOICE_MARK
 from .session_picker import age_text
 from .style import Line, Span, Style
-from .theme import EDGE_CONTRAST, TEXT_CONTRAST, Theme, contrast_ratio
-from .width import cell_width, line_width, truncate, truncate_line, wrap_line
+from .theme import BLACK, EDGE_CONTRAST, TEXT_CONTRAST, WHITE, Theme, contrast_ratio, lifted_colour
+from .width import cell_width, cluster_width, clusters, line_width, truncate, truncate_line, wrap_line
 
 BOARD_TITLE = "Hermes bots"
 BOARD_KEYS = "↑↓ move  Enter open  ← back  r refresh  q close"
@@ -190,6 +191,9 @@ LABEL_WIDTH = 8
 FIT_GAP = 3  # the least gap before a row's right-pushed part
 EDGE_WHY_RANK = 20  # a card's bottom edge gives up the gateway's explanation before its last chip
 COST_RANK = 4
+# The active sessions' tokens and cost are each session's lifetime totals (Hermes keeps no per-call time), and the
+# board says so wherever it shows them.
+LIFETIME_WORD = "lifetime"
 SPARK_GAP = "   "
 GAUGE_CELLS = 10
 GAUGE_WARN, GAUGE_ERROR = 70, 90  # ok below 70 %, warn through 90 %, error past it
@@ -1196,14 +1200,18 @@ def _cells_line(cells: Sequence[tuple[str, Style]]) -> Line:
     return tuple(spans)
 
 
-def _place(cells: list[tuple[str, Style]], at: int, line: Line) -> int:
-    """Write `line` into `cells` from `at`, a wide character taking two cells; where it ended."""
+def _place(cells: list[tuple[str, Style]], at: int, line: Line, stop: int) -> int:
+    """Write `line` into `cells` from `at` and before `stop`, one grapheme cluster at a time, sized as `truncate_line`
+    and `line_width` size it (a ZWJ family or a VS16 emoji is one two-cell cluster), a wide one taking its second
+    cell as ""; where it ended. A cluster that would reach `stop` is not written, so a joint or a corner never is."""
     for span in line:
-        for character in span.text:
-            size = cell_width(character)
-            if size <= 0 or at + size > len(cells):
+        for cluster in clusters(span.text):
+            size = cluster_width(cluster)
+            if size <= 0:
                 continue
-            cells[at] = (character, span.style)
+            if at + size > stop:
+                return at
+            cells[at] = (cluster, span.style)
             for extra in range(1, size):
                 cells[at + extra] = ("", span.style)
             at += size
@@ -1239,12 +1247,12 @@ def _edge(kind: str, width: int, joints: Sequence[int], edge: Style, charset: st
     room = stop - (after + 3) - 2
     if left and room > 0:
         cells[after + 2] = (" ", edge)
-        end = _place(cells, after + 3, truncate_line(left, room))
+        end = _place(cells, after + 3, truncate_line(left, room), stop - 1)
         cells[end] = (" ", edge)
     begin = width - 3 - line_width(right)
     if right and begin - 1 > end + 1 and not [at for at in joints if begin - 1 <= at <= width - 3]:
         cells[begin - 1] = (" ", edge)
-        cells[_place(cells, begin, right)] = (" ", edge)
+        cells[_place(cells, begin, right, width - 3)] = (" ", edge)
     return _cells_line(cells)
 
 
@@ -1263,10 +1271,10 @@ def _box_row(columns: Sequence[tuple[Line, int]], edge: Style, charset: str, ban
 
 
 def _panel(widths: Sequence[int], rows: Sequence[Sequence[Line]], edge: Style, charset: str, *,
-           top: tuple[Line, Line] = ((), ()), bottom: Line = (), after_first: bool = False,
+           top: tuple[Line, Line] = ((), ()), bottom: tuple[Line, Line] = ((), ()), after_first: bool = False,
            rules: Sequence[int] = (), bands: Mapping[int, Style] | None = None) -> list[Line]:
-    """A rounded box in the launch card's style (`launch_card.boxed`) with columns `widths` wide: its top edge
-    carries `top` (left, right), its bottom edge `bottom`, both past the first column when `after_first`; a rule
+    """A rounded box in the launch card's style (`launch_card.boxed`) with columns `widths` wide: its top and bottom
+    edges carry `top` and `bottom` (left, right), the left part past the first column when `after_first`; a rule
     goes in before each row numbered in `rules`, and a row numbered in `bands` runs on that band."""
     width = _box_width(widths)
     joints = _joints(widths)
@@ -1276,14 +1284,15 @@ def _panel(widths: Sequence[int], rows: Sequence[Sequence[Line]], edge: Style, c
         if number in rules:
             lines.append(_edge("rule", width, joints, edge, charset))
         lines.append(_box_row(list(zip(row, widths)), edge, charset, (bands or {}).get(number)))
-    lines.append(_edge("bottom", width, joints, edge, charset, bottom, after=after))
+    lines.append(_edge("bottom", width, joints, edge, charset, *bottom, after=after))
     return lines
 
 
 def avatar(name: str, charset: str = "unicode") -> list[str]:
     """`AVATAR_ROWS` rows of `AVATAR_COLS` cells drawn from `name` alone, as an identicon: a sha256 of the name lays
     out a mirrored grid of pixels, two to a cell (`▀`, `▄`, `█`). The same name draws the same face on every run."""
-    digest = hashlib.sha256(name.encode("utf-8")).digest()
+    # surrogatepass: a profile directory named in bytes that are not UTF-8 reaches here as a lone surrogate on Linux.
+    digest = hashlib.sha256(name.encode("utf-8", "surrogatepass")).digest()
     half = AVATAR_COLS // 2
     bits = int.from_bytes(digest[:8], "big")
     pixels = [[bits >> (row * half + column) & 1 for column in range(half)] for row in range(2 * AVATAR_ROWS)]
@@ -1301,7 +1310,7 @@ def _avatar_style(name: str, theme: Theme) -> Style:
     ramp = [style for style in (*theme.kinds, *theme.dag_words) if style.fg]
     if not ramp:
         return theme.text
-    return replace(ramp[hashlib.sha256(name.encode("utf-8")).digest()[8] % len(ramp)], bold=False)
+    return replace(ramp[hashlib.sha256(name.encode("utf-8", "surrogatepass")).digest()[8] % len(ramp)], bold=False)
 
 
 def _face_column(name: str, rows: int, theme: Theme, charset: str) -> list[Line]:
@@ -1338,7 +1347,7 @@ def _bot_facts(profile: Profile, now: float, theme: Theme) -> Line:
     return tuple(spans)
 
 
-def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, charset: str) -> Line:
+def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, charset: str, spill: int = 0) -> tuple[Line, Line]:
     """For the box's bottom edge: what the gateway says when it is not plainly running, each platform as a chip
     coloured by its state, and a restart Hermes was asked for; the last chips go first when they do not fit."""
     gateway = profile.gateway
@@ -1363,7 +1372,13 @@ def _bot_platforms(profile: Profile, served_by: str, width: int, theme: Theme, c
         pieces.append((2 + number, "  ", chip))  # the last chip goes first
     if gateway.restart_requested:
         pieces.append((1, "  ", (Span("restart requested", theme.warn),)))
-    return _fit((), pieces, width) if pieces else ()
+    kept = list(pieces)
+    while line_width(_fit((), kept, 1 << 20)) > width and [piece for piece in kept if piece[0]]:
+        kept.remove(max((piece for piece in kept if piece[0]), key=lambda piece: piece[0]))
+    # The chips that did not fit go on past the next joint when the edge has a second segment (`spill`), still whole.
+    over = [(rank, gap if number else "", chip) for number, (rank, gap, chip) in
+            enumerate(piece for piece in pieces if piece not in kept and 2 <= piece[0] < EDGE_WHY_RANK)]
+    return (_fit((), kept, width) if kept else (), _fit((), over, spill) if over and spill > 0 else ())
 
 
 def _model_row(profile: Profile, cols: int, theme: Theme) -> Line:
@@ -1417,15 +1432,17 @@ def _day_row(profile: Profile, now: float, cols: int, theme: Theme, charset: str
 def _tokens_row(profile: Profile, cols: int, theme: Theme) -> Line:
     if profile.usage is None or not profile.active:
         return ()
-    return _fit(_label("tokens", theme), [(rank, gap if number else "", piece) for number, (rank, gap, piece)
-                                          in enumerate(_usage_pieces(profile.usage, theme, priced=False))], cols)
+    pieces = [(rank, " " if number == 0 else gap, piece)
+              for number, (rank, gap, piece) in enumerate(_usage_pieces(profile.usage, theme, priced=False))]
+    return _fit(_label("tokens", theme), [(0, "", (Span(LIFETIME_WORD, theme.muted),)), *pieces], cols, first_gap="")
 
 
 def _cost_row(profile: Profile, cols: int, theme: Theme) -> Line:
     if profile.usage is None or not profile.active:
         return ()
     pieces = [piece for piece in _usage_pieces(profile.usage, theme) if piece[0] == COST_RANK]
-    return _fit(_label("cost", theme), [(0, "", piece) for _rank, _gap, piece in pieces], cols) if pieces else ()
+    lifetime = (0, "", (Span(LIFETIME_WORD, theme.muted),))
+    return _fit(_label("cost", theme), [lifetime, *((0, " ", piece) for _rank, _gap, piece in pieces)], cols) if pieces else ()
 
 
 def _memory_target_row(memory: MemoryFile, cols: int, theme: Theme, charset: str, exact: bool = False) -> Line:
@@ -1479,10 +1496,22 @@ def bot_box(profile: Profile, served_by: str, highlighted: bool, now: float, wid
     if faced:
         columns.insert(0, _face_column(_text(profile.name), height, theme, charset))
     rows = [[column[number] for column in columns] for number in range(height)]
-    edge = theme.brand if highlighted else theme.rule
+    edge = _highlight(theme) if highlighted else theme.rule
     top = (_bot_title(profile, served_by, highlighted, theme, charset), _bot_facts(profile, now, theme))
-    bottom = _bot_platforms(profile, served_by, _edge_room(widths, faced), theme, charset)
+    joints = _joints(widths)
+    spill = _box_width(widths) - joints[1] - 6 if split else 0  # past the second joint, before the far corner
+    bottom = _bot_platforms(profile, served_by, _edge_room(widths, faced), theme, charset, spill)
     return _panel(widths, rows, edge, charset, top=top, bottom=bottom, after_first=faced)
+
+
+def _highlight(theme: Theme) -> Style:
+    """The highlighted card's edge: the theme's accent, moved away from the rule's colour until the two edges stand
+    3:1 apart (WCAG's floor for a non-text mark), darker on a light page and lighter on a dark one."""
+    accent, rule = theme.brand.fg, theme.rule.fg
+    if not accent or not rule:
+        return theme.brand
+    ink = BLACK if contrast_ratio(accent, BLACK) < contrast_ratio(rule, BLACK) else WHITE
+    return replace(theme.brand, fg=lifted_colour(accent, rule, EDGE_CONTRAST, ink))
 
 
 def _edge_room(widths: Sequence[int], after_first: bool) -> int:
@@ -1549,7 +1578,7 @@ def _board_head(profiles: Sequence[Profile], cols: int, theme: Theme, charset: s
             sum(costs) if costs else None, any(usage.estimated for usage in usages),
             sum(usage.included for usage in usages), sum(usage.unpriced for usage in usages),
         )
-        day: list[Span] = [Span("24 h: ", theme.muted)]
+        day: list[Span] = [Span(f"{LIFETIME_WORD} of those active in 24 h: ", theme.muted)]
         for number, (_rank, gap, piece) in enumerate(_usage_pieces(total, theme, cached=False)):
             day += [*((Span(gap),) if number else ()), *piece]
         pieces.append((3, " · ", tuple(day)))

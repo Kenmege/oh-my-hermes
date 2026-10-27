@@ -1238,7 +1238,8 @@ their input, output and cache-read tokens; `cost`; `memory` and `user`, Hermes'
 (green below 70%, amber to 90%, red past it); and `OMH`, the record count of
 the OMH store its `config.yaml` names. The highlighted bot's card takes the
 theme's accent colour. Tokens and cost are each
-session's lifetime totals, since Hermes records no time per call, and a cost
+session's lifetime totals, since Hermes records no time per call, and the board
+labels them `lifetime` wherever it shows them; a cost
 appears only where Hermes priced it (`~` marks an estimate); sessions it did
 not price are counted as unpriced, never as $0. A store, config or memory
 file it cannot read is named as such, and a store without the token columns
