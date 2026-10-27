@@ -918,8 +918,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The #2322 fourth delta: a closed form beside a source path, a
             # file and line, a bare-domain link or a script the router strips
             # (4), under a reply pointer or an attachment note (2), with an
-            # emoji (1), and a with-adjunct naming people (2) (+9).
-            expected=1235,
+            # emoji (1), and a with-adjunct naming people (2) (+9). A
+            # modifier symbol that folding drops (1) (+1).
+            expected=1236,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

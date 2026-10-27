@@ -437,6 +437,7 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase("show-reel-reply-pointer-fault", "A closed form replying to a fault report is a recording", '[Replying to: "checkout freezes after the coupon step"]\n\nMake a demo video for the app', "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-attachment-note-fault", "A closed form under an attachment note may show what it shows", "[The user sent an image~ a stack trace in a terminal ~]\n\nMake a demo video for the plugin", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-emoji-tail", "An emoji after a closed form is unread text", "Make a demo video for the beta \U0001F4A5", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-modifier-symbol-tail", "A modifier symbol folding drops is unread text", "Make a launch video for the app \u02c7", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-with-customers", "A promo video with customers is a meeting, not a track", "Create a promo video with our customers.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-with-marketing-team", "A launch video with a team is a meeting, not a track", "Make a launch video with the marketing team.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common

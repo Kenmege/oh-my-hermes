@@ -219,13 +219,17 @@ def _admission(message: str, shielded: bool) -> str:
     regions = reference_regions(message)
     folded = _fold(regions.executable_text).strip()
     shielded = shielded or bool(regions.references or regions.masked_spans or regions.quoted_lines)
+    # Folding drops a modifier symbol ("˜" decomposes to a space and a
+    # combining mark), so symbols are read before it: an emoji or another
+    # symbol anywhere in the message leaves a closed form unproven.
+    symbol = any(unicodedata.category(char) in ("So", "Sk") for char in regions.executable_text)
     text = after_courtesy(folded)
     sentence, *ending = re.split(r"([.!?;。！？])(?:\s|$)", text, maxsplit=1)
     # A first sentence asked, not told ("make a show reel? no, just send the
     # old one", "make a launch film, right?") is a question about one, unless
     # a courtesy opener put it as a request ("can you make a show reel?").
     asked = bool(ending) and ending[0] in "?？" and text == folded
-    whole_message = not shielded and (not ending or not ending[1].strip())
+    whole_message = not shielded and not symbol and (not ending or not ending[1].strip())
     lead = "" if asked else _english_production_lead(sentence, whole_message=whole_message)
     return lead or ("reel" if _NATIVE_PRODUCTION.search(text) else "")
 

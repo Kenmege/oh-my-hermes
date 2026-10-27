@@ -160,6 +160,7 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a demo video for the plugin src/cli/main.py:77",
             "Make a demo video for the app ./bin/repro",
             "Make a demo video for the beta \U0001F41B",
+            "Make a demo video for the app \u02dc",
             # `with` takes only a production track.
             "Make a promo video with the sales team.",
             # Only v plus one or two digits is a version.
