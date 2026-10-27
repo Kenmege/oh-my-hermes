@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import hmac
 import json
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ from ._memory_principal_validation import (
     safe_ref as _safe,
     valid_review_ref as _valid_review_ref,
 )
+from .memory_store_io import _is_link_stat, guard_store_write
 
 
 CHANNEL_REF_PATTERN = re.compile(r"^channel:v1:[0-9a-f]{64}$")
@@ -64,20 +67,47 @@ def derive_channel_ref(omh_home: str | Path, *, profile_ref: str, surface_ref: s
     return "channel:v1:" + hmac.new(_principal_key(omh_home), message, hashlib.sha256).hexdigest()
 
 
+_PRINCIPAL_KEY_BYTES = 32
+
+
 def _principal_key(omh_home: str | Path) -> bytes:
-    """The profile-local HMAC key, created on first use."""
-    key_path = Path(omh_home).expanduser() / "memory" / "principal.key"
-    key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    """The profile-local HMAC key, created on first use; fails closed on anything else.
+
+    The store chain must be real directories inside ``<omh_home>/memory``
+    (``guard_store_write``), and the key must be a regular file this user
+    owns holding exactly 32 bytes. A symlink planted at the key's name is
+    refused by ``O_NOFOLLOW`` (by an ``lstat`` first where the flag is
+    absent), so OMH never chmods, reads or adopts an outside file as its key.
+    The mode is set on the descriptor, never through the path.
+    """
+    home = Path(omh_home).expanduser()
+    key_path = home / "memory" / "principal.key"
+    guard_store_write(key_path, omh_home=home)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    binary = getattr(os, "O_BINARY", 0)
     try:
-        descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow | binary, 0o600)
     except FileExistsError:
-        _ = key_path.chmod(0o600)
+        pass
     else:
         with os.fdopen(descriptor, "wb") as handle:
-            handle.write(os.urandom(32))
-    key_path.chmod(0o600)
-    key = key_path.read_bytes()
-    if len(key) != 32:
+            handle.write(os.urandom(_PRINCIPAL_KEY_BYTES))
+    if not nofollow and _is_link_stat(os.lstat(key_path)):
+        # Windows has no O_NOFOLLOW: refuse a link by lstat before the read open.
+        raise OSError(errno.ELOOP, "refusing a linked principal key", str(key_path))
+    descriptor = os.open(key_path, os.O_RDONLY | nofollow | binary)
+    with os.fdopen(descriptor, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise PrincipalContractError("principal key is invalid")
+        if hasattr(os, "geteuid") and info.st_uid != os.geteuid():
+            raise PrincipalContractError("principal key is invalid")
+        if hasattr(os, "fchmod"):
+            os.fchmod(handle.fileno(), 0o600)
+        else:
+            key_path.chmod(0o600)
+        key = handle.read(_PRINCIPAL_KEY_BYTES + 1)
+    if len(key) != _PRINCIPAL_KEY_BYTES:
         raise PrincipalContractError("principal key is invalid")
     return key
 

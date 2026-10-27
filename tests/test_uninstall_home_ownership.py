@@ -82,6 +82,8 @@ class UninstallHomeOwnershipTests(unittest.TestCase):
         result = self._uninstall(self.omh)
         self.assertFalse(self.omh.exists())
         self.assertIn(str(self.omh), result["removed_paths"])
+        self.assertIn(str(self.omh / "manifest.json"), result["removed_paths"])
+        self.assertEqual(result["kept_paths"], [])
 
     def test_unowned_dry_run_matches_real_refusal(self) -> None:
         target = self.root / "unrelated"
@@ -100,6 +102,55 @@ class UninstallHomeOwnershipTests(unittest.TestCase):
         self.assertEqual((self.omh / "manifest.json").read_bytes(), before)
         actual = self._uninstall(self.omh)
         self.assertEqual(planned["would_remove"], actual["removed_paths"])
+
+    def _setup_with_foreign_entries(self) -> tuple[Path, Path, list[Path]]:
+        self._setup(self.omh)
+        owned = sorted(self.omh.iterdir())
+        personal = self.omh / "personal.txt"
+        personal.write_text("not OMH data\n", encoding="utf-8")
+        notes = self.omh / "my-notes"
+        (notes / "deep").mkdir(parents=True)
+        (notes / "deep" / "draft.md").write_text("keep\n", encoding="utf-8")
+        return personal, notes, owned
+
+    def _assert_foreign_split(self, result: dict, listed: str, personal: Path, notes: Path, owned: list[Path]) -> None:
+        reasons = {item["path"]: item["reason"] for item in result["kept_paths"]}
+        self.assertEqual(reasons.get(str(personal)), "not created by OMH", result)
+        self.assertEqual(reasons.get(str(notes)), "not created by OMH", result)
+        self.assertIn(str(self.omh), reasons)
+        self.assertEqual(sorted(result[listed]), sorted(str(path) for path in owned))
+        self.assertNotIn(str(self.omh), result[listed])
+
+    def test_owned_home_keeps_entries_omh_did_not_create(self) -> None:
+        personal, notes, owned = self._setup_with_foreign_entries()
+        self.assertIn(self.omh / "manifest.json", owned)
+        self.assertIn(self.omh / "skills", owned)
+        result = self._uninstall(self.omh)
+        self.assertEqual(personal.read_text(encoding="utf-8"), "not OMH data\n")
+        self.assertEqual((notes / "deep" / "draft.md").read_text(encoding="utf-8"), "keep\n")
+        self.assertEqual(sorted(self.omh.iterdir()), sorted([notes, personal]), "OMH entries survived uninstall")
+        self._assert_foreign_split(result, "removed_paths", personal, notes, owned)
+
+    def test_owned_home_with_foreign_entries_dry_run_matches_real_split(self) -> None:
+        personal, notes, owned = self._setup_with_foreign_entries()
+        planned = self._uninstall(self.omh, dry_run=True)
+        self.assertTrue(all(path.exists() for path in owned))
+        self._assert_foreign_split(planned, "would_remove", personal, notes, owned)
+        actual = self._uninstall(self.omh)
+        self.assertEqual(planned["would_remove"], actual["removed_paths"])
+        self.assertEqual(planned["kept_paths"], actual["kept_paths"])
+
+    def test_owned_home_foreign_entries_survive_cli_remove_files(self) -> None:
+        personal, notes, _ = self._setup_with_foreign_entries()
+        status, stdout, stderr = run_cli([
+            "--hermes-home", str(self.hermes), "--omh-home", str(self.omh),
+            "uninstall", "--remove-files", "--keep-command", "--json",
+        ])
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(sorted(self.omh.iterdir()), sorted([notes, personal]))
+        reasons = {item["path"]: item["reason"] for item in json.loads(stdout)["kept_paths"]}
+        self.assertEqual(reasons.get(str(personal)), "not created by OMH")
+        self.assertEqual(reasons.get(str(notes)), "not created by OMH")
 
     def test_hermes_home_and_home_ancestor_are_refused_with_force(self) -> None:
         for target in (self.hermes, self.root):

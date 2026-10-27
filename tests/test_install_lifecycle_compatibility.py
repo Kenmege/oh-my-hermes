@@ -23,7 +23,9 @@ class LifecycleCompatibilityTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory(prefix="lifecycle-compatibility-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # Resolve the root: Windows hands out an 8.3 alias (RUNNER~1) while OMH
+        # reports long-name paths, and kept_paths entries are compared whole.
+        self.root = Path(temporary.name).resolve()
         self.hermes = self.root / "hermes"
         self.store = self.root / "store"
         self.hermes.mkdir()
@@ -87,6 +89,18 @@ class LifecycleCompatibilityTests(unittest.TestCase):
         ])
         self.assertEqual(code, 0, stderr)
         self.binding(self.hermes, self.store)
+        code, payload, stderr = self.uninstall(self.hermes, "--keep-command")
+        self.assertEqual(code, 0, stderr)
+        # The store's OMH entries go; the fixture's user-record.json is not OMH's,
+        # so it and therefore the store directory itself are kept.
+        self.assertEqual(sorted(self.store.iterdir()), [self.sentinel], payload)
+        self.assertIn({"path": str(self.sentinel), "reason": "not created by OMH"}, payload["kept_paths"])
+        self.sentinel.unlink()
+        code, payload, stderr = run_cli([
+            "--hermes-home", str(self.hermes), "--omh-home", str(self.store),
+            "setup", "--core", "--yes", "--no-interactive", "--no-menubar", "--json",
+        ])
+        self.assertEqual(code, 0, stderr)
         code, payload, stderr = self.uninstall(self.hermes, "--keep-command")
         self.assertEqual(code, 0, stderr)
         self.assertFalse(self.store.exists(), payload)
