@@ -158,7 +158,10 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     owns. Matched by the real path of the `generations` directory, so the
     entry's spelling through `~`, a trailing slash or a link to the root is
     the same entry; `generations/<id>` itself is not resolved, because the
-    pack it names may no longer exist. Config order is kept.
+    pack it names may no longer exist. A relative entry is never one: Hermes
+    anchors it at its own home, so it names a directory there, not under the
+    managed root, whatever directory this command runs from. Config order is
+    kept.
     """
     if current is None:
         return []
@@ -166,7 +169,7 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     entries: list[str] = []
     for entry in external_dirs(config_text):
         normalized = os.path.normpath(os.path.expanduser(entry))
-        if os.path.normcase(os.path.basename(normalized)) != "skills":
+        if not os.path.isabs(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
             continue
         if _real_key(os.path.dirname(os.path.dirname(normalized))) == generations:
             entries.append(entry)
