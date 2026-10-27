@@ -4043,8 +4043,16 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # complete phrases. `marquee` is held back because "a marquee signing"
     # is sports vocabulary; `neobrutalism`, `shadcn`, and `tooltip` stay
     # creditable as distinctive UI vocabulary.
+    # The rendered-scene lane builds its phrases from "scene", "voxel",
+    # "art", and the "three" of three.js: credited alone they name this
+    # workflow for a crime scene, voxel-based morphometry, and a city's art
+    # scene. `webgl` and `threejs` stay creditable.
     "frontend": frozenset(
         {
+            "scene",
+            "voxel",
+            "art",
+            "three",
             "effect",
             "hero",
             "scroll",
