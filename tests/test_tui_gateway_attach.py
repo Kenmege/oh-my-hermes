@@ -11,12 +11,14 @@ stdio entry, and one whose `hermes_cli` has no attach API. The real
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 from pathlib import Path
 import sys
 import textwrap
+import threading
 import types
 import unittest
 from unittest.mock import patch
@@ -761,6 +763,8 @@ class _Socket:
         return self
 
     async def __anext__(self):
+        if os.environ.get("FAKE_OWNER_HANGS_UP"):  # the owner's side ends before it is ready
+            raise StopAsyncIteration
         return json.dumps(await self.inbox.get())
 
 
@@ -926,6 +930,46 @@ class ScriptTests(unittest.TestCase):
         self.assertIn("omh-attach: could not reach Hermes' gateway: server rejected WebSocket connection: HTTP 403",
                       tail)
         self.assertFalse([line for line in tail if "Traceback" in line], tail)
+
+    def test_an_owner_that_hangs_up_while_stdin_is_still_open_ends_the_child_with_its_own_code(self) -> None:
+        # The TUI holds the child's stdin open, so the stdin reader is still blocked in its read when the relay ends.
+        # Reading through `sys.stdin.buffer` there aborted the child at finalization (-6 on POSIX, #2327).
+        _home, environ = self.hermes(self.ATTACH_API, env={"FAKE_OWNER_HANGS_UP": "1"})
+        client = self.client(environ)
+        with self.assertRaises(GatewayUnavailable) as raised:
+            client.start(ready_timeout=10)
+        self.assertEqual(str(raised.exception), "the gateway exited with code 1 before gateway.ready")
+        tail = raised.exception.stderr_tail
+        self.assertIn("omh-attach: the connection to Hermes' gateway ended (close code None)", tail)
+        self.assertFalse([line for line in tail if "Fatal Python error" in line], tail)
+
+    def test_the_stdin_reader_delivers_one_line_per_newline_and_a_last_unended_line(self) -> None:
+        reading, writing = os.pipe()
+        long_line = b'{"text": "' + b"x" * (attach.STDIN_READ_BYTES * 2 + 7) + b'"}'
+        sent = b'{"a": 1}\n\n' + long_line + b'\n{"last": true}'  # more than a pipe holds: written as it is read
+
+        def write() -> None:
+            with open(writing, "wb") as stream:
+                stream.write(sent)
+
+        writer = threading.Thread(target=write, daemon=True)
+        writer.start()
+
+        async def lines() -> list[bytes | None]:
+            queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+            with patch.object(sys, "stdin", types.SimpleNamespace(fileno=lambda: reading)):
+                attach._start_stdin_reader(asyncio.get_running_loop(), queue)
+            read = [await asyncio.wait_for(queue.get(), 10)]
+            while read[-1] is not None:
+                read.append(await asyncio.wait_for(queue.get(), 10))
+            return read
+
+        try:
+            read = asyncio.run(lines())
+        finally:
+            writer.join(10)
+            os.close(reading)
+        self.assertEqual(read, [b'{"a": 1}', b"", long_line, b'{"last": true}', None])
 
     def test_a_hermes_with_the_attach_api_is_attached_to_and_translated(self) -> None:
         home, environ = self.hermes(self.ATTACH_API,
