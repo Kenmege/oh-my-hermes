@@ -115,6 +115,7 @@ def build_frame(
     gaps: tuple[bool, bool] = (False, False),
     gap_reserve: int = 0,
     badge: Line = (),
+    tail_spacer: bool = False,
 ) -> Frame:
     """The region for one repaint; `min_height` rows at least, pad rows under the live block making up the rest.
 
@@ -142,6 +143,8 @@ def build_frame(
     token, over its `/name` colour, and both rules, drawn heavy, while the
     draft holds one. `gaps` asks for a blank row above the slot and one under
     it (`layout.allocate` gives each only from spare rows, past `gap_reserve`).
+    `tail_spacer` says the tail's row right above its `tail_floor` rows is the
+    blank one over the working row: it goes when the tail does not fit whole.
     `badge` is the region's last row, under the info line and the agent view
     (the branch and the OMH Native badge); none when it is empty, and the
     first part to give way.
@@ -167,23 +170,30 @@ def build_frame(
             input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
         composer_lines = chips + input_lines
         caret_line += len(chips)
-    budget = allocate(
-        rows,
-        cols,
-        sticky=sticky is not None,
-        tail_rows=len(tail),
-        slot_rows=len(slot),
-        composer_rows=len(composer_lines),
-        min_height=min_height,
-        composer_hidden=composer is None,
-        text_question=text_question,
-        below_rows=len(below),
-        agents_rows=len(agents),
-        tail_floor=tail_floor,
-        gaps=(gaps[0] and bool(tail) and bool(tail[-1]), gaps[1]),  # a tail that ends blank is its own gap
-        gap_reserve=gap_reserve,
-        badge_rows=int(bool(badge)),
-    )
+    def fit(tail: Sequence[Line]) -> Budget:
+        return allocate(
+            rows,
+            cols,
+            sticky=sticky is not None,
+            tail_rows=len(tail),
+            slot_rows=len(slot),
+            composer_rows=len(composer_lines),
+            min_height=min_height,
+            composer_hidden=composer is None,
+            text_question=text_question,
+            below_rows=len(below),
+            agents_rows=len(agents),
+            tail_floor=tail_floor,
+            gaps=(gaps[0] and bool(tail) and bool(tail[-1]), gaps[1]),  # a tail that ends blank is its own gap
+            gap_reserve=gap_reserve,
+            badge_rows=int(bool(badge)),
+        )
+
+    budget = fit(tail)
+    spacer = len(tail) - tail_floor - 1  # the blank row `tail_spacer` says stands right above the working rows
+    if tail_spacer and budget.tail < len(tail) and 0 <= spacer and not tail[spacer]:
+        tail = [*tail[:spacer], *tail[spacer + 1 :]]  # a tail cut short gives its spacer up before a live row
+        budget = fit(tail)
     rule = rule_line(cols, theme)
     if glow and not composer_blank:
         rule = aura_rule(cols, base, glint, aura) if aura_moves(theme) else (
@@ -228,7 +238,7 @@ def badge_line(width: int, theme: Theme, accent: Style, native: Line, git: GitSt
     if git is not None:
         counts: list[Span] = []
         if git.changed:
-            counts.append(Span(f"!{git.changed}", theme.error))
+            counts.append(Span(f"!{git.changed}", theme.warn))  # a dirty tree is no error
         if git.untracked:
             counts += [Span(" ")] * bool(counts) + [Span(f"?{git.untracked}", theme.faint)]
         tail: Line = (Span(" | ", theme.dim), *counts) if counts else ()

@@ -27,7 +27,7 @@ from omh.tui.panels import HudSnapshot
 from omh.tui.screen import ERASE_TO_LINE_END, paint_line
 from omh.tui.style import SGR_RESET, Span, Style, fill
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import build_theme, is_light
+from omh.tui.theme import DEFAULT_LAUNCH, build_theme, is_light, with_prompt_band
 from omh.tui.transcript import (
     NOTICE_ERROR,
     NOTICE_OK,
@@ -64,15 +64,18 @@ def unrailed(rows: list) -> list:
 
 
 class BandTests(unittest.TestCase):
-    def test_a_prompt_has_no_band_on_any_theme_or_background(self) -> None:
-        # Round 4: your prompt reads as Claude Code's, a dim `>` and dim text with no band behind it; since the rail and
-        # kind colours (2026-10-22) it hangs on a dim rail, a block of its own.
+    def test_a_prompt_runs_on_the_look_s_band_wherever_a_background_was_reported(self) -> None:
+        # Round 4 drew your prompt with no band, a dim `>` and dim text on a dim rail; the owner's pick of 2026-10-27
+        # puts it on the launch look's band, to the right edge, on every theme and reported background, and on none
+        # when no background was reported.
         for skin in SKIN_THEMES:
             for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
-                rows = block_rows(UserBlock("first line\nsecond line"), 40, build_theme(skin, background))
+                theme = with_prompt_band(build_theme(skin, background), skin, background, DEFAULT_LAUNCH)
+                rows = block_rows(UserBlock("first line\nsecond line"), 40, theme)
                 with self.subTest(theme=skin.short_name, background=background):
                     self.assertEqual(lines_text(rows), ["┃ ❯ first line", "┃   second line"])
-                    self.assertEqual({span.style.bg for row in rows for span in row}, {None})
+                    band = {theme.prompt_band.bg} if background is not None else {None}
+                    self.assertEqual({span.style.bg for row in rows for span in row}, band)
 
     def test_the_fill_erases_to_the_edge_in_its_background_and_a_full_row_erases_nothing(self) -> None:
         band = Style(bg="#102030")
@@ -671,10 +674,11 @@ class SettledTailTests(unittest.TestCase):
                 plan = next(index for index, line in enumerate(screen) if "[Plan]" in line)
                 done = max(index for index, line in enumerate(screen[:plan]) if line.startswith("  ✻ "))
                 # The spacer row every block opens with, then the panel. On the bottom rows the region keeps its
-                # height as the turn ends, so the two blank rows the running turn had (over the working row and over
-                # the plan: the owner's spacing of 2026-10-27) stay as blank rows until the next prompt: blank rows
-                # only, three at most, the done line right above them and nothing of the transcript among them.
-                self.assertIn(plan - done - 1, (1, 2, 3), "\n".join(screen[done - 1 : plan + 1]))
+                # height as the turn ends, and a 40-row screen gave the running turn its blank row over the working
+                # row and over the plan (2026-10-27 spacing): one of them stays until the next prompt, two once the
+                # tall group's sticky prompt row is freed too. Blank rows only, the done line right above them.
+                blanks = {1: 2, 4: 2, 12: 3}[tools]
+                self.assertEqual(plan - done - 1, blanks, "\n".join(screen[done - 1 : plan + 1]))
                 self.assertEqual(set(screen[done + 1 : plan]), {""}, "\n".join(screen[done - 1 : plan + 1]))
 
     def test_the_prompt_and_its_sticky_echo_are_never_on_screen_together(self) -> None:

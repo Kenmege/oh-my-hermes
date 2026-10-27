@@ -967,9 +967,7 @@ class AgentViewBelowTests(unittest.TestCase):
         info = screen_info_index(app, screen)
         self.assertLess(info + len(VIEW), 23)
         self.assertEqual(screen[info + 1 : info + 1 + len(VIEW)], VIEW)
-        under = info + 1 + len(VIEW)
-        self.assertTrue(screen[under].rstrip().endswith("OMH Native ]"), screen[under])  # the badge row, the region's last
-        self.assertEqual(screen[under + 1 :], [""] * (24 - under - 1))  # nothing padded under it
+        self.assertEqual(screen[info + 1 + len(VIEW) :], [""] * (24 - info - 1 - len(VIEW)))  # nothing padded under it
         self.assertEqual(info, top + 3)
         output = max(index for index, row in enumerate(screen[:top]) if "a short output" in row)
         self.assertLessEqual(top - output, 4, "the composer follows the output, no pad rows above it")

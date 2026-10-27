@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 import subprocess
+from tempfile import TemporaryDirectory
 import threading
+import time
 import unittest
+from unittest import mock
 
+from _platform_support import requires_posix
 from _tui_lines import line_text
 from omh.skin_pack import default_theme
 from omh.tui.frame import badge_line
-from omh.tui.git_status import GitState, GitWatcher, parse_status, read_status
+from omh.tui.git_status import MIN_GAP_SECONDS, GitState, GitWatcher, parse_status, read_status
 from omh.tui.layout import BADGE_MIN_ROWS, allocate
 from omh.tui.style import Span
 from omh.tui.theme import (
@@ -45,27 +51,42 @@ class StatusTests(unittest.TestCase):
         self.assertIsNone(parse_status("fatal: not a git repository\n"))
 
     def test_a_missing_or_slow_git_or_a_directory_outside_a_repository_reads_as_nothing(self) -> None:
+        class Answer:
+            def __init__(self, code: int = 0, out: str = PORCELAIN, slow: bool = False) -> None:
+                self.returncode, self.out, self.slow, self.killed = code, out, slow, False
+
+            def communicate(self, timeout=None):
+                if self.slow and not self.killed:
+                    raise subprocess.TimeoutExpired("git", timeout)
+                return self.out, ""
+
+            def kill(self) -> None:
+                self.killed = True
+
         def missing(*_args, **_kwargs):
             raise FileNotFoundError("git")
 
-        def slow(*_args, **_kwargs):
-            raise subprocess.TimeoutExpired("git", 2.0)
-
-        def outside(argv, **_kwargs):
-            return subprocess.CompletedProcess(argv, 128, "", "fatal: not a git repository")
-
-        for run in (missing, slow, outside):
-            with self.subTest(run=run.__name__):
-                self.assertIsNone(read_status("/somewhere", run=run))
+        slow = Answer(slow=True)
+        for popen in (missing, lambda *_a, **_k: slow, lambda *_a, **_k: Answer(128, "")):
+            with self.subTest(popen=popen):
+                self.assertIsNone(read_status("/somewhere", popen=popen))
+        self.assertTrue(slow.killed, "a git past its timeout is killed, not left running")
 
     def test_the_read_is_read_only_and_bounded(self) -> None:
         seen = {}
 
-        def run(argv, **kwargs):
-            seen.update(argv=argv, **kwargs)
-            return subprocess.CompletedProcess(argv, 0, PORCELAIN, "")
+        class Answer:
+            returncode = 0
 
-        self.assertEqual(read_status("/repo", run=run), GitState("omh/terminology-unification", 3, 2))
+            def communicate(self, timeout=None):
+                seen["timeout"] = timeout
+                return PORCELAIN, ""
+
+        def popen(argv, **kwargs):
+            seen.update(argv=argv, **kwargs)
+            return Answer()
+
+        self.assertEqual(read_status("/repo", popen=popen), GitState("omh/terminology-unification", 3, 2))
         self.assertEqual(seen["argv"][:5], ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "status"])
         self.assertEqual((seen["cwd"], seen["timeout"] > 0), ("/repo", True))
 
@@ -84,11 +105,40 @@ class StatusTests(unittest.TestCase):
             self.assertTrue(changed.wait(2.0))
             self.assertEqual(watcher.state.branch, "main")
             changed.clear()
-            watcher.refresh()
-            self.assertTrue(changed.wait(2.0))
+            for _ in range(5):  # a burst of tool completions: at most one read for it, after the gap
+                watcher.refresh()
+            self.assertTrue(changed.wait(MIN_GAP_SECONDS + 2.0))
         finally:
             watcher.stop()
         self.assertTrue(all(name == "omh-git-status" for name in calls), calls)
+        self.assertLessEqual(len(calls), 3)
+
+    @requires_posix
+    def test_stopping_mid_read_kills_git_at_once(self) -> None:
+        # #2342 review: a quit while `git status` ran waited out the join and left git running after the TUI.
+        with TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "git"
+            fake.write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
+            fake.chmod(0o755)
+            started = threading.Event()
+            with mock.patch.dict(os.environ, {"PATH": f"{tmp}{os.pathsep}{os.environ.get('PATH', '')}"}):
+                watcher = GitWatcher(tmp)
+                track = watcher._track
+                seen: list[subprocess.Popen] = []
+
+                def tracked(process):
+                    if process is not None:
+                        seen.append(process)
+                        started.set()
+                    track(process)
+
+                watcher._track = tracked
+                watcher.start()
+                self.assertTrue(started.wait(5.0))
+                began = time.monotonic()
+                watcher.stop()
+                self.assertLess(time.monotonic() - began, 0.9)
+            self.assertIsNotNone(seen[0].wait(timeout=2.0), "git is gone with the watcher")
 
 
 class BadgeRowTests(unittest.TestCase):
@@ -101,7 +151,7 @@ class BadgeRowTests(unittest.TestCase):
         self.assertTrue(text.startswith("  branch:omh/terminology-unification | !3 ?128"), text)
         self.assertTrue(text.endswith("[ ⚚ OMH Native ]"), text)
         styles = {span.text: span.style for span in row}
-        self.assertEqual((styles["!3"], styles["?128"], styles["⚚"]), (theme.error, theme.faint, accent))
+        self.assertEqual((styles["!3"], styles["?128"], styles["⚚"]), (theme.warn, theme.faint, accent))
         self.assertEqual(styles["omh/terminology-unification"], theme.label)
 
     def test_counts_that_are_zero_are_left_out_and_no_repository_draws_the_badge_alone(self) -> None:
@@ -141,8 +191,8 @@ class BadgeRowTests(unittest.TestCase):
             budget = allocate(rows, 80, sticky=False, tail_rows=3, slot_rows=4, composer_rows=1, badge_rows=1)
             with self.subTest(rows=rows):
                 self.assertEqual(budget.badge, int(rows >= BADGE_MIN_ROWS))
-        busy = allocate(24, 80, sticky=False, tail_rows=3, slot_rows=8, composer_rows=1, badge_rows=1, agents_rows=7)
-        idle = allocate(24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, badge_rows=1)
+        busy = allocate(36, 80, sticky=False, tail_rows=3, slot_rows=12, composer_rows=1, badge_rows=1, agents_rows=9)
+        idle = allocate(36, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, badge_rows=1)
         self.assertEqual((busy.badge, idle.badge), (1, 1))  # a menu or the view never takes it, so nothing moves
 
 

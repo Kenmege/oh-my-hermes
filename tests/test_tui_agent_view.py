@@ -273,10 +273,7 @@ class ViewTests(unittest.TestCase):
         self.assertEqual(screen[top - 4], "", "and one between the tip and the plan")
         self.assertTrue(screen[top + 1].startswith("❯ ") and screen[top + 2].startswith(RULE_ROW), screen)
         self.assertEqual(info, top + 3)
-        self.assertEqual(screen[info + 1 : info + 1 + len(VIEW)], VIEW)
-        under = info + 1 + len(VIEW)
-        self.assertTrue(screen[under].rstrip().endswith("OMH Native ]"), screen)  # the badge row, the region's last
-        self.assertEqual(screen[under + 1 :], [""] * (len(screen) - under - 1))
+        self.assertEqual(screen[info + 1 :], [*VIEW, *[""] * (len(screen) - info - 1 - len(VIEW))])
 
     def test_a_finished_turn_keeps_its_view_with_each_agents_verdict(self) -> None:
         app, _client = agent_app(busy=False, frames=FRAMES, cols=80)

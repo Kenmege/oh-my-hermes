@@ -428,7 +428,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   composer between two full-width rules as Claude Code draws it (`───`,
   then `❯ …` rows, then `───`, with no side edges or corners),
   one dim info line under it, and, while there are subagents, the agent view
-  under that, always expanded (below). The region's last row, from 20 rows,
+  under that, always expanded (below). The region's last row, from 30 rows,
   holds the session directory's git branch on the left (`branch:<name> | !3
   ?128`: tracked files changed, then untracked, each only when not zero; a
   detached HEAD by its short sha; nothing outside a repository), read by

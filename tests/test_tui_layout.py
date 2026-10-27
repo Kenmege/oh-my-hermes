@@ -298,6 +298,54 @@ class GapTests(unittest.TestCase):
         self.assertEqual(frame.budget.gaps, (0, 1))
 
 
+class GapsNeverCostALiveRowTests(unittest.TestCase):
+    """#2342 review, HIGH: the plan's blank rows and the spacer over the working row once took the place of the
+    running turn's tool rows on short terminals. Every tool row the layout without them showed is still shown."""
+
+    # (rows, cols, agents): the tool rows shown before the gaps existed, measured on origin/main dc007063f.
+    BEFORE = {(10, 40, False): 1, (15, 60, False): 2, (19, 80, True): 1, (20, 80, True): 2, (24, 80, False): 3,
+              (24, 80, True): 3, (30, 80, True): 3, (30, 80, False): 3}  # from 30 rows: the badge row too
+
+    def scene(self, rows: int, cols: int, agents: bool):
+        from omh.tui.gateway import Event
+        from omh.tui.panels import HudSnapshot
+        from test_tui_agent_view import STARTS, relay
+        from test_tui_modes import SID, make_app
+        from test_tui_panels import hud_payload, phased_plan
+
+        now = [100.0]
+        app, _client = make_app(rows=rows, cols=cols, clock=lambda: now[0])
+        app.background = "#0D1117"
+        app.theme = app._themed()
+        app.stored_id = "stored"
+        app.hud = HudSnapshot("stored", hud_payload(phased_plan(5, phases=2, active=2)), now[0])
+        for index in range(30):
+            app.transcript.add_notice(f"earlier line {index}")
+        app._submit_prompt("해당 프로젝트 description기반으로 작성해줘 " * 3)
+        app._on_event(Event("message.start", SID, {}))
+        for index in range(3):
+            now[0] += 0.2
+            app._on_event(Event("tool.start", SID, {"tool_id": f"t{index}", "name": "read_file",
+                                                    "context": f"f{index}.py"}))
+        if agents:
+            relay(app, STARTS)
+        app._render()
+        return app.terminal.screen.lines()
+
+    def test_every_tool_row_shown_before_the_gaps_is_still_shown(self) -> None:
+        for (rows, cols, agents), before in self.BEFORE.items():
+            with self.subTest(rows=rows, cols=cols, agents=agents):
+                screen = self.scene(rows, cols, agents)
+                shown = sum("read_file" in row for row in screen)
+                self.assertGreaterEqual(shown, before, "\n".join(screen))
+
+    def test_a_tall_terminal_still_gets_both_gaps_around_the_plan(self) -> None:
+        screen = self.scene(42, 150, True)
+        plan = next(index for index, row in enumerate(screen) if row.startswith("[Plan]"))
+        rule = next(index for index, row in enumerate(screen) if row.startswith("─") and index > plan)
+        self.assertEqual((screen[plan - 1], screen[rule - 1]), ("", ""), "\n".join(screen))
+
+
 class HiddenComposerBudgetTests(unittest.TestCase):
     """While the person picks from a list the composer frame is not drawn and the slot takes its rows."""
 

@@ -1426,6 +1426,8 @@ class App(ModesMixin, AgentViewMixin):
         self.menu_below: bool | None = None
         self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.panel_shown = False  # the plan panel was in the slot `_slot_lines` last made: it gets its blank rows
+        self.tail_spacer = False  # `_tail` put a blank row above the working row, the first row to give way
+        self.badge_cache: tuple[object, Line] = (None, ())  # `_badge_line`'s last row and what it was drawn from
         self.pager: Pager | None = None
         self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         # What reads the bot board (Ctrl+S, `/bots`) off this thread: made when it first opens, kept for the session
@@ -4627,9 +4629,14 @@ class App(ModesMixin, AgentViewMixin):
         return self.launch_picker.highlighted if self.launch_picker is not None else self.launch_look
 
     def _badge_line(self, cols: int) -> Line:
-        """The row under the info line (`frame.badge_line`): the branch, and `[ ⚚ OMH Native ]` in the shown look."""
+        """The row under the info line (`frame.badge_line`): the branch, and `[ ⚚ OMH Native ]` in the shown look;
+        built again only when the width, the look, the theme or the branch changed."""
         if is_tiny(self.size[1], cols):
             return ()
+        state = self.git.state if self.git is not None else None
+        key = (cols, self._shown_look(), self.theme, state)
+        if self.badge_cache[0] == key:
+            return self.badge_cache[1]
         background = self._surface()
         palette = launch_palette(self._shown_look(), surface_for(self._skin(), background))
         if palette.sweep or palette.faces:  # the spectrum's hues across the letters, or the look's own colour
@@ -4640,8 +4647,9 @@ class App(ModesMixin, AgentViewMixin):
             native = (Span(NATIVE_WORD, Style(fg=lifted_colour(palette.spark, surface, TEXT_CONTRAST, ink), bold=True)),)
         if self.color_depth == NO_COLOR:
             native = tuple(Span(span.text, replace(span.style, depth=NO_COLOR)) for span in native)
-        state = self.git.state if self.git is not None else None
-        return badge_line(cols, self.theme, self._launch_paint().look.brand, native, state)
+        line = badge_line(cols, self.theme, self._launch_paint().look.brand, native, state)
+        self.badge_cache = (key, line)
+        return line
 
     def _launch_paint(self) -> LaunchPaint:
         """The shown look's card colours against the theme's background, painted at this terminal's depth."""
@@ -5048,6 +5056,7 @@ class App(ModesMixin, AgentViewMixin):
             composer_blank=self.list_selected is not None or self.tree_selected is not None,
             info=self._info_line(cols),
             tail=self._tail(cols),
+            tail_spacer=self.tail_spacer,  # read after `_tail` made it
             slot=self._slot_lines(cols, rows),
             badge=self._badge_line(cols),
             # The plan breathes: a blank row over it (where the tail does not end blank) and one between it and the rule.
@@ -5323,7 +5332,9 @@ class App(ModesMixin, AgentViewMixin):
                                            glint=self._aura_moves())
         if not lines and self.transcript.taken_any:
             lines = [()]  # the spacer a block opens with, here between the transcript and the region under it
-        if self._busy() and lines and lines[-1]:  # a blank row above the working row, as between two blocks
+        # A blank row above the working row, as between two blocks; the frame drops it first when rows are short.
+        self.tail_spacer = self._busy() and bool(lines) and bool(lines[-1])
+        if self.tail_spacer:
             lines.append(())
         if self._busy() and self.waiting_since is not None:
             # The turn waits on the person: no spinner, and one clock, the wait's.
@@ -5611,7 +5622,9 @@ def _run(
         theme=initial_theme(ready.payload, environ.get("OMH_HOME") or None),
         make_client=make_client,
         # The session's directory as the launcher names it; with none named, no branch (never the TUI's own cwd).
-        git=make_git(cwd) if (cwd := environ.get("HERMES_TUI_CWD") or environ.get("HERMES_CWD")) else None,
+        # TERMINAL_CWD is the attach entry's own fallback for the session directory (`gateway_attach`).
+        git=make_git(cwd) if (cwd := environ.get("HERMES_TUI_CWD") or environ.get("HERMES_CWD")
+                              or environ.get("TERMINAL_CWD")) else None,
     )
     try:
         app.startup()

@@ -401,7 +401,7 @@ class WorkingRowTests(unittest.TestCase):
         self.assertTrue([line for line in lines_text(listing._tail(100)) if "Tip:" in line])
 
 class PromptRowTests(unittest.TestCase):
-    def test_a_prompt_is_a_dim_mark_and_dim_text_on_no_band(self) -> None:
+    def test_without_a_prompt_band_a_prompt_is_a_dim_mark_and_dim_text_and_no_fill(self) -> None:
         for theme in (THEME, build_theme(SKIN_THEMES[0], "#1E1E1E"), build_theme(SKIN_THEMES[0], "#FFFFFF")):
             rows = block_rows(UserBlock("first line\nsecond line"), 40, theme)
             with self.subTest(theme=theme.name):
@@ -409,7 +409,7 @@ class PromptRowTests(unittest.TestCase):
                 self.assertEqual({row[0] for row in rows}, {Span("┃", theme.dim)})  # a grey rail down the prompt
                 self.assertEqual(rows[0][2], Span("❯ ", theme.dim))
                 self.assertEqual({span.style for row in rows for span in row[3:]}, {theme.muted})  # after the lead
-                self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no band, no fill
+                self.assertEqual({span.style.bg for row in rows for span in row}, {None})  # no prompt_band set: no fill
 
     def test_a_sent_prompt_runs_on_the_launch_look_s_band_to_the_right_edge(self) -> None:
         # Owner's pick of 2026-10-27 ("보낸프롬프트 배경색"): every row of a sent prompt, a wrapped and a blank one
@@ -479,7 +479,7 @@ class InfoLineInsetTests(unittest.TestCase):
     def test_the_info_line_starts_where_the_composers_text_does(self) -> None:
         app, _client = make_app(rows=24, cols=80)
         screen = [row for row in drawn(app) if row]
-        composer, info = screen[-4], screen[-2]  # the badge row is the region's last
+        composer, info = screen[-3], screen[-1]
         self.assertTrue(composer.startswith(PROMPT), screen)
         self.assertEqual(info.index("?"), len(PROMPT))  # under the composer's text, two cells in
         self.assertTrue(info.startswith("  ? for shortcuts"), info)

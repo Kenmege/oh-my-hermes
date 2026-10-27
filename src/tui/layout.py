@@ -77,8 +77,9 @@ MIN_COLS = 20
 # The bottom rule under the composer, kept only where the slot still gets its full cap beside it.
 BOTTOM_RULE_MIN_ROWS = 7
 # The badge row under the info line (the branch and OMH Native), drawn from this many rows: a shorter terminal keeps
-# its rows for the composer, the slot and the agent view.
-BADGE_MIN_ROWS = 20
+# its rows for the composer, the slot, the agent view and the running turn's tool rows (at 24x80 with the agent
+# view the row would cost one of them; #2342 review).
+BADGE_MIN_ROWS = 30
 # The agent view's usual most rows: main and six agents (or main, five and a `+N` row), as the agent list had.
 AGENT_VIEW_ROWS = 7
 
@@ -237,11 +238,12 @@ def allocate(
         sticky_rows = 1 if sticky and left > 0 else 0
         left -= sticky_rows
         # The blank rows asked for above and under a slot that has rows: only from what the slot, the agent view and
-        # the tail's floor leave, so they give way before any of those does. They stand above the composer, so on the
-        # bottom rows they push the transcript up, never the composer. (None goes above the agent view: there one
-        # would move the composer up or cost the view a row.) `gap_reserve` is the working rows' room whether or not
-        # a turn runs, so a gap never appears as a turn ends and moves the slot.
-        floor = max(min(max(tail_floor, 0), tail_rows), gap_reserve)
+        # the whole tail leave, so they give way before any of those does and never cost a live tool row (#2342
+        # review). They stand above the composer, so on the bottom rows they push the transcript up, never the
+        # composer. (None goes above the agent view: there one would move the composer up or cost the view a row.)
+        # `gap_reserve` is the working rows' room whether or not a turn runs, so a gap never appears as a turn ends
+        # and moves the slot.
+        floor = max(min(max(tail_floor, 0), tail_rows), gap_reserve, max(tail_rows, 0))
         spare = max(left - floor, 0) if slot > 0 else 0
         above = int(gaps[0] and spare > 0)
         spaced = (above, int(gaps[1] and spare > above))
