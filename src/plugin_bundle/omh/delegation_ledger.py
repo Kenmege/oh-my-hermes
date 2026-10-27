@@ -21,6 +21,12 @@ writes what they say, metadata only, into one record per conversation
   call started, in the order Hermes built them.
 * `subagent_stop`: the child's own status and duration.
 
+Each top-level child (one whose parent is the session's own agent, not
+another child) is also counted in memory per conversation, whether or not its
+record is written (`oneshot_children_spawned`): Hermes charges a one-shot
+session's child budget per process, at `subagent_start`, and keeps no count
+on disk either.
+
 No goal, summary, prompt or tool history is written. A title is drawn from
 Hermes' records when the graph is read, or, within this process, from the
 goal `subagent_start` carried, held in memory only (`child_title`). The
@@ -73,6 +79,7 @@ TITLE_LIMIT: Final = 120
 TITLE_CACHE_LIMIT: Final = 512
 DURATION_MS_LIMIT: Final = 10**12  # about 31 years: a duration past it is not a duration
 ROOT_CACHE_LIMIT: Final = 1024
+SPAWNED_ID_LIMIT: Final = 512  # top-level subagent ids already counted, so a repeated start counts once
 CLOSED_LIMIT: Final = 256  # lane keys a chat end post closed: ledger children and team parts alike
 SEEN_LIMIT: Final = 256  # lane keys a chat post already showed, so a dag run names the nodes it added once
 PRUNE_INTERVAL_SECONDS: Final = 3600.0  # how often one process looks for records that aged out
@@ -100,6 +107,9 @@ _GOAL_MARKER_TEXT: Final = re.compile(rf"\A\s*{_GOAL_MARKER}\s*|\s?{_GOAL_MARKER
 _TASK_LABEL: Final = re.compile(r"^(?:TASK|Task)\s*:\s*")
 _roots: OrderedDict[str, str] = OrderedDict()
 _titles: OrderedDict[str, str] = OrderedDict()
+# Top-level children started in this process, per conversation root; never written to disk.
+_spawned: OrderedDict[str, int] = OrderedDict()
+_spawned_ids: OrderedDict[str, str] = OrderedDict()
 ledger_declines: Counter[str] = Counter()
 _pruned_at: list[float] = [0.0]
 
@@ -153,6 +163,22 @@ def dag_binding(goal: object) -> dict[str, str]:
 def child_title(subagent_id: str) -> str:
     """The title this process saw at `subagent_start`, or "" (never written to disk)."""
     return _titles.get(subagent_id, "")
+
+
+def oneshot_children_spawned(session_ids: Sequence[str]) -> int:
+    """How many top-level children this process saw start in these conversation segments (`subagent_start`)."""
+    return sum(_spawned.get(_text(session_id), 0) for session_id in set(session_ids))
+
+
+def _count_spawned(root: str, subagent_id: str) -> None:
+    if subagent_id in _spawned_ids:
+        return
+    _remember(_spawned_ids, subagent_id, root, SPAWNED_ID_LIMIT)
+    count = _spawned.get(root, 0) + 1
+    _spawned[root] = count
+    _spawned.move_to_end(root)
+    while len(_spawned) > ROOT_CACHE_LIMIT:
+        _spawned.popitem(last=False)
 
 
 def _remember(cache: OrderedDict[str, str], key: str, value: str, limit: int) -> None:
@@ -503,10 +529,16 @@ def observe_subagent_start(kwargs: dict[str, object], *, now: float | None = Non
         return False
     moment = time.time() if now is None else now
     homes = _homes(kwargs)
+    top_level = not _text(kwargs.get("parent_subagent_id"))
     if homes is None:
+        # Hermes charged its budget for the child all the same: count it under the root this process knows.
+        if top_level:
+            _count_spawned(_roots.get(parent, parent), subagent_id)
         return False
     omh_home, hermes_home = homes
     root = root_session(parent, hermes_home)
+    if top_level:
+        _count_spawned(root, subagent_id)
     _remember(_roots, child, root, ROOT_CACHE_LIMIT)
     title = title_from_goal(kwargs.get("child_goal"))
     if title:

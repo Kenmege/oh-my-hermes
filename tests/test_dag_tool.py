@@ -1019,6 +1019,152 @@ class PreflightTests(unittest.TestCase):
                           if finding.startswith("serial_graph")])
 
 
+def oneshot_config(home, limit: int, *, cap: int = 10) -> None:
+    slots_table(home)
+    (home.hermes / "config.yaml").write_text(
+        f"delegation:\n  oneshot_max_children: {limit}\n  max_concurrent_children: {cap}\n", encoding="utf-8")
+
+
+def tasks_in(result: dict) -> int:
+    return sum(len(item["tasks"]) for item in result.get("calls", []))
+
+
+class OneShotBudgetTests(unittest.TestCase):
+    """The one-shot child budget across define, ready, settle, repair and extend: what this process already spent."""
+
+    def test_define_counts_children_this_session_already_started(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=True):
+            oneshot_config(home, 3)
+            start(home, "child-other", "sa-other", "Look something up", now=time.time())
+            refused = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            defined = call(action="define", run="feat", nodes=[node("a"), node("b")])
+        self.assertEqual((refused["status"], refused["reason"]), ("refused", "oneshot_budget_exceeded"), refused)
+        self.assertIn("at most 2 nodes", refused["say"])
+        self.assertIn("delegation.oneshot_max_children is 3", refused["say"])
+        self.assertIn("already started 1", refused["say"])
+        self.assertEqual(defined["status"], "ok", defined)
+        self.assertEqual(tasks_in(defined), 2)
+        self.assertEqual(defined["slots"]["oneshot"], {"limit": 3, "spent": 1, "remaining": 2})
+
+    def test_waves_never_carry_more_tasks_than_the_budget_left(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=True):
+            oneshot_config(home, 3)
+            defined = call(action="define", run="feat", nodes=[node("a"), node("b"), node("c")])
+            child_started(home, "feat", "a")
+            child_started(home, "feat", "b")
+            # a's child died on a provider error; c's call has not started its child yet, and will take the last one.
+            retried = call(action="settle", run="feat", node="a", outcome="failed", provider_error=True)
+            again = call(action="ready", run="feat")
+            child_started(home, "feat", "c")
+            for item in ("b", "c"):
+                handoff(home, "feat", item)
+            call(action="settle", run="feat", node="b", outcome="accepted")
+            left = call(action="settle", run="feat", node="c", outcome="accepted")
+            handoff(home, "feat", "a")
+            done = call(action="settle", run="feat", node="a", outcome="accepted")
+            record = dag_run.read_run(dag_run.record_path(home.omh, PARENT, "feat"))
+        self.assertEqual(tasks_in(defined), 3)
+        self.assertEqual(retried["settled"]["outcome"], "retry")
+        for result in (retried, again):
+            self.assertEqual(result["calls"], [], result)
+            self.assertEqual(result["held_for_slots"], ["a"])
+            self.assertIn("delegation.oneshot_max_children", result["say"])
+            self.assertEqual(result["slots"]["oneshot"], {"limit": 3, "spent": 2, "remaining": 1})
+        # Nothing else out and no child left: the parent does the node itself, with its handoff path, and settles it.
+        self.assertEqual((left["calls"], left["for_parent"]), ([], ["a"]), left)
+        self.assertNotIn("held_for_slots", left)
+        self.assertIn("yourself", left["say"])
+        self.assertIn("delegation.oneshot_max_children is 3", left["say"])
+        self.assertIn(dag_run.node_handoff(record, home.omh, "a"), left["say"])
+        self.assertEqual(done["state"], "done", done)
+        self.assertEqual(record["nodes"][0]["attempts"][-1]["lane"], "parent")
+
+    def test_a_reoffered_node_costs_a_child_too(self) -> None:
+        with homes() as home, patch.object(dag_tool, "_single_query_session", return_value=True):
+            oneshot_config(home, 2)
+            moment = time.time()
+            with patch.object(dag_tool.time, "time", return_value=moment):
+                call(action="define", run="feat", nodes=[node("a"), node("b")])
+            start(home, "child-other", "sa-other", "Something else", now=moment)
+            # No child ever took the call: both nodes come back once the hand-out is stale, with one child left.
+            with patch.object(dag_tool.time, "time", return_value=moment + dag_run.HANDOUT_STALE_SECONDS + 1):
+                reoffered = call(action="ready", run="feat")
+        self.assertEqual(tasks_in(reoffered), 1, reoffered)
+        self.assertEqual(reoffered["held_for_slots"], ["b"])
+
+    def test_a_grandchild_and_a_repeated_start_do_not_count(self) -> None:
+        from omh.plugin_bundle.omh import delegation_ledger
+
+        with homes() as home:
+            moment = time.time()
+            start(home, "child-a", "sa-a", "Top-level", now=moment)
+            start(home, "child-a", "sa-a", "Top-level", now=moment)
+            start(home, "grand-a", "sa-grand", "Nested", parent="child-a", parent_subagent="sa-a", now=moment)
+            self.assertEqual(delegation_ledger.oneshot_children_spawned([PARENT]), 1)
+            # Hermes charged the child even when its record cannot be written.
+            with patch.object(delegation_ledger, "_update", return_value=False):
+                self.assertFalse(start(home, "child-b", "sa-b", "Top-level", now=moment))
+            self.assertEqual(delegation_ledger.oneshot_children_spawned([PARENT, "other-session"]), 2)
+            self.assertEqual(delegation_ledger.oneshot_children_spawned(["other-session"]), 0)
+
+    def _failed_verify(self, home) -> None:
+        call(action="define", run="feat", nodes=[node("api", scope=("a.py",)), node("verify", depends_on=("api",))])
+        child_started(home, "feat", "api")
+        handoff(home, "feat", "api")
+        call(action="settle", run="feat", node="api", outcome="accepted")
+        child_started(home, "feat", "verify")
+        call(action="settle", run="feat", node="verify", outcome="failed", reason="2 tests red")
+
+    def test_repair_and_extend_refuse_more_nodes_than_children_left(self) -> None:
+        repair_nodes = [node("fix", scope=("a.py",), depends_on=("api",)), node("verify2", depends_on=("fix",))]
+        extend_nodes = [node("more", depends_on=("api",)), node("check", depends_on=("more",))]
+        for oneshot in (True, False):
+            with self.subTest(oneshot=oneshot), homes() as home, \
+                    patch.object(dag_tool, "_single_query_session", return_value=oneshot):
+                oneshot_config(home, 3)
+                self._failed_verify(home)
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                before = path.read_bytes()
+                repaired = call(action="repair", run="feat", node="verify", nodes=repair_nodes)
+                if oneshot:
+                    self.assertEqual((repaired["status"], repaired["reason"]), ("refused", "oneshot_budget_exceeded"))
+                    self.assertIn("1 more child", repaired["say"])
+                    self.assertEqual(path.read_bytes(), before)
+                else:
+                    self.assertEqual(repaired["settled"]["repair_nodes"], ["fix", "verify2"], repaired)
+            with self.subTest(oneshot=oneshot, action="extend"), homes() as home, \
+                    patch.object(dag_tool, "_single_query_session", return_value=oneshot):
+                oneshot_config(home, 2)
+                call(action="define", run="feat", nodes=[node("api", scope=("a.py",))])
+                child_started(home, "feat", "api")
+                handoff(home, "feat", "api")
+                call(action="settle", run="feat", node="api", outcome="accepted")
+                path = dag_run.record_path(home.omh, PARENT, "feat")
+                before = path.read_bytes()
+                extended = call(action="extend", run="feat", node="api", nodes=extend_nodes)
+                if oneshot:
+                    self.assertEqual((extended["status"], extended["reason"]), ("refused", "oneshot_budget_exceeded"))
+                    self.assertEqual(path.read_bytes(), before)
+                    one = call(action="extend", run="feat", node="api", nodes=extend_nodes[:1])
+                    self.assertEqual((one["status"], tasks_in(one)), ("ok", 1), one)
+                else:
+                    self.assertEqual(extended["settled"]["extend_nodes"], ["more", "check"], extended)
+
+    def test_interactive_and_unlimited_waves_are_unchanged(self) -> None:
+        nodes = [node(f"n{index}", scope=(f"f{index}",)) for index in range(3)]
+        for oneshot, limit in ((False, 1), (True, 0)):
+            with self.subTest(oneshot=oneshot, limit=limit), homes() as home, \
+                    patch.object(dag_tool, "_single_query_session", return_value=oneshot):
+                oneshot_config(home, limit, cap=2)
+                start(home, "child-other", "sa-other", "Something else", now=time.time())
+                result = call(action="define", run="feat", nodes=nodes)
+                self.assertEqual(result["status"], "ok", result)
+                self.assertNotIn("oneshot", result["slots"])
+                self.assertEqual([item["nodes"] for item in result["calls"]], [["n0", "n1"], ["n2"]])
+                self.assertNotIn("held_for_slots", result)
+                self.assertNotIn("say", result)
+
+
 class ExtendTests(unittest.TestCase):
     """Work found missing after every node passed: an extend round on the same run, at most two per run."""
 
