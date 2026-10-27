@@ -837,10 +837,17 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # 525403 -> 525400: the model-setup row drops the retired Apitopia, Qwen and
 # realtime-search/design wording and names Kimi K3 as superseded and DeepSeek
 # as a candidate (-3). Re-derived from the producer; the slack is retired.
-# 525400 -> 525401: show-reel adds 16 promo/demo/launch/trailer triggers; its
+# 525400 -> 526271: only the `visual-qa` row moves (+871). Its quality bar
+# gains the composed-frame rule from the 2026-10-26 promo postmortem: a
+# look-alike of an existing UI in place of its renderer's output is BLOCK
+# (labeled concept and brief-requested stylised treatments are not), and
+# fill (full-bleed minus the edge inset without subtitles, the body safe area
+# with them), logo clear space, decorative meta text and per-locale count
+# agreement are measured. No other row changed. Re-derived from the producer.
+# 526271 -> 526272: show-reel adds 16 promo/demo/launch/trailer triggers; its
 # row only counts the ones past those it shows ("+5 more triggers" becomes
 # "+21 more triggers", +1). Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 525401
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 526272
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

@@ -62,10 +62,12 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # when its runtime names became scoring-only (same length).
             # 522331 -> 522328 and the digest re-derived again for the
             # model-setup row refresh (-3); no other row moved.
-            # 522328 -> 522329 and the digest re-derived: the show-reel row's
+            # Then the promo postmortem's visual-qa quality-bar rule grows that
+            # sibling row: 522328 -> 523199.
+            # 523199 -> 523200 and the digest re-derived: the show-reel row's
             # trigger count went +5 -> +21 (+1); no other row moved.
-            (skill_capabilities, 522329, FULL_ROW_DELTA_CAP,
-             '9dc9a60808e1e7edeca220f7050605b440b896a21e762e1958b72fe2d7c34d92',
+            (skill_capabilities, 523200, FULL_ROW_DELTA_CAP,
+             '751c0567023208630d53ffc7317fc4910e091ab8f141f21d1989b905b25cacd8',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -128,7 +130,9 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
         # Re-derived again for the model-setup body refresh (retired provider
         # and role-slot wording); only model-setup moves versus main.
-        self.assertEqual(_digest(legacy_hashes), '442aec8ac07203adcdaa407ba09d9696043a7924986851a669f04efeb8e7e201')
+        # Then the promo postmortem in content-operator, design-quality-gate,
+        # show-reel, and visual-qa.
+        self.assertEqual(_digest(legacy_hashes), 'e0b95cb486a60fe02d063d2afde0f842a911135c370e4c1f7bc63b3d3d9cc40a')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
