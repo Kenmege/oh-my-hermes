@@ -63,14 +63,14 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # when its runtime names became scoring-only (same length).
             # 522331 -> 522328 and the digest re-derived again for the
             # model-setup row refresh (-3); no other row moved.
-            # 522328 -> 522372 and the digest re-derived: the ru trigger pack, after
-            # its review, moves sibling rows' trigger previews and `+N more`
+            # Then the promo postmortem's visual-qa quality-bar rule grows that
+            # sibling row: 522328 -> 523199.
+            # 523199 -> 523243 and the digest re-derived: the ru trigger pack,
+            # after its review, moves sibling rows' trigger previews and `+N more`
             # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
-            # career row is unchanged. The digest moved again, not the total,
-            # when the pack kept one phrase of each nested held-back pair:
-            # six rows' `+N more` counts drop (code-review's by two) at the same width.
-            (skill_capabilities, 522372, FULL_ROW_DELTA_CAP,
-             '8970ab66a6a1b89655ddda4c69c9758baf66f78c52e0e8a19df17febb345f57f',
+            # career row is unchanged.
+            (skill_capabilities, 523243, FULL_ROW_DELTA_CAP,
+             '6117d8a6608a0c5f8f54b0aad6a4f09a5042b495e4314c3b768b23d6404db2d1',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 141700, STANDALONE_ROW_DELTA_CAP,
              'a108c8d1b94c4b2ea75326b4daf340f65086472306a307682896117dc1236e20',
@@ -137,11 +137,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # model-setup, maestro, ultrawork, and executor-runtime-readiness.
         # Re-derived again for the model-setup body refresh (retired provider
         # and role-slot wording); only model-setup moves versus main.
+        # Then the promo postmortem in content-operator, design-quality-gate,
+        # show-reel, and visual-qa.
         # Re-derived for the ru trigger pack: the 49 bodies it covers gain
         # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
-        # Re-derived again when the pack dropped the shorter phrase of each
-        # nested held-back pair.
-        self.assertEqual(_digest(legacy_hashes), '918c71c67813e0a1333fea0f1e7e6c32f237e851e3364366213875490e1142f2')
+        self.assertEqual(_digest(legacy_hashes), 'cc6d48c3e3cc343c56d48c23d2f774235159aa3365771dbca6777c747aff36bb')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         self.assertEqual(legacy['repeated']['bytes'], 124650)  # Main's search guidance adds 305.
