@@ -854,7 +854,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 69186
 # producer on the tree merged with main.
 # 526315 -> 529305: one repro-audit capability row (+2990); no other row
 # moved. Re-derived from the producer on the tree merged with main.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 529305
+# 529305 -> 529306: show-reel adds 8 promo/launch/product video triggers;
+# its row only counts the ones past those it shows ("+5 more triggers" becomes
+# "+13 more triggers", +1). Re-derived from the producer on the tree merged
+# with main.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 529306
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

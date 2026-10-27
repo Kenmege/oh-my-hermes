@@ -901,7 +901,25 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # owner and the target (+10). A quoted, code-span, curly-quoted or
             # single-quoted trailing clause is masked before the predicate
             # reads it, so shielded messages never admit the skill (+4).
-            expected=1186,
+            # show-reel promo/demo/launch/trailer names: the same words as a
+            # playback fault, an edit, an upload, a conversion, a chained post,
+            # a towed trailer, a video call and a renderer install (+8).
+            # The #2322 review classes: a demo, product or explainer video of
+            # a fault (4), a renderer-led statement about a render (4), and
+            # editing or trimming an everyday video (3) (+11).
+            # The #2322 delta review classes: a timed, cinematic or numbered
+            # fault recording (4), a fault in a later sentence (3), a
+            # marketing noun over a fault (2), and cut or edit on a sizzle
+            # reel (2) (+11).
+            # The #2322 third delta: a closed form beside a backticked,
+            # quoted, curly-quoted, `>`-quoted, fenced or linked fault (8), a
+            # three-digit v-version (1), and a with-adjunct that does not end
+            # the sentence (1) (+10).
+            # The #2322 fourth delta: a closed form beside a source path, a
+            # file and line, a bare-domain link or a script the router strips
+            # (4), under a reply pointer or an attachment note (2), with an
+            # emoji (1), and a with-adjunct naming people (2) (+9).
+            expected=1235,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1432,7 +1450,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # its review three more: own results, a score against a reported
             # metric, a courtesy opener (+3), and its delta review a request
             # that closes on the compared metric (+1).
-            expected=1159,
+            # show-reel promo/demo/launch/trailer names, a two-word duration
+            # and a renderer-led brief, each of which dispatched another lane
+            # or asked on main (+8).
+            # A with-adjunct closes a promo video brief (+1).
+            expected=1168,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

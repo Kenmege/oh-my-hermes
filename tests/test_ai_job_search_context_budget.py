@@ -73,8 +73,10 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # career row is unchanged.
             # 523243 -> 526233 and the digest re-derived: repro-audit adds one
             # row to each producer (+2990 full, +929 standalone).
-            (skill_capabilities, 526233, FULL_ROW_DELTA_CAP,
-             'b4dde327c355ec019ae372125b00b280e1cd39a59291ca3ebf28b9ffa5115393',
+            # 526233 -> 526234 and the digest re-derived: the show-reel
+            # row's trigger count went +5 -> +13 (+1); no other row moved.
+            (skill_capabilities, 526234, FULL_ROW_DELTA_CAP,
+             '2b435141c0603289a60b99d1dd9d0111a2a25cc47887216e341b4a04a6d7fe0e',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 142629, STANDALONE_ROW_DELTA_CAP,
              'a130544228a3583763e8b987f2a2e07983015ff8f6b832cdc72c230f5f069019',

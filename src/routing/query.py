@@ -53,9 +53,15 @@ class RoutingQuery:
     # text named is unread, so a predicate that reads where data goes must
     # not prove a place inside (`recommend._SHIELDED_OFFERS_ITSELF`).
     shielded: bool = False
+    # The request as the person wrote it, before masking, status-line
+    # scrubbing or path stripping, or the whole turn when a reply pointer or an
+    # attachment note was cut from it (`host_context_removed`). A reader that
+    # must prove a request whole (`recommend._RAW_TEXT_OFFERS_ITSELF`) reads
+    # this, so no stage between it and `normalized` can hide anything.
+    original: str = ""
 
     @classmethod
-    def from_message(cls, text: str, *, shielded: bool = False) -> RoutingQuery:
+    def from_message(cls, text: str, *, shielded: bool = False, original: str = "") -> RoutingQuery:
         # `recommend.py` imports this module, so its helpers load late.
         from .recommend import _strip_path_like_fragments, _tokens
 
@@ -72,6 +78,7 @@ class RoutingQuery:
             tokens=frozenset(_tokens(normalized)),
             loop_timer=loop_timer_verdict(executable),
             shielded=shielded or executable != text,
+            original=original or text,
         )
 
     @classmethod
@@ -88,7 +95,7 @@ class RoutingQuery:
         """
         from .recommend import _offers_itself_predicate
 
-        offers_itself = _offers_itself_predicate(skill, shielded=self.shielded)
+        offers_itself = _offers_itself_predicate(skill, shielded=self.shielded, raw=self.original)
         if offers_itself is None:
             return False
         return not offers_itself(self.normalized, set(self.tokens))

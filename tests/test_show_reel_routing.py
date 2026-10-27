@@ -59,6 +59,23 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a 2-minute launch film covering the three new features.",
             "Hey, create a cinematic launch film for the conference keynote.",
             "Create a showreel that introduces OMH.",
+            "Make a demo video for the launch.",
+            "Create a product video for our new homepage.",
+            "Make an animated demo video showing the setup wizard.",
+            "hyperframes teaser video for the beta",
+            "Make a sizzle reel for our booth.",
+            "Make a promo video with subtitles.",
+            "Produce a teaser video for the v2 launch.",
+            "Make a quick demo video showing the onboarding flow.",
+            "Create an explainer video about the memory system for the team.",
+            "make a promo video of the omh TUI",
+            "make a 30 second demo video of our terminal UI",
+            "hyperframes promo video for the launch",
+            "HyperFrames launch video for the new TUI",
+            "Create a hyperframes video for the release.",
+            "Make a 15-second teaser trailer for the release.",
+            "Design an animated explainer video for the API.",
+            "Could you create a product launch video for our Korean audience?",
             "제품 쇼케이스 영상 만들어줘",
             "제품 쇼케이스 영상을 영어로 만들어줘",
             "製品ショーケース動画を作ってください",
@@ -99,9 +116,99 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Produce a launch film, then deploy the landing page.",
             "Create a launch film: also review the PR that adds the video player.",
             "Make a showreel from these clips and translate the subtitles to Japanese.",
+            # The everyday names are whole phrases: a bare trailer, a video
+            # call, a player component, the renderer alone, a defect recording.
+            "Build a trailer for my boat.",
+            "Make a trailer hitch diagram for the manual.",
+            "Make a video call to the client.",
+            "Make a demo video player component in React.",
+            "Make the promo video shorter.",
+            "Make a demo video and post it to Slack.",
+            "Make a demo video of the bug for the issue tracker.",
+            "Install hyperframes on my laptop.",
+            "Is hyperframes open source?",
+            "HyperFrames rendering is slow on my laptop.",
+            "hyperframes",
+            "Make a promo code for 20% off.",
+            # An everyday film noun followed by anything but closed adjuncts
+            # may be a recording of a fault.
+            "Make a demo video of the checkout failure for the issue tracker.",
+            "Make a demo video showing the stalled import for QA.",
+            "Create a product video of the outage for the postmortem.",
+            "Make an explainer video of how to reproduce the hang.",
+            "Make a demo video for the launch review regression.",
+            # A renderer lead with no verb is a brief only as the noun and
+            # closed adjuncts, and nothing after it.
+            "Hyperframes video for the signup page does not load.",
+            "hyperframes promo video of the dashboard keeps flickering",
+            "HyperFrames teaser video from Friday is stuck at 70%.",
+            "hyperframes launch video for the release broke",
+            # A marker says how a clip runs, not what it shows.
+            "Make a 40 second demo video of the import crash.",
+            "Make an animated explainer video of why the backup failed.",
+            "Make a promo video of the billing outage for the status page.",
+            # A later sentence may report the fault.
+            "Hyperframes video for the homepage. It renders blank.",
+            "Make a demo video for the plugin. Install hangs at step two.",
+            # Masked text beside a closed form may name the fault it shows.
+            "Make a product video for the plugin `KeyError: 'id'`",
+            'Make a demo video for the app "it double charges"',
+            "Make a demo video for the beta\n\n> panic: nil map",
+            "Make a launch video for the release https://github.com/acme/app/pull/9",
+            "hyperframes promo video for the launch 'stalls at 80%'",
+            # Text the router strips after masking, and an emoji.
+            "Make a demo video for the plugin src/cli/main.py:77",
+            "Make a demo video for the app ./bin/repro",
+            "Make a demo video for the beta \U0001F41B",
+            # `with` takes only a production track.
+            "Make a promo video with the sales team.",
+            # Only v plus one or two digits is a version.
+            "Make a demo video of the v503 page.",
+            # `cut` and `edit` lead only a reel noun.
+            "Edit a sizzle reel, then trim the intro.",
+            "Cut a sizzle reel from the conference footage.",
+            "Edit a promo video for the client, just drop the last scene.",
+            "Cut a launch video down to six seconds.",
+            "Edit a demo video for the launch.",
         ):
             with self.subTest(message=message):
                 self.assertFalse(show_reel_request_admitted(message))
+
+    def test_catalog_triggers_leave_other_skills_shortlist_words_alone(self):
+        # "demo", "clip", "explainer" and "trailer" belong to other skills'
+        # catalog text, so the phrases built from them are admission-only:
+        # as triggers they lowered those words' weight and dropped the
+        # media and connector lines for a request to consume a video.
+        from omh.plugin_bundle.omh.skill_shortlist import skill_candidates
+
+        listed = [name for name, _ in skill_candidates("Summarize this demo video for the team.")]
+        self.assertIn("omh-media-input", listed)
+        self.assertNotIn("omh-show-reel", [name for name, _ in skill_candidates("Make a short clip of the sprint review recording for the team.")])
+        triggers = set(skill_record("show-reel").definition.triggers)
+        for phrase in ("demo video", "product demo video", "promo clip", "explainer video", "launch trailer"):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, triggers)
+
+    def test_a_caller_that_masked_the_text_refuses_a_closed_form(self):
+        # The router passes masked text and says so (`RoutingQuery.shielded`).
+        self.assertTrue(show_reel_request_admitted("Make a demo video for the app"))
+        self.assertFalse(show_reel_request_admitted("Make a demo video for the app", shielded=True))
+        # main's reel nouns read as on main.
+        self.assertTrue(show_reel_request_admitted("Create a launch film.", shielded=True))
+
+    def test_a_closed_form_must_hold_on_the_request_as_written(self):
+        from omh.plugin_bundle.omh.hermes_session_commands import host_context_removed
+
+        processed = "make a demo video for the app"
+        self.assertTrue(show_reel_request_admitted(processed, raw="Make a demo video for the app."))
+        self.assertFalse(show_reel_request_admitted(processed, raw="Make a demo video for the app lib/app.py:9"))
+        # main's reel nouns read as on main.
+        self.assertTrue(show_reel_request_admitted("create a launch film", raw="Create a launch film lib/app.py"))
+        turn = '[Replying to: "login loops back"]\n\nMake a demo video for the app'
+        self.assertTrue(host_context_removed(turn))
+        self.assertFalse(host_context_removed("Make a demo video for the app"))
+        self.assertNotEqual(route_chat_message(turn, source="discord").get("selected_skill"), "show-reel")
+        self.assertNotEqual(awareness_route_hint(turn)["primary_workflow"], "show-reel")
 
     def test_a_courtesy_opener_keeps_an_asked_request(self):
         self.assertTrue(show_reel_request_admitted("Can you make a show reel?"))

@@ -75,7 +75,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # the #2324 review adds ten more for its execution and relation clauses,
         # and its delta review ten more, one per position of the allow-listed shape,
         # then four quoted or code-span trailing clauses.
-        self.assertEqual(payload["summary"]["case_count"], 1186)
+        self.assertEqual(payload["summary"]["case_count"], 1235)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -205,7 +205,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # repro-audit adds one HellaSwag log versus paper request, and its
         # review three more requests in the admitted shape, then one that
         # closes on the compared metric.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1159)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1168)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

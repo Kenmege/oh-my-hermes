@@ -8538,7 +8538,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Only a premium layout quality assessment is wanted; use `design-quality-gate`.
   - The user already has rendered frames and needs a visual verdict, not new production; use `visual-qa`.
   - Routine trimming, file conversion, live broadcasting, fishing equipment, tape storage, film criticism and social posting alone do not need this method.
-- Strong routing signals: `show-reel`, `show reel`, `showreel`, `product showcase video`, `animated product film`, `motion showcase`, `animated portfolio`, `launch film`, `product teaser video`, `製品ショーケース動画`, `제품 쇼케이스 영상`, `产品展示短片`
+- Strong routing signals: `show-reel`, `show reel`, `showreel`, `product showcase video`, `animated product film`, `motion showcase`, `animated portfolio`, `launch film`, `product teaser video`, `promo video`, `promotional video`, `launch video`, `product launch video`, `product video`, `teaser video`, `sizzle reel`, `hyperframes video`, `製品ショーケース動画`, `제품 쇼케이스 영상`, `产品展示短片`
 - Good example:
   - Prompt: Create a 20-second muted product showcase video for a Japanese audience using these approved screenshots and English brand names.
   - Expected behavior: Verify sources and locale, compare three concepts, direct segments, author motion with available tools, inspect the measured export, and deliver sources with honest gaps.

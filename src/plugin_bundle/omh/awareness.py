@@ -33,6 +33,7 @@ from .hermes_session_commands import (
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     NATIVE_LOOP_CADENCE_HINT_KEY,
     host_command_turn,
+    host_context_removed,
     loop_timer_verdict,
     person_request_text,
 )
@@ -6089,7 +6090,7 @@ def _data_share_awareness_marked(text: str) -> bool:
     return bool(data_share_phrases_said(text)) and data_share_request_admitted(text)
 
 
-def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
+def awareness_route_hint(message: str, *, max_hints: int = 2, context_removed: bool = False) -> dict[str, object]:
     """Return bounded message-specific workflow hints without exposing raw text.
 
     The hint reads the person's own words (`person_request_text`), never the
@@ -6099,9 +6100,14 @@ def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, objec
     removed only by a caller that knows the turn came through a messaging
     gateway (the `pre_llm_call` hook, the router, the wrapper); here a
     leading bracket stays the person's.
+
+    `context_removed`: a caller that already cut the person's words from the
+    turn says whether a reply pointer or an attachment note went with it
+    (`host_context_removed`); this reader also finds one in `message` itself.
     """
     request = "" if host_command_turn(message) else person_request_text(message)
-    return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(request, max(max_hints, 0)))
+    context_removed = context_removed or host_context_removed(message)
+    return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(request, max(max_hints, 0), context_removed))
 
 
 def _copy_awareness_route_hint_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -6188,7 +6194,7 @@ def _route_hint_with_action_labels(hint: dict[str, object]) -> dict[str, object]
 
 
 @lru_cache(maxsize=512)
-def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, object]:
+def _awareness_route_hint_cached(message: str, max_hints: int, context_removed: bool = False) -> dict[str, object]:
     degraded: list[tuple[str, str]] = []
     matching_message = executable_routing_text(message)
     intent = classify_workflow_intent(matching_message)
@@ -6292,7 +6298,9 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 continue
             if _rule_suppressed_by_reference_intent(rule, intent):
                 continue
-            if _rule_suppressed_by_context(rule, routing_normalized, shielded=matching_message != message):
+            if _rule_suppressed_by_context(
+                rule, routing_normalized, shielded=matching_message != message, raw=message, context_removed=context_removed
+            ):
                 continue
             if rule["id"] == "loopability_goal" and timed_native_loop:
                 continue
@@ -8680,7 +8688,9 @@ def _long_document_page_count_signal(text: str) -> bool:
     )
 
 
-def _rule_suppressed_by_context(rule: dict[str, object], text: str, *, shielded: bool = False) -> bool:
+def _rule_suppressed_by_context(
+    rule: dict[str, object], text: str, *, shielded: bool = False, raw: str = "", context_removed: bool = False
+) -> bool:
     rule_id = str(rule.get("id", ""))
     if rule_id == "data_share_review":
         # `shielded`: the masker removed quoted, code, link or relayed text
@@ -8688,6 +8698,12 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str, *, shielded:
         # and no place is then proven inside. The router takes the same
         # report from its own masking (`RoutingQuery.shielded`).
         return not data_share_request_admitted(text, shielded=shielded)
+    if rule_id == "show_reel_production":
+        # The same report: a closed show-reel form with masked text beside it,
+        # or with a reply pointer or an attachment note cut from the turn, may
+        # be showing the fault that text names; and it must hold on the
+        # request as written, as the router reads it (`show_reel_cues`).
+        return not show_reel_request_admitted(text, shielded=shielded or context_removed, raw=raw or None)
     visual_markers = (
         "image card",
         "summary card",
