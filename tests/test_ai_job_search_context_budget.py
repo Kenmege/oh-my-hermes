@@ -3,8 +3,9 @@
 Baseline: 245d34d7135ba0fba18afbf7f4151d5c4f6a5f37 (integration main).
 Legacy body hashes match main's producer-derived digest fixture after restoring
 only the research lane cardinality; integration-1/merged-measurements.json
-records the combined repeated-byte measurement. The unchanged index, capability
-and registry pins retain their original 85673e100 measurements. Hashes pin existing
+records the combined repeated-byte measurement. The index pin retains its
+original 85673e100 measurement; the capability and registry pins are re-derived
+for the ru trigger pack's sibling-row triggers. Hashes pin existing
 content, not just its size, so removing a safeguard cannot finance this feature.
 """
 from __future__ import annotations
@@ -66,10 +67,14 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
             # model-setup row refresh (-3); no other row moved.
             # Then the promo postmortem's visual-qa quality-bar rule grows that
             # sibling row: 522328 -> 523199.
-            # 523199 -> 526189 and both digests re-derived: repro-audit adds
-            # one row to each producer (+2990 full, +929 standalone).
-            (skill_capabilities, 526189, FULL_ROW_DELTA_CAP,
-             '323ec53a271866da516ce1e412bb2e6c1450598aa7b72ba6e34a45cfc4c03ade',
+            # 523199 -> 523243 and the digest re-derived: the ru trigger pack,
+            # after its review, moves sibling rows' trigger previews and `+N more`
+            # counts (itemized at FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT); the
+            # career row is unchanged.
+            # 523243 -> 526233 and the digest re-derived: repro-audit adds one
+            # row to each producer (+2990 full, +929 standalone).
+            (skill_capabilities, 526233, FULL_ROW_DELTA_CAP,
+             'b4dde327c355ec019ae372125b00b280e1cd39a59291ca3ebf28b9ffa5115393',
              release.FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT),
             (standalone_skill_capability_items, 142629, STANDALONE_ROW_DELTA_CAP,
              'a130544228a3583763e8b987f2a2e07983015ff8f6b832cdc72c230f5f069019',
@@ -98,11 +103,15 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         self.assertEqual(len(added[0].encode()), 227)
         # Remove only the new row and the explicit operator membership token.
         legacy = [line.replace(', `ai-job-search`', '') for line in lines if line not in added]
-        # 32874 -> 32977 and the digest re-derived: repro-audit adds its
+        # Re-derived for the ru trigger pack: `running-work-board` gains
+        # `что сейчас делается` and `dag-ulw` three Cyrillic triggers (+123 bytes).
+        # The pack review replaces `что сейчас делается` with `что делают
+        # агенты` (-4 bytes).
+        # 32993 -> 33096 and the digest re-derived: repro-audit adds its
         # trigger row and its researcher membership (+103).
-        self.assertEqual(_digest(legacy), '1af48fce20ef8ee658c8d84607a231216f761d5f35854944f0113d2e62d466cd')
+        self.assertEqual(_digest(legacy), 'f40d6d4ac1b0d0b7e4489815f21c382c9669136e9c89582c22bce7c8a6a1d0e2')
         baseline = len(''.join(legacy).encode())
-        self.assertEqual(baseline, 32977)
+        self.assertEqual(baseline, 33096)
         self.assertLess(baseline, 33_100)  # The existing content keeps its old gate.
         self.assertLessEqual(len(registry.encode()) - baseline, REGISTRY_DELTA_CAP)
 
@@ -137,9 +146,11 @@ class AiJobSearchContextBudgetTests(unittest.TestCase):
         # and role-slot wording); only model-setup moves versus main.
         # Then the promo postmortem in content-operator, design-quality-gate,
         # show-reel, and visual-qa.
+        # Re-derived for the ru trigger pack: the 49 bodies it covers gain
+        # Cyrillic phrases on their routing-signal line; repeated bytes do not move.
         # Re-derived again for repro-audit: its own body joins the legacy set
         # (and again for its review's confirmation-wording fix).
-        self.assertEqual(_digest(legacy_hashes), '4d81bf6275a291e799bce43d38badfdd5df9019ba53598e41df02c2c9192eff4')
+        self.assertEqual(_digest(legacy_hashes), '055021f66e10653f53baa63fa5bd7e01dd84882116802e1f7c32cdcf104a79f3')
         legacy = _skill_context_cost_profile('full', legacy_templates, refs)
         current = _skill_context_cost_profile('full', templates, refs)
         # Main's search guidance adds 305; repro-audit's mandatory rails 1,943.

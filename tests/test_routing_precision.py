@@ -68,12 +68,14 @@ class RoutingPrecisionTests(unittest.TestCase):
         # Three science vocabulary controls remain direct answers.
         # Career actor repair adds five employer requests and two references.
         # Actor/objective follow-up adds seven employer contrasts.
+        # The Russian trigger pack adds three negatives its held-back words guard,
+        # and its review twenty-five everyday Russian turns.
         # repro-audit adds one vocabulary control; its review replaces it with
         # 19 controls that each say a phrase the skill once dispatched on;
         # the #2324 review adds ten more for its execution and relation clauses,
         # and its delta review ten more, one per position of the allow-listed shape,
         # then four quoted or code-span trailing clauses.
-        self.assertEqual(payload["summary"]["case_count"], 1158)
+        self.assertEqual(payload["summary"]["case_count"], 1186)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -198,10 +200,12 @@ class RoutingPrecisionTests(unittest.TestCase):
         # two negatives that hold broad wording out (a red-team hiring
         # sentence and gop prose). Both `gộp` gate phrases clarify, so their
         # `merge` twins stay beside them and keep the dispatch path.
+        # The Russian trigger pack adds eleven interventions, its review nine,
+        # and three Korean ones that pin its scoring rule to Russian.
         # repro-audit adds one HellaSwag log versus paper request, and its
         # review three more requests in the admitted shape, then one that
         # closes on the compared metric.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1136)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1159)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
