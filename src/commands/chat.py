@@ -76,6 +76,7 @@ from .common import (
     add_revision_guard_arguments,
 )
 from .runtime import _validate_runtime_names
+from .setup import _registered_workflow_dir
 
 
 def cmd_chat_route(args: argparse.Namespace) -> int:
@@ -389,6 +390,8 @@ def _target_notice(args: argparse.Namespace, source_metadata: dict[str, str]) ->
             source=f"chat:{args.source}",
             source_metadata=source_metadata,
             ensure_config=bool(source_metadata.get("hermes_home")),
+            # The path setup registers: never the running generation's own pack.
+            registered_dir=_registered_workflow_dir(paths),
         )
     else:
         observation = inspect_target_observation(paths, source=f"chat:{args.source}", source_metadata=source_metadata)
