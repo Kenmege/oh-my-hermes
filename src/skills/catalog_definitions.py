@@ -65,6 +65,7 @@ from .product_discovery_skill import DEFINITION as PRODUCT_DISCOVERY_DEFINITION
 from .sales_pipeline_skill import DEFINITION as SALES_PIPELINE_DEFINITION
 from .show_reel_skill import DEFINITION as SHOW_REEL_DEFINITION
 from .geospatial_analysis_skill import DEFINITION as GEOSPATIAL_ANALYSIS_DEFINITION
+from .sprite_forge_skill import DEFINITION as SPRITE_FORGE_DEFINITION
 from .biomedical_evidence_skill import DEFINITION as BIOMEDICAL_EVIDENCE_DEFINITION
 from .molecular_docking_skill import DEFINITION as MOLECULAR_DOCKING_DEFINITION
 from .ai_job_search_skill import DEFINITION as AI_JOB_SEARCH_DEFINITION
@@ -5319,6 +5320,7 @@ _DEFINITIONS = [
             "For a 3D or canvas scene, capture the first frame exactly as booted, each camera preset, and every time of day the scene advertises; a claim in its own title or HUD that its first frame does not show, a small animated object that does not read as what it is, and flat light are each one `differences` entry (`omh-frontend/references/rendered-scene-craft.md`).",
             "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
             "Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.",
+            "For animated or simulated output, verify motion continuity through `references/motion-continuity.md`: check entry/spawn position against the declared origin, per-frame displacement against the declared speed, force direction against observed motion (knockback sign), monotonic HP/resource bars, and re-run the full deploy/travel/engage flow in an independent simulation/replay with frames sampled per phase — never infer flow from cost/clear numbers, and record frame indices/timestamps as evidence; a technical pass (build/tests/metrics) is never visual approval.",
             "Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.",
             "A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.",
             f"On Hermes, when {native_tool_presence_clause('browser_vision', code=True)}, the session can take its own captures: each such render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; captures from the wrapper, executor, or user still count.",
@@ -5387,11 +5389,12 @@ _DEFINITIONS = [
                 "Bind each capture to its screenshot path, URL, the viewport width the page reported, and the target revision; an entry missing any of the four is not evidence.",
                 "Score a round from the captured image itself, never from another model's text description of it.",
                 "Set a viewport only through a tool that can, and read the width back before the capture; a width that reads back other than the one requested is not that viewport, and a width nothing could set is a named blocker unless a capture of it is supplied.",
+            "For animated or simulated output, verify motion continuity through `references/motion-continuity.md`: check entry/spawn position against the declared origin, per-frame displacement against the declared speed, force direction against observed motion (knockback sign), monotonic HP/resource bars, and re-run the full deploy/travel/engage flow in an independent simulation/replay with frames sampled per phase — never infer flow from cost/clear numbers, and record frame indices/timestamps as evidence; a technical pass (build/tests/metrics) is never visual approval.",
                 "Read the browser console after every navigation and every interaction in scope; a clean console read is console evidence only, never network, accessibility, or visual evidence.",
             ),
         },
         portable_override_shadows={
-            "quality_bar": "60c914d09d13976b67ab39a132d976a36a65db316bac0d6ca95f940b083fbf3b",
+            "quality_bar": "81937d4de19dd318cd02bbab0a7bf3cadfed56935452d49dbb4b0ba3efcda995",
         },
     ),
     SkillDefinition(
@@ -11821,6 +11824,7 @@ _DEFINITIONS.extend(
         SHOW_REEL_DEFINITION,
         REPRO_AUDIT_DEFINITION,
         GEOSPATIAL_ANALYSIS_DEFINITION,
+        SPRITE_FORGE_DEFINITION,
         BIOMEDICAL_EVIDENCE_DEFINITION,
         MOLECULAR_DOCKING_DEFINITION,
         AI_JOB_SEARCH_DEFINITION,

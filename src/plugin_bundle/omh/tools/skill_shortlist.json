@@ -494,7 +494,7 @@
 }
 },
 {
-"anchors":"announcement backdrop background bug card competitor conversation cron cut digest edit explain explainer explanation feedback generation imag img infographic meet multilingual news photo pictur pull remov removal shareabl sum thumbnail vertical visual",
+"anchors":"announcement backdrop background bug card competitor conversation cron cut digest explain explainer explanation feedback generation imag img infographic meet multilingual news photo pictur pull remov removal shareabl sum thumbnail vertical visual",
 "hangul":"경쟁 고서 공유 그래 기능 내용 네일 노트 뉴스 데이 드로 드백 래픽 로우 록을 리뷰 리서 리아 리즈 리포 리핑 릴리 명하 미지 발표 배경 버그 보고 보기 뷰어 브리 사진 생성 서치 설명 성해 세로 소개 썸네 아지 안내 약해 어에 업데 에게 요약 용을 워크 유용 유할 의록 이미 이슈 이트 인포 일로 쟁사 제거 좋은 지로 진처 처럼 카드 크론 크플 트리 편집 포그 포트 플로 피드 하나 회의",
 "hangul_anchors":"경쟁 고서 공유 그래 기능 내용 네일 노트 뉴스 데이 드로 드백 래픽 로우 록을 리서 리아 리즈 리포 리핑 릴리 명하 미지 발표 배경 버그 보고 보기 뷰어 브리 사진 생성 서치 설명 성해 세로 소개 썸네 아지 안내 약해 어에 업데 에게 용을 워크 유용 유할 의록 이미 이슈 이트 인포 일로 쟁사 제거 좋은 지로 진처 처럼 카드 크론 크플 트리 편집 포그 포트 플로 피드 하나 회의",
 "label":"omh-image-cards",
@@ -1200,7 +1200,7 @@
 }
 },
 {
-"anchors":"edit manag remov",
+"anchors":"manag remov",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-skill",
@@ -1517,7 +1517,7 @@
 }
 },
 {
-"anchors":"ai assistant codex cursorrul date edit generat md stop tell wrong",
+"anchors":"ai assistant codex cursorrul date generat md stop tell wrong",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-agent-instructions",
@@ -1816,6 +1816,22 @@
 }
 },
 {
+"anchors":"2d attack avatar between drift feet float forg hit idle imag line player pose recognizabl return singl sink size strip themselv window",
+"hangul":"도트 라이 릭터 스프 시트 이트 캐릭 프라",
+"hangul_anchors":"도트 라이 릭터 스프 시트 이트 캐릭 프라",
+"label":"omh-sprite-forge",
+"name":"sprite-forge",
+"situation":"Character art to animate in a game",
+"terms":{
+"1":"align animat baselin clos cut edit fail gated grid hand helper measur pillow rather scal turn",
+"2":"2d across attack avatar between data drift feet float hit idle line loop pixel player pose qc recognizabl return singl sink size strip themselv want window",
+"3":"animation art",
+"4":"imag model sheet",
+"5":"forg",
+"6":"character fram game sprit"
+}
+},
+{
 "anchors":"accession alteration biomcp biomedical cach classification clinvar date differ different disagree gene genom last omit registry respons return success timed transcript",
 "hangul":"",
 "hangul_anchors":"",
@@ -2071,7 +2087,7 @@
 "name":"deliverable-package",
 "situation":"Attachment and deliverable status tracking",
 "terms":{
-"1":"docx generation herm hwp markdown ppt request stat through track user visibl xlsx",
+"1":"archiv docx generation herm hwp markdown ppt publish request stat through track user visibl xlsx",
 "2":"client deck deliver delivery document mode prepar qa thread",
 "3":"approv generat pdf report",
 "4":"attachment",
@@ -2148,7 +2164,7 @@
 }
 },
 {
-"anchors":"calendar channel creat crm discord dm draft edit email event gmail googl hubspot invit jira linear meet notion post saa salesforc send slack ticket",
+"anchors":"calendar channel creat crm discord dm draft email event gmail googl hubspot invit jira linear meet notion post saa salesforc send slack ticket",
 "hangul":"넥터 노션 린더 메일 발송 보내 액션 외부 이메 이슈 이지 초대 초안 캘린 커넥 티켓 페이",
 "hangul_anchors":"넥터 노션 린더 메일 발송 보내 액션 외부 이메 이슈 이지 초대 초안 캘린 커넥 티켓 페이",
 "label":"omh-apps",

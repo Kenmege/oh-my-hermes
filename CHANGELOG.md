@@ -4,6 +4,35 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
+
+- **Character sprite sheets become aligned game frames (`sprite-forge`).**
+  An image model draws a character sheet whose frames differ in scale and
+  foot position, so the character swells and bobs in game. The new
+  `sprite-forge` skill keeps the sheet a grid on flat `#FF00FF` (never a 1xN
+  strip, wide effects in their own sheet) and ships an optional standalone
+  Pillow helper, `toolkit/scripts/forge.py`, that keys the background,
+  splits cells, applies one common scale and puts every body's feet on one
+  shared baseline. `qc.json` records `body_scale_cv` and `anchor_y_std`
+  against 0.08 and 0.05, and a `REGENERATE` verdict exits 3 so the sheet is
+  redrawn rather than patched. Without Pillow, `--help` still works and any
+  processing request exits nonzero with no output. OMH generates no images;
+  the host's own image tool draws the sheet. (#2335)
+- **`visual-qa` checks motion in animated and simulated output.** A new
+  `references/motion-continuity.md` checks spawn position against the
+  declared origin, per-frame displacement against the declared speed, force
+  direction against observed motion and monotonic HP bars, and it replays
+  the deploy, travel and engage flow independently instead of reading it
+  off cost or clear numbers. (#2335)
+- **`show-reel` captures reels from a running game.** `references/game-capture.md`
+  keeps events, sound cues and titles in one `timeline.json`, pins the game
+  build, holds a reel whose gameplay event has no sound cue, and records a
+  real voice's source URL, hash and excerpt; impersonating a real voice is
+  refused. (#2335)
+- **`deliverable-package` tracks `archived` and `published`.** A file is
+  archived only with its hash, version and catalog row read back, published
+  only when the destination's own URL resolves to the same hash, and the
+  final file is the one the person approved, never the newest mtime. (#2335)
 - **The TUI's menus lose their bands, a sent prompt gains one, and the
   bottom row names the branch.** The completion menu, the session, model,
   rewind and launch-look pickers, the agent list, the delegation view and the
@@ -15,6 +44,8 @@ All notable changes will be documented here.
   screen's thread, and `[ ⚚ OMH Native ]` on the right. The working row, the
   plan and the composer get a blank row between them where the terminal has
   one to spare.
+
+## 4.0.3 - 2026-10-27
 
 - **`plan` and `ralplan` name the goal beyond the request, the raw material,
   and an outside judge.** Before splitting tasks a plan states what should

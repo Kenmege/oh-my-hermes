@@ -503,7 +503,11 @@ class RouterContentTests(unittest.TestCase):
             # existing 226-byte allowance (less than the historical ~2%).
             # The feature regression reconstructs and pins the legacy rows;
             # every other reference keeps the original 33,100 ceiling.
-            limit = 33_344 if (
+            # 33,344 -> 33,565: merged with main, the registry measures 33,561:
+            # main's 33,340 (ru pack and repro-audit rows) plus sprite-forge's
+            # 221-byte row and operator token. Each side alone fit; main's
+            # 4-byte headroom is kept, not widened.
+            limit = 33_565 if (
                 template.skill_name == "oh-my-hermes"
                 and template.relative_path == "references/workflow-registry.md"
             ) else 33_100
