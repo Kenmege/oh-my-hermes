@@ -6055,6 +6055,9 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
 # (`awareness._rule_suppressed_by_context`).
 _SHIELDED_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     "data-share-review": lambda normalized_query, query_tokens: data_share_request_admitted(normalized_query, shielded=True),
+    # A closed show-reel form must be the whole message; masked text after it
+    # may be the fault it shows (`show_reel_cues`).
+    "show-reel": lambda normalized_query, query_tokens: show_reel_request_admitted(normalized_query, shielded=True),
 }
 
 

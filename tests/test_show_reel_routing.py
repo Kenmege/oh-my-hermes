@@ -64,6 +64,8 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make an animated demo video showing the setup wizard.",
             "hyperframes teaser video for the beta",
             "Make a sizzle reel for our booth.",
+            "Make a promo video with subtitles.",
+            "Produce a teaser video for the v2 launch.",
             "Make a quick demo video showing the onboarding flow.",
             "Create an explainer video about the memory system for the team.",
             "make a promo video of the omh TUI",
@@ -148,6 +150,14 @@ class ShowReelAdmissionTests(unittest.TestCase):
             # A later sentence may report the fault.
             "Hyperframes video for the homepage. It renders blank.",
             "Make a demo video for the plugin. Install hangs at step two.",
+            # Masked text beside a closed form may name the fault it shows.
+            "Make a product video for the plugin `KeyError: 'id'`",
+            'Make a demo video for the app "it double charges"',
+            "Make a demo video for the beta\n\n> panic: nil map",
+            "Make a launch video for the release https://github.com/acme/app/pull/9",
+            "hyperframes promo video for the launch 'stalls at 80%'",
+            # Only v plus one or two digits is a version.
+            "Make a demo video of the v503 page.",
             # `cut` and `edit` lead only a reel noun.
             "Edit a sizzle reel, then trim the intro.",
             "Cut a sizzle reel from the conference footage.",
@@ -172,6 +182,13 @@ class ShowReelAdmissionTests(unittest.TestCase):
         for phrase in ("demo video", "product demo video", "promo clip", "explainer video", "launch trailer"):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, triggers)
+
+    def test_a_caller_that_masked_the_text_refuses_a_closed_form(self):
+        # The router passes masked text and says so (`RoutingQuery.shielded`).
+        self.assertTrue(show_reel_request_admitted("Make a demo video for the app"))
+        self.assertFalse(show_reel_request_admitted("Make a demo video for the app", shielded=True))
+        # main's reel nouns read as on main.
+        self.assertTrue(show_reel_request_admitted("Create a launch film.", shielded=True))
 
     def test_a_courtesy_opener_keeps_an_asked_request(self):
         self.assertTrue(show_reel_request_admitted("Can you make a show reel?"))

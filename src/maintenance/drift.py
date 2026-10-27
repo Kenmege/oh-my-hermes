@@ -883,7 +883,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # fault recording (4), a fault in a later sentence (3), a
             # marketing noun over a fault (2), and cut or edit on a sizzle
             # reel (2) (+11).
-            expected=1145,
+            # The #2322 third delta: a closed form beside a backticked,
+            # quoted, curly-quoted, `>`-quoted, fenced or linked fault (8), a
+            # three-digit v-version (1), and a with-adjunct that does not end
+            # the sentence (1) (+10).
+            expected=1155,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1391,7 +1395,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # show-reel promo/demo/launch/trailer names, a two-word duration
             # and a renderer-led brief, each of which dispatched another lane
             # or asked on main (+8).
-            expected=1139,
+            # A with-adjunct closes a promo video brief (+1).
+            expected=1140,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

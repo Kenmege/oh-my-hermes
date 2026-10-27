@@ -349,6 +349,20 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # `cut` and `edit` lead only main's reel nouns, not a sizzle reel.
     RoutingPrecisionCase("show-reel-edit-sizzle-drop", "Dropping a clip from a sizzle reel is an edit", "Edit a sizzle reel and drop the second clip.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-cut-sizzle-down", "Cutting a sizzle reel down is a trim", "Cut a sizzle reel down to thirty seconds.", "answer_clarification", "", "show-reel"),
+    # Masked text reads as nothing, so a closed form beside a quote, code,
+    # a `>` line or a link may be showing the fault that text names.
+    RoutingPrecisionCase("show-reel-shielded-backtick", "A backticked error after a closed form is a fault", "Make a demo video for the plugin `ImportError: no module named yaml`", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-double-quote", "A quoted symptom after a closed form is a fault", 'Make a demo video for the app "upload spins forever"', "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-curly-quote", "A curly-quoted symptom after a closed form is a fault", "Make a demo video for the app \u2018login loops back\u2019", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-block-quote", "A quoted crash line after a closed form is a fault", "Make a demo video for the beta\n\n> Segmentation fault (core dumped)", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-fence", "A fenced traceback after a closed form is a fault", "Make a demo video for the plugin\n```\nTraceback (most recent call last):\n  File x\n```", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-issue-link", "An issue link after a closed form is a fault", "Make a launch video for the release https://github.com/acme/app/issues/812", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-renderer-code", "A backticked exit code after a renderer brief is a fault", "hyperframes teaser video for the app `exit status 137`", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-shielded-renderer-quote-line", "A quoted render error after a renderer brief is a fault", "HyperFrames promo video for the beta\n> render failed: timeout", "answer_clarification", "", "show-reel"),
+    # A version qualifies a closed noun only as v plus one or two digits.
+    RoutingPrecisionCase("show-reel-long-version-page", "A demo video of a v-numbered error page is a fault recording", "Make a demo video of the v500 page.", "answer_clarification", "", "show-reel"),
+    # A with-adjunct must end the sentence like any other.
+    RoutingPrecisionCase("show-reel-with-music-default", "Making music the default is a setting", "Make a demo video with music the default.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
     # thing a person says in the seconds after a planning workflow finishes,
     # and the corpus had no sentence of this shape at all -- 235 negative
@@ -8923,6 +8937,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("show-reel-product-video", "A product video for a page is production, not delivery", "Make a product video for the landing page.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-product-demo-video", "A product demo video to produce is not a connector check", "Produce a 90 second product demo video for investors.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-sizzle-reel", "A sizzle reel for an occasion is production", "Make a sizzle reel for the conference booth.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-with-subtitles", "A production adjunct closes a promo video brief", "Make a promo video for the beta with subtitles.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-launch-trailer", "A launch trailer is a film", "Make a launch trailer for the game.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-promo-video-of-board", "A promo video about a named surface is still the film", "Make a HyperFrames promo video of the agent board.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),

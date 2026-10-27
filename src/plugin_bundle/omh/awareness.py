@@ -8664,6 +8664,10 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str, *, shielded:
         # and no place is then proven inside. The router takes the same
         # report from its own masking (`RoutingQuery.shielded`).
         return not data_share_request_admitted(text, shielded=shielded)
+    if rule_id == "show_reel_production":
+        # The same report: a closed show-reel form with masked text beside it
+        # may be showing the fault that text names (`show_reel_cues`).
+        return not show_reel_request_admitted(text, shielded=shielded)
     visual_markers = (
         "image card",
         "summary card",

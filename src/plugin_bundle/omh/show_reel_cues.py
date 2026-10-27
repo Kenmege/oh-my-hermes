@@ -18,7 +18,9 @@ admitted only when the rest of its sentence is a chain of closed adjuncts
 (`_closed_adjuncts`) and that sentence is the whole message; `cut` and `edit`
 never lead one, since editing an everyday video changes an existing one. A
 brief that opens on the renderer name instead of a verb is held to the same
-form, with at least one adjunct.
+form, with at least one adjunct. Quoted, fenced and `>` text, inline code and
+links are masked before matching, so a closed form beside any of them is
+refused: the masked text may name the fault the clip would show.
 
 Stdlib only; this leaf imports no catalog or router.
 """
@@ -27,7 +29,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from .reference_regions import executable_routing_text
+from .reference_regions import reference_regions
 from .request_lead import after_courtesy
 
 # main's reel nouns. One names an authored film whatever follows it, reads
@@ -77,15 +79,16 @@ _RENDERER_LEADS = frozenset({"hyperframes"})
 # the memory system". The words name an audience, a channel, an occasion or a
 # product surface, never a state, so "of the login failure", "for the release
 # regression" and "showing the checkout hang" are not one.
-_ADJUNCT_PREPOSITIONS = frozenset({"about", "covering", "featuring", "for", "of", "showing"})
+_ADJUNCT_PREPOSITIONS = frozenset({"about", "covering", "featuring", "for", "of", "showing", "with"})
 _ADJUNCT_DETERMINERS = frozenset({"a", "an", "the", "our", "my", "your", "their"})
 _ADJUNCT_NOUNS = frozenset({
-    "agents", "announcement", "api", "app", "audience", "beta", "board", "booth", "cli", "conference", "customers",
+    "agents", "announcement", "api", "app", "audience", "beta", "board", "booth", "captions", "cli", "conference",
+    "customers",
     "dashboard", "docs", "editor", "event", "extension", "feature", "features", "flow", "game", "hackathon",
     "hero", "homepage", "instagram", "integration", "investors", "keynote", "launch", "linkedin", "marketing",
-    "marketplace", "meetup", "newsletter", "onboarding", "page", "pitch", "platform", "plugin", "product",
-    "readme", "release", "sales", "sdk", "site", "social", "submission", "system", "team", "tier", "tiktok",
-    "tool", "tui", "twitter", "ui", "users", "website", "wizard", "workflow", "youtube",
+    "marketplace", "meetup", "music", "narration", "newsletter", "onboarding", "page", "pitch", "platform", "plugin", "product",
+    "readme", "release", "sales", "sdk", "site", "social", "submission", "subtitles", "system", "team", "tier",
+    "tiktok", "tool", "tui", "twitter", "ui", "users", "voiceover", "website", "wizard", "workflow", "youtube",
 })
 _ADJUNCT_MODIFIERS = frozenset({
     "agent", "app", "hackathon", "landing", "launch", "memory", "new", "next", "omh", "onboarding", "plugin",
@@ -93,9 +96,9 @@ _ADJUNCT_MODIFIERS = frozenset({
     "arabic", "chinese", "english", "french", "german", "hindi", "italian", "japanese", "korean",
     "portuguese", "spanish", "vietnamese",
 })
-# A "v4" version may qualify a closed noun. A bare number may not: "the 404
-# page" is a fault.
-_VERSION = re.compile(r"v\d+")
+# A "v4" or "v12" version may qualify a closed noun. A bare number may not,
+# and neither may a longer one: "the 404 page" and "the v404 page" are faults.
+_VERSION = re.compile(r"v\d{1,2}")
 _WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*|[,:]")
 _NOUN_PHRASES = tuple(sorted({tuple(_WORD.findall(phrase)) for phrase in SHOW_REEL_PHRASES}, key=len, reverse=True))
 _REEL_NOUNS = frozenset(tuple(_WORD.findall(phrase)) for phrase in _REEL_PHRASES)
@@ -160,6 +163,8 @@ def _closed_adjuncts(rest: list[str]) -> int:
 
 
 def _english_production_lead(sentence: str, *, whole_message: bool) -> bool:
+    # `whole_message`: this sentence is all the message says, with nothing
+    # shielded from matching; the closed forms need it.
     words = _WORD.findall(sentence)
     if not words or (words[0] not in _REEL_LEAD_VERBS and words[0] not in _RENDERER_LEADS):
         return False
@@ -193,16 +198,25 @@ def _english_production_lead(sentence: str, *, whole_message: bool) -> bool:
     return False
 
 
-def show_reel_request_admitted(message: str) -> bool:
-    """Admit only a request that leads with producing a show reel."""
-    folded = _fold(executable_routing_text(message)).strip()
+def show_reel_request_admitted(message: str, *, shielded: bool = False) -> bool:
+    """Admit only a request that leads with producing a show reel.
+
+    `shielded`: the caller removed quoted, code, link or relayed text from
+    `message` before passing it (`RoutingQuery.shielded`). Masked text reads as
+    nothing, so a backticked error or a linked issue after "for the app" would
+    leave a closed form looking whole; a closed form is refused when the caller
+    or this reader's own masking removed anything.
+    """
+    regions = reference_regions(message)
+    folded = _fold(regions.executable_text).strip()
+    shielded = shielded or bool(regions.references or regions.masked_spans or regions.quoted_lines)
     text = after_courtesy(folded)
     sentence, *ending = re.split(r"([.!?;。！？])(?:\s|$)", text, maxsplit=1)
     # A first sentence asked, not told ("make a show reel? no, just send the
     # old one", "make a launch film, right?") is a question about one, unless
     # a courtesy opener put it as a request ("can you make a show reel?").
     asked = bool(ending) and ending[0] in "?？" and text == folded
-    whole_message = not ending or not ending[1].strip()
+    whole_message = not shielded and (not ending or not ending[1].strip())
     return (not asked and _english_production_lead(sentence, whole_message=whole_message)) or bool(_NATIVE_PRODUCTION.search(text))
 
 
