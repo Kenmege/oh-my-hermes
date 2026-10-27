@@ -60,6 +60,12 @@ the stdio entry's in a closed set of places. `Adapter` translates those, after
   session's next prompt, as the stdio entry queued it; `image.detach` takes it
   out of that queue. A drop that is not an image is answered as no drop, as
   Ink answers it, so the TUI pastes the text.
+* `slash.exec` goes as sent; when the owner refuses a command in
+  `SLASH_VERBS` with `unsupported_command` (`/compress`, `/branch`,
+  `/retry`, `/undo`, `/stop`, `/bg`, `/btw`, `/rollback`, `/reload`,
+  `/reload-mcp`, `/tools`, `/plugins`, `/config`), it runs through the
+  owner's own call for it, as Ink sends it (`session.mutate`,
+  `process.stop`, `prompt.background`, ...), answered in `slash.exec`'s shape.
 * An approval or one-question clarify arrives as an event and is answered
   with `approval.respond` / `clarify.respond`; here it is the server request
   the TUI answers, and its `.settled` event, or the session's detach, a
@@ -951,14 +957,17 @@ class Adapter:
         def on_read(snapshot: dict[str, Any]) -> list[Action]:
             result = snapshot.get("result")
             if not isinstance(result, dict):
-                return [(TO_CLIENT, {**snapshot, "id": request_id})]
+                return [stop()]  # no turn known to interrupt; the processes are still the session's to stop
             self._note_view(result, snapshot=True)
             generation = result.get("execution_generation")
             if result.get("running") is not True or not _whole(generation):
                 return [stop()]
 
             def on_interrupted(reply: dict[str, Any]) -> list[Action]:
-                interrupted[0] = isinstance(reply.get("result"), dict)
+                # Ink's `interruptTurn`: a handle already settled, or moved to another turn, stopped nothing.
+                answer = reply.get("result") if isinstance(reply.get("result"), dict) else {}
+                interrupted[0] = (answer.get("execution_state") == "running"
+                                  and answer.get("execution_generation") == generation)
                 return [stop()]
 
             return [self._call("session.interrupt", {"session_id": session_id, "execution_generation": generation},
@@ -976,9 +985,10 @@ class Adapter:
 
         def show(result: dict[str, Any]) -> Action:
             task = str(result.get("task_id") or "")
-            if verb == "bg":
-                return _output(request_id, f"Running in the background as {task}; its answer appears here.")
-            return _output(request_id, f"Asking on the side as {task}; the answer appears here.")
+            said = (f"Running in the background as {task}; its answer appears here." if verb == "bg"
+                    else f"Asking on the side as {task}; the answer appears here.")
+            # `task_id`: the TUI tells the person when they leave the session before its answer arrives.
+            return _reply(request_id, {"type": "exec", "output": said, "task_id": task})
 
         method = "prompt.background" if verb == "bg" else "prompt.btw"
         return [self._owner(request_id, method, {"session_id": session_id, "text": arg}, show)]

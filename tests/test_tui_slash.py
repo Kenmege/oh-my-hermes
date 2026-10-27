@@ -94,10 +94,13 @@ class RouteTableTests(unittest.TestCase):
         # Measured against Hermes bf0203a794's shared gateway: /topup is a read there (`_READ_COMMANDS`), so it goes
         # to Hermes as typed; /config, /tools and the other verbs the gateway child answers are no commands of the
         # TUI's.
-        for name in ("topup", "config", "tools", "plugins", "stop", "bg", "btw", "branch", "fork", "retry", "undo",
+        for name in ("config", "tools", "plugins", "stop", "bg", "btw", "branch", "fork", "retry", "undo",
                      "rollback", "reload", "reload-mcp", "compress"):
             with self.subTest(name=name):
                 self.assertIsNone(slash.parse_slash(f"/{name}").command)
+
+    def test_topup_is_the_tuis_own_so_it_can_tell_a_shared_gateway_from_the_stdio_entry(self) -> None:
+        self.assertEqual(slash.parse_slash("/topup").command.route, slash.LOCAL)
 
     def test_what_only_hermes_classic_cli_runs_goes_as_typed_but_is_not_offered(self) -> None:
         catalog = [(f"/{name}", name) for name in ("handoff", "worktree", "snapshot", "import", "hatch", "palette")]

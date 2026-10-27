@@ -1213,8 +1213,8 @@ skills for this session and the TUI reads its command list again, so a skill
 installed since the start, by `omh update` or `/skills install`, runs as
 `/<name>` without a restart). Claude Code's `/cost`, `/permissions` and
 `/compact` run Hermes' `/usage`, `/approvals` and `/compress` (`here [N]`, a
-focus topic, or `--preview`; a compression waits for a running turn to end,
-and the TUI says so). Hermes' shared gateway, which a Hermes from v0.22 runs,
+focus topic, or `--preview`; Hermes refuses a compression while a turn
+runs, and the TUI says to run it again once the turn ends). Hermes' shared gateway, which a Hermes from v0.22 runs,
 does not take `/compress`, `/branch`, `/retry`, `/undo`, `/stop`, `/bg`,
 `/btw`, `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` or
 `/config` as a typed command. The TUI runs each one through the gateway call

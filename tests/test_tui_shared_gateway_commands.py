@@ -12,9 +12,17 @@ import unittest
 
 from test_tui_command_output import last, send
 from test_tui_modes import SID, answer, make_app, notices
-from omh.tui.app import BRANCHED_NOTICE, COMPRESS_STARTED_NOTICE, REFUSAL_SENTENCES
+from omh.tui.app import (
+    BRANCHED_NOTICE,
+    COMPRESS_ANSWER_SECONDS,
+    COMPRESS_STARTED_NOTICE,
+    COMPRESS_UNANSWERED_NOTICE,
+    COMPRESSION_BUSY_NOTICE,
+    REFUSAL_SENTENCES,
+    SIDE_ANSWERS_LEFT_NOTICE,
+)
 from omh.tui.gateway import Event
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, CommandBlock
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, CommandBlock
 
 BUSY = {"code": 4001, "message": "session_busy", "data": {"reason": "session_busy"}}
 
@@ -39,6 +47,40 @@ class CompressTests(unittest.TestCase):
                 send(app, line)
                 self.assertEqual(client.calls[-1][0], "slash.exec")
                 self.assertNotIn(COMPRESS_STARTED_NOTICE, notices(app))
+
+    def test_a_compress_is_waited_for_as_long_as_hermes_waits_and_never_sent_twice(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        send(app, "/compact")
+        [call] = app.pending.values()
+        self.assertEqual(call.expires_at, 100.0 + COMPRESS_ANSWER_SECONDS)  # Hermes' COMPRESS_RPC_TIMEOUT, 660 s
+        now[0] += 200.0  # past the 120 s every other call gets
+        app._expire_calls()
+        self.assertEqual(len(app.pending), 1)
+        now[0] += COMPRESS_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual(app.pending, {})
+        self.assertEqual(client.forgotten, [1])
+        self.assertIn(COMPRESS_UNANSWERED_NOTICE.format(seconds=COMPRESS_ANSWER_SECONDS), notices(app, NOTICE_WARN))
+        self.assertEqual(len(client.calls), 1)  # nothing sent again
+        self.assertTrue(last(app).done)
+
+    def test_another_command_keeps_the_usual_budget(self) -> None:
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        send(app, "/undo")
+        [call] = app.pending.values()
+        self.assertEqual(call.expires_at, 100.0 + 120.0)
+
+    def test_a_command_refused_while_hermes_compresses_says_so(self) -> None:
+        for line, name in (("/undo", "undo"), ("/retry", "retry"), ("/compress", "compress")):
+            with self.subTest(line=line):
+                app, client = make_app()
+                send(app, line)
+                answer(app, client, error={"code": 4001, "message": "session_busy",
+                                           "data": {"reason": "session_busy", "field": "compression"}})
+                self.assertEqual(notices(app, NOTICE_WARN), [COMPRESSION_BUSY_NOTICE.format(name=name)])
+                self.assertEqual(notices(app, NOTICE_ERROR), [])
 
     def test_a_compress_during_a_turn_is_refused_in_words(self) -> None:
         app, client = make_app(busy=True)
@@ -67,15 +109,32 @@ class BranchTests(unittest.TestCase):
 
 
 class SideAnswerTests(unittest.TestCase):
-    def test_a_bg_or_btw_answer_is_shown_when_it_arrives(self) -> None:
+    def test_a_bg_or_btw_answer_is_shown_when_it_arrives_and_one_from_a_session_left_names_it(self) -> None:
         app, _client = make_app()
         done = {"task_id": "bg_7b76c3", "text": "## Done\nTests pass.\x1b[2J"}
         app._on_event(Event("background.complete", SID, done))
         app._on_event(Event("btw.complete", SID, {"task_id": "btw_1", "question": "what did I say first?",
                                                   "text": "hello number 0"}))
         app._on_event(Event("btw.complete", "other-session", {"task_id": "btw_2", "text": "not this one"}))
-        self.assertEqual(notices(app)[-2:], ["[bg bg_7b76c3] ## Done\nTests pass.",
-                                             '[btw "what did I say first?"] hello number 0'])
+        self.assertEqual(notices(app)[-3:], ["[bg bg_7b76c3] ## Done\nTests pass.",
+                                             '[btw "what did I say first?"] hello number 0',
+                                             "From session other-session: [btw] not this one"])
+
+
+    def test_leaving_a_session_before_its_side_answer_says_it_will_not_show(self) -> None:
+        # Measured on Hermes bf0203a794: once the view is closed (a switch, /new), the gateway sends a /bg answer
+        # nowhere this connection sees.
+        app, client = make_app()
+        send(app, "/bg run the tests")
+        answer(app, client, {"type": "exec", "output": "Running in the background as bg_1; its answer appears here.",
+                             "task_id": "bg_1"})
+        send(app, "/btw why?")
+        answer(app, client, {"type": "exec", "output": "Asking on the side as btw_2.", "task_id": "btw_2"})
+        app._on_event(Event("btw.complete", SID, {"task_id": "btw_2", "text": "because"}))
+        send(app, "/new")
+        answer(app, client, {"session_id": "live-2", "stored_session_id": "s-2", "info": {}})
+        self.assertIn(SIDE_ANSWERS_LEFT_NOTICE.format(tasks="bg_1", session=SID), notices(app, NOTICE_WARN))
+        self.assertEqual(app.side_tasks, {})
 
 
 class RoutedToHermesTests(unittest.TestCase):
@@ -83,8 +142,25 @@ class RoutedToHermesTests(unittest.TestCase):
         for line, command in (("/topup", "topup"), ("/handoff telegram", "handoff telegram")):
             with self.subTest(line=line):
                 app, client = make_app()
+                app.shared_gateway = True
                 send(app, line)
                 self.assertEqual(client.calls, [("slash.exec", {"command": command, "session_id": SID})])
+
+    def test_topup_on_the_stdio_entry_names_hermes_own_terminal(self) -> None:
+        # An older Hermes runs it in its CLI worker, whose top-up menus are interactive.
+        app, client = make_app()
+        send(app, "/topup")
+        self.assertEqual(client.calls, [])
+        self.assertIn("/topup runs in Hermes' own terminal: `hermes --tui`.", notices(app))
+
+    def test_a_session_answer_naming_this_connections_view_is_a_shared_gateway(self) -> None:
+        app, client = make_app()
+        send(app, "/new")
+        answer(app, client, {"session_id": "live-2", "stored_session_id": "s-2", "info": {}, "subscription_id": "sub"})
+        self.assertTrue(app.shared_gateway)
+        send(app, "/new")
+        answer(app, client, {"session_id": "live-3", "stored_session_id": "s-3", "info": {}})
+        self.assertFalse(app.shared_gateway)
 
     def test_a_classic_commands_refusal_carries_hermes_own_pointer(self) -> None:
         app, client = make_app()

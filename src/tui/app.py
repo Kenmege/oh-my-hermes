@@ -214,6 +214,7 @@ from .slash import (
     RENAMED,
     TURN_BACK_COMMANDS,
     Completion,
+    SlashCommand,
     SlashInvocation,
     catalog_categories,
     catalog_pairs,
@@ -425,6 +426,24 @@ QUESTION_VIEW_TITLE = "the open question (q goes back to it)"  # Ctrl+O's pager 
 COMPRESS_COMMANDS = frozenset({"compress", "compact"})
 COMPRESS_PREVIEW_FLAGS = frozenset({"--preview", "--dry-run"})
 COMPRESS_STARTED_NOTICE = "Compressing: Hermes summarizes the older turns with a model call, so this can take a while."
+# How long a `/compress` is waited for: Hermes' own budget for it (`hermes_cli/gateway_client.py` COMPRESS_RPC_TIMEOUT,
+# the compression ceiling plus slack), in place of `CALL_ANSWER_SECONDS`.
+COMPRESS_ANSWER_SECONDS = 660.0
+# Past that the compression may still commit, so running /compress again could compress twice.
+COMPRESS_UNANSWERED_NOTICE = (
+    "Hermes has not answered /compress in {seconds:g} s; the OMH TUI stopped waiting, but the compression may still "
+    "land. /context shows whether it did: run /compress again only if it did not."
+)
+# A command Hermes refused because a compression of this session is still running (`data.field`, as Ink reads it).
+COMPRESSION_BUSY_NOTICE = "Hermes is compressing this session's context: run /{name} again once that ends."
+COMPRESSION_FIELD = "compression"
+# A `/bg` or `/btw` answer for a session other than the one shown: one started there before a switch.
+SIDE_ANSWER_ELSEWHERE = "From session {session}: {line}"
+# Leaving a session closes this connection's view of it, and the gateway sends a side answer to that view only.
+SIDE_ANSWERS_LEFT_NOTICE = (
+    "The answer of {tasks}, started in {session}, will not show here: leaving that session closed the view Hermes "
+    "sends it to."
+)
 # The new session a `/branch` answer names (the gateway child's answer, after the owner's `session.mutate branch`).
 BRANCHED_SESSION = "branched_session_id"
 BRANCHED_NOTICE = "⑂ Branched: this is a new session copied from {parent}; `/sessions {parent}` goes back."
@@ -1386,6 +1405,10 @@ class App(ModesMixin, AgentViewMixin):
         self.size = terminal.size()
         self.sid = ""
         self.stored_id = ""
+        # Whether the session runs on Hermes' shared gateway (its answer named this connection's view), not the stdio
+        # entry of an older Hermes.
+        self.shared_gateway = False
+        self.side_tasks: dict[str, str] = {}  # a `/bg` or `/btw` task whose answer has not arrived -> its session
         self.opened_ids: list[str] = []  # the sessions this launch had open before `stored_id`, oldest first
         self.model = ""
         self.context_percent: float | None = None
@@ -1741,6 +1764,7 @@ class App(ModesMixin, AgentViewMixin):
             self._give_back(self.starting[0])
             self.starting = None
         self.sid = as_text(result.get("session_id"))
+        self.shared_gateway = bool(as_text(result.get("subscription_id")))
         info = result.get("info")
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
         self.context_percent = None  # the next session.usage says how full this session is
@@ -2084,6 +2108,7 @@ class App(ModesMixin, AgentViewMixin):
         on_error: Callable[[dict[str, Any]], bool] | None = None,
         on_expiry: Callable[[], None] | None = None,
         steer: SteerBlock | None = None,
+        seconds: float | None = None,
     ) -> None:
         try:
             request_id = self.client.request(method, params)
@@ -2093,7 +2118,7 @@ class App(ModesMixin, AgentViewMixin):
         except ValueError as error:  # the gateway contract refused the call (`contract.call_problem`): nothing went out
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
-        expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
+        expires_at = self.clock() + (seconds or CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS))
         self.pending[request_id] = _Pending(
             method, on_result, on_error, expires_at, self.transcript.command, on_expiry, steer
         )
@@ -2389,6 +2414,9 @@ class App(ModesMixin, AgentViewMixin):
             # leaving (a switch, `/new`) stays open here until its withdrawal arrives.
             self._on_withdrawn(payload)
             return
+        if event.type in contract.SIDE_ANSWER_EVENTS and event.session_id != self.sid:
+            self._side_answer(event.type, payload, event.session_id)  # a /bg started before a switch: never dropped
+            return
         if not event.type.startswith(contract.GATEWAY_SCOPED_EVENT_PREFIX) and event.session_id != self.sid:
             return
         self._watch_turn(event.type)
@@ -2407,11 +2435,7 @@ class App(ModesMixin, AgentViewMixin):
             if text:
                 self.transcript.add_aside(NoticeBlock(text))  # it can come during the next turn: it closes nothing
         elif event.type in contract.SIDE_ANSWER_EVENTS:
-            # A whole agent's answer: its lines kept, each made safe to show.
-            text = "\n".join(clean_text(line) for line in as_text(payload.get(contract.SIDE_ANSWER_TEXT)).splitlines())
-            text = text.strip()
-            if text:
-                self.transcript.add_aside(NoticeBlock(side_answer_line(event.type, payload, text)))
+            self._side_answer(event.type, payload)
         elif event.type == "session.control.update":
             control = payload.get(contract.SESSION_CONTROL)
             goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None
@@ -4134,15 +4158,24 @@ class App(ModesMixin, AgentViewMixin):
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
+            compressing = invocation.name.lower() in COMPRESS_COMMANDS
             preview = bool(COMPRESS_PREVIEW_FLAGS & {word.lower() for word in invocation.arg.split()})
-            if invocation.name.lower() in COMPRESS_COMMANDS and not preview and not self._busy():
+            if compressing and not preview and not self._busy():
                 self.transcript.add_notice(COMPRESS_STARTED_NOTICE)  # under the echo, until Hermes' report
+            echo = self.transcript.command
             self._request(
                 "slash.exec",
                 {"command": invocation.text, "session_id": self.sid},
                 lambda result: self._on_slash_result(invocation, result, depth),
                 lambda error: self._on_slash_refused(invocation, error, depth),
+                (lambda: self._compress_unanswered(echo)) if compressing else None,
+                seconds=COMPRESS_ANSWER_SECONDS if compressing else None,
             )
+
+    def _compress_unanswered(self, echo: CommandBlock | None) -> None:
+        """A `/compress` unanswered in its budget: said under its echo, and nothing is sent again."""
+        with self._for_command(echo):
+            self.transcript.add_notice(COMPRESS_UNANSWERED_NOTICE.format(seconds=COMPRESS_ANSWER_SECONDS), NOTICE_WARN)
 
     def _on_slash_refused(self, invocation: SlashInvocation, error: dict[str, Any], depth: int) -> bool:
         """`slash.exec` refusing a command `command.dispatch` owns (4018) falls back to it, as Ink does.
@@ -4153,6 +4186,11 @@ class App(ModesMixin, AgentViewMixin):
         if invocation.name.lower() == "model" and refusal_reason(error) == "unsupported_command":
             self.transcript.add_notice(MODEL_OPTIONS_REFUSED, NOTICE_ERROR)
             return True
+        data = error.get("data")
+        field = data.get("field") if isinstance(data, Mapping) else None
+        if refusal_reason(error) == "session_busy" and field == COMPRESSION_FIELD:
+            self.transcript.add_notice(COMPRESSION_BUSY_NOTICE.format(name=invocation.name), NOTICE_WARN)
+            return True
         if error.get("code") != contract.NOT_MINE:
             return False
         self._request(
@@ -4161,6 +4199,25 @@ class App(ModesMixin, AgentViewMixin):
             lambda result: self._on_dispatch(invocation, result, depth),
         )
         return True
+
+    def _side_answer(self, kind: str, payload: Mapping[str, Any], origin: str = "") -> None:
+        """A `/bg` or `/btw` answer, its lines kept and each made safe to show; one for a session other than this one
+        (started there before a switch) names that session."""
+        self.side_tasks.pop(as_text(payload.get(contract.SIDE_ANSWER_TASK)), None)
+        text = "\n".join(clean_text(line) for line in as_text(payload.get(contract.SIDE_ANSWER_TEXT)).splitlines())
+        text = text.strip()
+        if text:
+            line = side_answer_line(kind, payload, text)
+            self.transcript.add_aside(NoticeBlock(SIDE_ANSWER_ELSEWHERE.format(session=origin, line=line) if origin
+                                                  else line))
+
+    def _topup(self, arg: str) -> None:
+        """Hermes' /topup: the balance and the portal link on a shared gateway, where it is a read. Hermes' stdio
+        entry runs it in its CLI worker, whose top-up menus are interactive, so there it is Hermes' own terminal's."""
+        if self.shared_gateway:
+            self._route_slash(SlashInvocation("topup", arg, None), 0)
+        else:
+            self.transcript.add_notice(hermes_notice(SlashCommand("topup", HERMES, "")))
 
     def _on_slash_result(self, invocation: SlashInvocation, result: dict[str, Any], depth: int) -> None:
         if result.get("type"):
@@ -4174,6 +4231,9 @@ class App(ModesMixin, AgentViewMixin):
         kind = as_text(result.get("type"))
         if kind in ("exec", "plugin"):
             self._show_output(f"/{invocation.text}", as_text(result.get("output")) or "(no output)")
+            task = as_text(result.get(contract.SIDE_ANSWER_TASK))
+            if task and self.sid:
+                self.side_tasks[task] = self.sid
             child = as_text(result.get(BRANCHED_SESSION))
             if child and self.sid:  # /branch made a new session: the TUI goes there, as Ink does
                 self._switch_session(child, BRANCHED_NOTICE.format(parent=self.stored_id))
@@ -4262,6 +4322,7 @@ class App(ModesMixin, AgentViewMixin):
             "theme": self._theme,
             "omh-model": self._omh_model,
             "reload-skills": self._reload_skills,
+            "topup": self._topup,
             "sessions": self._sessions,
             "image": self._image,
             "paste": self._paste,
@@ -4365,10 +4426,16 @@ class App(ModesMixin, AgentViewMixin):
         self.in_launch_session = False
         self.card_state = CARD_NONE
         declined = self._decline_all_requests()
-        if old and old != as_text(result.get("session_id")):
+        leaving = bool(old) and old != as_text(result.get("session_id"))
+        left = sorted(task for task, sid in self.side_tasks.items() if leaving and sid == old)
+        if leaving:
             self._turn_off_yolo_set_here(old)
             self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
         self.transcript = Transcript(self.clock, under_output=self.transcript.taken_any)
+        if left:
+            self.transcript.add_notice(SIDE_ANSWERS_LEFT_NOTICE.format(tasks=", ".join(left), session=old), NOTICE_WARN)
+            for task in left:
+                del self.side_tasks[task]
         self.queued.clear()
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
