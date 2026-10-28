@@ -99,9 +99,64 @@ def _workspace_root(task_id: object) -> str | None:
         return os.environ.get("TERMINAL_CWD")
 
 
-def hashline_read_handler(args: dict[str, Any], **kwargs: object) -> str:
+_REPEATS: dict[tuple[str, str, str], int] = {}
+_REPEATS_CAP = 256
+_REPEAT_AT = 3
+
+
+class _PathMiss(Exception):
+    """A missing or out-of-root path; answered with the recovery payload."""
+
+    def __init__(self, error: str, relpath: str) -> None:
+        super().__init__(error)
+        self.error, self.relpath = error, relpath
+
+
+def _resolve(requested: str, root: str) -> str:
     try:
-        path = resolve_path(str(args.get("path", "")), _workspace_root(kwargs.get("task_id")))
+        return resolve_path(requested, root)
+    except HashlineError as exc:
+        raise _PathMiss(str(exc), requested) from None
+
+
+def _require_exists(path: str, root: str) -> None:
+    if not os.path.exists(path):
+        rel = os.path.relpath(path, root)
+        raise _PathMiss(f"not_found:/path — {rel} does not exist", rel)
+
+
+def _miss_payload(miss: _PathMiss, root: str, task_id: object, op: str) -> str:
+    """Recovery payload; the 3rd and later identical misses in a task add ``repeated``. Never raises."""
+    try:
+        payload = hashline.recovery_payload(root, miss.relpath, miss.error)
+    except Exception:  # noqa: BLE001 - never raise to the host
+        payload = {"ok": False, "error": miss.error, "not_found": miss.error.startswith("not_found:"),
+                   "similar_files": [], "hint": f"Paths are relative to the workspace root {root}."}
+    key = (str(task_id or "default"), op, miss.relpath)
+    count = _REPEATS.pop(key, 0) + 1
+    while len(_REPEATS) >= _REPEATS_CAP:
+        _REPEATS.pop(next(iter(_REPEATS)))
+    _REPEATS[key] = count
+    if count >= _REPEAT_AT:
+        payload["repeated"] = count
+        payload["hint"] = (
+            f"Stop retrying this path. It failed {count} times; pick one of similar_files "
+            "or list files with terminal. " + payload["hint"]
+        )
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _root_for(kwargs: dict[str, object]) -> str:
+    root = _workspace_root(kwargs.get("task_id"))
+    return os.path.realpath(root if root else os.getcwd())
+
+
+def hashline_read_handler(args: dict[str, Any], **kwargs: object) -> str:
+    root = ""
+    try:
+        root = _root_for(kwargs)
+        path = _resolve(str(args.get("path", "")), root)
+        _require_exists(path, root)
         offset = args.get("offset", 1)
         limit = args.get("limit", 400)
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 1:
@@ -110,6 +165,8 @@ def hashline_read_handler(args: dict[str, Any], **kwargs: object) -> str:
             raise HashlineError("bounds:/limit — must be a non-negative integer")
         result = hashline.read_lines(path, offset=offset, limit=limit)
         return json.dumps({"ok": True, **result}, ensure_ascii=False)
+    except _PathMiss as miss:
+        return _miss_payload(miss, root, kwargs.get("task_id"), "read")
     except HashlineError as exc:
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
     except Exception as exc:  # noqa: BLE001 - never raise to the host
@@ -117,13 +174,21 @@ def hashline_read_handler(args: dict[str, Any], **kwargs: object) -> str:
 
 
 def hashline_edit_handler(args: dict[str, Any], **kwargs: object) -> str:
+    root = ""
     try:
-        path = resolve_path(str(args.get("path", "")), _workspace_root(kwargs.get("task_id")))
+        root = _root_for(kwargs)
+        path = _resolve(str(args.get("path", "")), root)
         edits_raw = args.get("edits")
         if not isinstance(edits_raw, list):
             raise HashlineError("invalid_type:/edits — must be an array")
+        creates = len(edits_raw) == 1 and isinstance(edits_raw[0], dict) \
+            and edits_raw[0].get("op") == "insert_after" and str(edits_raw[0].get("anchor", "")) == "0:000"
+        if edits_raw and not creates:
+            _require_exists(path, root)
         result = hashline.edit_file(path, edits_raw)
         return json.dumps(result, ensure_ascii=False)
+    except _PathMiss as miss:
+        return _miss_payload(miss, root, kwargs.get("task_id"), "edit")
     except HashlineError as exc:
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
     except Exception as exc:  # noqa: BLE001 - never raise to the host

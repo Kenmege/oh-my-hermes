@@ -439,3 +439,96 @@ class BinaryTests(_RootTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotFoundRecoveryTests(_RootTestCase):
+    """Missing paths answer with similar_files + hint; absolute /src/... falls back to the root."""
+
+    def setUp(self):
+        super().setUp()
+        from omh.plugin_bundle.omh.tools import hashline_tool
+        hashline_tool._REPEATS.clear()
+
+    def write(self, rel: str, raw: str = "a\n") -> str:
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        return path
+
+    def test_missing_read_suggests_same_basename_in_other_dir(self):
+        self.write("src/benchapp/select_provider.py")
+        self.write("README.md")
+        result = json.loads(hashline_read_handler({"path": "lib/select_provider.py"}))
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["not_found"])
+        self.assertTrue(result["error"].startswith("not_found:/path — lib/select_provider.py"), result)
+        self.assertEqual(result["similar_files"][0], os.path.join("src", "benchapp", "select_provider.py"))
+        self.assertIn("relative to the workspace root", result["hint"])
+
+    def test_placeholder_path_lists_top_level_entries(self):
+        self.write("docs/guide.md")
+        self.write("notes.txt")
+        result = json.loads(hashline_read_handler({"path": "path/to/your/source_file.py"}))
+        self.assertTrue(result["not_found"])
+        self.assertEqual(result["similar_files"], [])
+        self.assertIn("Top-level entries: docs/, notes.txt.", result["hint"])
+
+    def test_absolute_path_falls_back_to_root_relative_file(self):
+        self.write("src/benchapp/x.py", "hello\n")
+        result = json.loads(hashline_read_handler({"path": "/src/benchapp/x.py"}))
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["lines"], [f"1:{line_hash('hello')}|hello"])
+
+    def test_real_escape_still_refused_with_recovery(self):
+        self.write("x.py")
+        for path in ("../x.py", "/definitely-missing-omh/x.py"):
+            result = json.loads(hashline_read_handler({"path": path}))
+            self.assertFalse(result["ok"])
+            self.assertIn("scope_mismatch", result["error"])
+            self.assertFalse(result["not_found"])
+            self.assertEqual(result["similar_files"], ["x.py"])
+            self.assertIn("hint", result)
+
+    def test_missing_edit_target_returns_not_found_and_writes_nothing(self):
+        self.write("pkg/real.py")
+        result = json.loads(hashline_edit_handler({
+            "path": "real.py",
+            "edits": [{"op": "replace", "start": "1:abc", "text": "x"}],
+        }))
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["not_found"])
+        self.assertEqual(result["similar_files"], [os.path.join("pkg", "real.py")])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "real.py")))
+
+    def test_repeat_guard_flags_third_identical_miss(self):
+        args = {"path": "nope/missing.py"}
+        second = None
+        for _ in range(2):
+            second = json.loads(hashline_read_handler(args, task_id="t9"))
+        self.assertNotIn("repeated", second)
+        third = json.loads(hashline_read_handler(args, task_id="t9"))
+        self.assertEqual(third["repeated"], 3)
+        self.assertTrue(third["hint"].startswith("Stop retrying this path."))
+        other_task = json.loads(hashline_read_handler(args, task_id="t10"))
+        self.assertNotIn("repeated", other_task)
+
+    def test_repeat_guard_dict_is_capped(self):
+        from omh.plugin_bundle.omh.tools import hashline_tool
+        for i in range(300):
+            hashline_read_handler({"path": f"missing_{i}.txt"}, task_id="cap")
+        self.assertLessEqual(len(hashline_tool._REPEATS), 256)
+
+    def test_walk_skips_vendor_dirs_and_respects_cap(self):
+        import time
+        self.write(".git/target.py")
+        self.write(".venv/lib/target.py")
+        self.write("node_modules/target.py")
+        self.assertEqual(hashline.similar_files(self.root, "target.py"), [])
+        for i in range(2100):
+            self.write(f"bulk/d{i % 21}/file_{i}.py")
+        start = time.monotonic()
+        suggestions = hashline.similar_files(self.root, "missing/file_x.py")
+        self.assertLess(time.monotonic() - start, 5.0)
+        self.assertLessEqual(len(suggestions), 5)
+        self.assertTrue(suggestions)

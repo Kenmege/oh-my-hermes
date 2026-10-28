@@ -7,6 +7,7 @@ stale; a stale anchor never causes a write (all-or-nothing validation).
 """
 from __future__ import annotations
 
+import difflib
 import hashlib
 import os
 import tempfile
@@ -75,13 +76,86 @@ def resolve_path(path: str, terminal_cwd: str | None) -> str:
 
     Both sides are compared after ``realpath``: a symlink inside the root that points outside
     it is an escape, and an absolute path spelled through a symlinked prefix (macOS ``/var`` ->
-    ``/private/var``) is still inside.
+    ``/private/var``) is still inside. An absolute path outside the root whose root-relative join exists (``/src/x.py`` meant as
+    ``<root>/src/x.py``) resolves to that file.
     """
     root_abs = os.path.realpath(terminal_cwd if terminal_cwd else os.getcwd())
     resolved = os.path.realpath(os.path.join(root_abs, path))
-    if resolved != root_abs and not resolved.startswith(root_abs + os.sep):
-        raise HashlineError(f"scope_mismatch:/path — {path!r} resolves outside the root {root_abs}")
-    return resolved
+    if _inside(resolved, root_abs):
+        return resolved
+    if os.path.isabs(path):
+        rejoined = os.path.realpath(os.path.join(root_abs, path.lstrip("/\\")))
+        if _inside(rejoined, root_abs) and os.path.exists(rejoined):
+            return rejoined
+    raise HashlineError(f"scope_mismatch:/path — {path!r} resolves outside the root {root_abs}")
+
+
+def _inside(resolved: str, root_abs: str) -> bool:
+    return resolved == root_abs or resolved.startswith(root_abs + os.sep)
+
+
+_SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "__pycache__", ".pytest_cache"})
+_WALK_CAP = 2000
+
+
+def similar_files(root: str, path: str, limit: int = 5, cap: int = _WALK_CAP) -> list[str]:
+    """Up to ``limit`` workspace-relative text files resembling ``path``, searched across the root.
+
+    Rank: same basename, same stem, basename difflib ratio >= 0.6, same parent dir name, same
+    extension. The walk skips VCS/venv/cache dirs and stops after ``cap`` files.
+    """
+    norm = path.replace("\\", "/").rstrip("/")
+    base = os.path.basename(norm)
+    stem, ext = os.path.splitext(base)
+    parent = os.path.basename(os.path.dirname(norm))
+    scored: list[tuple[int, float, str]] = []
+    seen = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+        for name in sorted(filenames):
+            seen += 1
+            if seen > cap:
+                break
+            rel = os.path.relpath(os.path.join(dirpath, name), root)
+            ratio = difflib.SequenceMatcher(None, base, name).ratio() if base else 0.0
+            n_stem, n_ext = os.path.splitext(name)
+            if base and name == base:
+                tier = 0
+            elif stem and n_stem == stem:
+                tier = 1
+            elif ratio >= 0.6:
+                tier = 2
+            elif parent and os.path.basename(dirpath) == parent and dirpath != root:
+                tier = 3
+            elif ext and n_ext == ext:
+                tier = 4
+            else:
+                continue
+            scored.append((tier, -ratio, rel))
+        if seen > cap:
+            break
+    out: list[str] = []
+    for _, _, rel in sorted(scored):
+        if len(out) >= limit:
+            break
+        if not is_binary_file(os.path.join(root, rel)):
+            out.append(rel)
+    return out
+
+
+def recovery_payload(root: str, requested: str, error: str) -> dict:
+    """Failure payload for a missing or out-of-root path: similar files plus a hint."""
+    suggestions = similar_files(root, requested)
+    hint = f"Paths are relative to the workspace root {root}. Use one of similar_files, or list files with terminal."
+    if not suggestions:
+        try:
+            entries = sorted(e for e in os.listdir(root) if e not in _SKIP_DIRS)[:10]
+        except OSError:
+            entries = []
+        shown = [e + "/" if os.path.isdir(os.path.join(root, e)) else e for e in entries]
+        hint += " Top-level entries: " + (", ".join(shown) if shown else "(empty)") + "."
+    return {"ok": False, "error": error, "not_found": error.startswith("not_found:"),
+            "similar_files": suggestions, "hint": hint}
 
 
 def is_binary_file(path: str) -> bool:
