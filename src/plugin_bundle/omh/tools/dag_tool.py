@@ -44,7 +44,7 @@ import time
 from typing import Any
 
 from .. import dag_run, runtime_paths
-from ..delegation_ledger import read_ledger, with_unjoined_stop
+from ..delegation_ledger import oneshot_children_spawned, read_ledger, with_unjoined_stop
 from ..delegation_snapshot import dag_added_clause, shown_lanes
 from ..owner_preference_record import (
     OWNER_PREFERENCE_EXPLICIT_CHOICE_PROVENANCES,
@@ -204,6 +204,8 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
         if found is None:
             return _refused(action, "run_not_found", "No dag run by that id in this conversation; define it first.")
         record, path = found
+        # Read before anything changes: a detector that cannot answer refuses the call with the record untouched.
+        budget = oneshot_budget(hermes_home, segments) if action in ("ready", "settle", "repair", "extend") else None
         with dag_run.locked(path):
             record = dag_run.read_run(path) or record
             children = _children(omh_home, segments, hermes_home)
@@ -220,7 +222,8 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
                     "The run is cancelled. Children already running keep running; stop them with "
                     "delegate_task action=stop if they should not finish."))
             if action == "ready":
-                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task)
+                return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
+                              budget=budget)
             if action == "settle":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the node to settle.")
                 backend = record.get("backend")
@@ -247,21 +250,23 @@ def omh_dag_handler(args: Mapping[str, object], **kwargs: object) -> str:
                            f"terminal the child wrote it in ({unread}). The nodes after it read that file; if it is "
                            "not there, they stop and say so.")
                 return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
-                              say=say, settled={"node": node, "outcome": happened})
+                              say=say, settled={"node": node, "outcome": happened}, budget=budget)
             if action == "repair":
                 node = dag_run.valid_id(args.get("node"), "invalid_node_id", "Name the failed node to repair.")
-                added = dag_run.repair(record, derived, node, args.get("nodes"), now)
+                added = dag_run.repair(record, derived, node, args.get("nodes"), now,
+                                       oneshot_remaining=_wave_budget(record, derived, budget, now))
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
                 return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
-                              settled={"node": node, "repair_nodes": added})
+                              settled={"node": node, "repair_nodes": added}, budget=budget)
             if action == "extend":
-                added = dag_run.extend(record, derived, args.get("nodes"), args.get("node"), now)
+                added = dag_run.extend(record, derived, args.get("nodes"), args.get("node"), now,
+                                       oneshot_remaining=_wave_budget(record, derived, budget, now))
                 dag_run.write_run(path, record)
                 derived = dag_run.derive(record, children, now)
                 return _ready(action, record, path, derived, children, omh_home, hermes_home, now, shown, task=task,
                               settled={"extend_round": len(record["extends"]), "extend_nodes": added,
-                                       "found_by": record["nodes"][-1]["found_by"]})
+                                       "found_by": record["nodes"][-1]["found_by"]}, budget=budget)
             return _export(args, record, path, derived, children, omh_home, now, shown)
     except dag_run.DagRefusal as refusal:
         return _refused(action, refusal.reason, refusal.say)
@@ -321,11 +326,44 @@ def oneshot_child_limit(hermes_home: Path) -> int | None:
     return limit if limit > 0 else DEFAULT_ONESHOT_MAX_CHILDREN
 
 
+def oneshot_budget(hermes_home: Path, segments: list[str]) -> dict[str, int] | None:
+    """The one-shot child budget: ``limit``, the top-level children this process already started in the
+    conversation (``spent``), and what is left; None outside a one-shot session or with no cap.
+
+    Hermes keeps its own count per process (`_oneshot_children_spawned`) and refuses a whole `delegate_task` call
+    over it; this count is the `subagent_start` hooks of the same process (`oneshot_children_spawned`).
+    """
+    limit = oneshot_child_limit(hermes_home)
+    if limit is None:
+        return None
+    spent = oneshot_children_spawned(segments)
+    return {"limit": limit, "spent": spent, "remaining": max(0, limit - spent)}
+
+
+def _awaiting_dispatch(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]], now: float) -> list[str]:
+    """Nodes handed to delegate_task that no child took yet and that are not offered again: each will cost a child."""
+    offered = set(dag_run.offerable(record, derived, now))
+    return [str(node["id"]) for node in record["nodes"]
+            if derived[str(node["id"])]["state"] == "handed_out" and not derived[str(node["id"])].get("lost")
+            and str(node["id"]) not in offered
+            and (node.get("attempts") or [{}])[-1].get("lane") not in ("fanout", "parent")]
+
+
+def _wave_budget(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]],
+                 budget: Mapping[str, int] | None, now: float) -> int | None:
+    """How many more children this run may hand out now: the budget left, less the calls not yet dispatched."""
+    if budget is None:
+        return None
+    return max(0, budget["remaining"] - len(_awaiting_dispatch(record, derived, now)))
+
+
 def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durable: str, segments: list[str],
             now: float, shown: set[str] | None, task: str) -> str:
     run = dag_run.valid_id(args.get("run"), "invalid_run_id", "Give the run a short lowercase id (a-z, 0-9, -).")
+    budget = oneshot_budget(hermes_home, segments)
     record = dag_run.new_record(durable, run, args.get("name"), args.get("goal"), args.get("nodes"), now,
-                                oneshot_limit=oneshot_child_limit(hermes_home))
+                                oneshot_limit=budget["limit"] if budget else None,
+                                oneshot_spent=budget["spent"] if budget else 0)
     found = _find(omh_home, segments, run)
     if found is not None:
         existing, path = found
@@ -350,7 +388,7 @@ def _define(args: Mapping[str, object], omh_home: Path, hermes_home: Path, durab
             record["backend"] = backend  # where the children's handoff files land; `settle` reads them there
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, [], now)
-        return _ready("define", record, path, derived, [], omh_home, hermes_home, now, shown, task=task)
+        return _ready("define", record, path, derived, [], omh_home, hermes_home, now, shown, task=task, budget=budget)
 
 
 def _find(omh_home: Path, segments: list[str], run: object) -> tuple[dict[str, Any], Path] | None:
@@ -595,9 +633,12 @@ def _backend_lines(task_id: str, command: str) -> tuple[list[str], str]:
 def _ready(
     action: str, record: dict[str, Any], path: Path, derived: Mapping[str, Mapping[str, Any]],
     children: list[dict[str, Any]], omh_home: Path, hermes_home: Path, now: float, shown: set[str] | None, *,
-    task: str, say: str = "", settled: Mapping[str, Any] | None = None,
+    task: str, say: str = "", settled: Mapping[str, Any] | None = None, budget: Mapping[str, int] | None = None,
 ) -> str:
     slots = free_slots(hermes_home)
+    if budget is not None:
+        slots["oneshot"] = dict(budget)  # only in a one-shot session: an interactive payload is unchanged
+    task_budget = _wave_budget(record, derived, budget, now)
     owner = owner_choice(omh_home, now=now)
     nodes = {str(node["id"]): node for node in record["nodes"]}
     # With a coding owner the person chose, the ready coding nodes go to that owner's fanout, never to delegate_task;
@@ -614,14 +655,26 @@ def _ready(
             record["handoff_root"] = root
             pinned = True
     calls, held = ([], []) if waits else dag_run.calls_for(
-        record, derived, free_slots=slots["free"], per_call=slots["cap"], omh_home=omh_home, now=now, skip=coding)
-    if calls or pinned:
+        record, derived, free_slots=slots["free"], per_call=slots["cap"], omh_home=omh_home, now=now, skip=coding,
+        task_budget=task_budget)
+    # With the one-shot budget spent, a held node never gets a child: once nothing else is out, it is the parent's.
+    spent_out = task_budget is not None and held and task_budget - sum(len(call["tasks"]) for call in calls) <= 0
+    mine: list[str] = []
+    if spent_out and not calls and not any(info["state"] in dag_run.LIVE for info in derived.values()):
+        mine = list(held)
+        for node_id in mine:
+            attempt = dag_run.hand_out(nodes[node_id], derived[node_id]["state"], now)
+            attempt["lane"] = "parent"
+        held = []
+    if calls or pinned or mine:
         record["updated_at"] = now
         dag_run.write_run(path, record)
         derived = dag_run.derive(record, children, now)
     extra: dict[str, Any] = {"calls": calls, "slots": slots}
     if held:
         extra["held_for_slots"] = held
+    if mine:
+        extra["for_parent"] = mine
     if settled:
         extra["settled"] = dict(settled)
     if coding:
@@ -634,6 +687,21 @@ def _ready(
     if action in ("define", "repair", "extend"):
         extra["topology"] = record["topology"]
         extra["lint"] = record["lint"]
+    if mine:
+        say = " ".join(part for part in (say, (
+            f"The one-shot child budget is spent (delegation.oneshot_max_children is {budget['limit']}, "
+            f"{budget['spent']} started), so no child can take {', '.join(mine)}. Do "
+            f"{'it' if len(mine) == 1 else 'each'} yourself in this session, write "
+            f"{'its handoff' if len(mine) == 1 else 'each handoff'} ("
+            + "; ".join(f"{node_id}: {dag_run.node_handoff(record, omh_home, node_id)}" for node_id in mine)
+            + "), and settle it; do not call delegate_task for it.")) if part)
+    elif spent_out:
+        # Added to whatever else the reply says (a provider-error retry's offer, for one): no child takes these.
+        say = " ".join(part for part in (say, (
+            f"The one-shot child budget has no child left for {', '.join(held)} "
+            f"(delegation.oneshot_max_children is {budget['limit']}, {budget['spent']} started): dispatch the "
+            "calls returned, settle the nodes out, and call ready again; the rest is then yours to do in this "
+            "session.")) if part)
     if not say and held and not calls:
         say = "No delegate_task slot is free; end the turn and call ready again after a completion."
     if waits:

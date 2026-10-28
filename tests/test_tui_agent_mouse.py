@@ -680,14 +680,16 @@ class UnknownRowTests(unittest.TestCase):
         click(app, 10, 24)
         self.assertEqual(app.log_agent, SECOND)
 
-    def test_a_redraw_behind_an_open_pager_does_not_claim_the_top_row(self) -> None:
-        # The clear went to the alternate screen; the main screen's cursor is wherever the old frame left it.
+    def test_a_redraw_behind_an_open_pager_runs_once_it_closes_so_its_rows_are_certain(self) -> None:
+        # #2352: the redraw waits for the pager to close and then starts on the main screen's top row, so the region
+        # knows where its rows are (before, the clear went to the alternate screen and the place was unknown).
         app, _client = agent_app()
         app._on_input(Key(CHAR, "?"))
         app._full_redraw()
         app._on_input(Key(CHAR, "q"))
-        drawn(app)
-        self.assertIsNone(app.region.last_row(24))
+        screen = drawn(app)
+        last = max(row for row, line in enumerate(screen) if line.strip())
+        self.assertEqual(app.region.last_row(24), last)
         self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
 
 

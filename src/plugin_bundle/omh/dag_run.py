@@ -505,17 +505,23 @@ def definition_digest(nodes: Sequence[Mapping[str, Any]]) -> str:
 
 
 def new_record(session_id: str, run: str, name: object, goal: object, raw_nodes: object, now: float, *,
-               oneshot_limit: int | None = None) -> dict[str, Any]:
+               oneshot_limit: int | None = None, oneshot_spent: int = 0) -> dict[str, Any]:
+    """A validated run record. ``oneshot_limit`` and ``oneshot_spent``: the one-shot child budget and the children
+    this process already started against it; a graph over what is left is refused."""
     if not isinstance(raw_nodes, list) or not raw_nodes:
         raise DagRefusal("empty_graph", "A run needs at least one node.")
     if len(raw_nodes) > MAX_NODES:
         raise DagRefusal("too_many_nodes", f"A run holds at most {MAX_NODES} nodes; split the goal into phases.")
-    if oneshot_limit is not None and len(raw_nodes) > oneshot_limit:
+    remaining = None if oneshot_limit is None else max(0, oneshot_limit - oneshot_spent)
+    if remaining is not None and len(raw_nodes) > remaining:
+        used = (f" This session already started {oneshot_spent} of its {oneshot_limit}, so {remaining} "
+                f"{'is' if remaining == 1 else 'are'} left." if oneshot_spent else "")
+        cut = (f"cut the graph to {remaining} or fewer" if remaining else "do the work in this session yourself")
         raise DagRefusal(
             "oneshot_budget_exceeded",
-            f"This one-shot session may define at most {oneshot_limit} "
-            f"{'node' if oneshot_limit == 1 else 'nodes'} (delegation.oneshot_max_children), and the graph has "
-            f"{len(raw_nodes)}. A one-shot run has no later session: cut the graph to {oneshot_limit} or fewer, or "
+            f"This one-shot session may define at most {remaining} "
+            f"{'node' if remaining == 1 else 'nodes'} (delegation.oneshot_max_children is {oneshot_limit}), and the "
+            f"graph has {len(raw_nodes)}.{used} A one-shot run has no later session: {cut}, or "
             "run the work interactively.",
         )
     nodes = [_validated_node(raw) for raw in raw_nodes]
@@ -726,8 +732,10 @@ def offerable(record: Mapping[str, Any], derived: Mapping[str, Mapping[str, Any]
                 nodes.append(node_id)
         elif state == "handed_out":
             last = node["attempts"][-1]
-            if last.get("lane") == "fanout":
-                continue  # exported to a coding owner: settled from the fanout result, never handed to delegate_task
+            if last.get("lane") in ("fanout", "parent"):
+                # Exported to a coding owner, or left to the parent once the one-shot child budget was spent: settled
+                # from the fanout result or the parent's own work, never handed to delegate_task.
+                continue
             if derived[node_id].get("lost"):
                 if int(last.get("lost", 0)) < MAX_LOST_REOFFERS:
                     nodes.append(node_id)
@@ -845,13 +853,15 @@ def task_for(
 
 def calls_for(
     record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], *, free_slots: int, per_call: int,
-    omh_home: Path, now: float, skip: Iterable[str] = (),
+    omh_home: Path, now: float, skip: Iterable[str] = (), task_budget: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Ready nodes as `delegate_task` calls, one per category (and route fallback), at most ``free_slots`` calls.
 
     Returns the calls, whose nodes are now handed out in ``record``, and the
-    ready nodes left for a later call because no slot was free. ``skip`` are
-    nodes that go elsewhere (an external coding owner's export).
+    ready nodes left for a later call because no slot was free, or because
+    the calls already carry ``task_budget`` tasks in all (a one-shot session's
+    children left: every task costs one, a re-offered node's too). ``skip``
+    are nodes that go elsewhere (an external coding owner's export).
     """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     groups: dict[tuple[str, bool], list[str]] = {}
@@ -866,12 +876,20 @@ def calls_for(
     calls: list[dict[str, Any]] = []
     held: list[str] = []
     size = max(1, per_call)
+    left = None if task_budget is None else max(0, task_budget)
     for (category, fallback), members in groups.items():
         for start in range(0, len(members), size):
             chunk = members[start:start + size]
+            if left is not None:
+                held.extend(chunk[left:])
+                chunk = chunk[:left]
+            if not chunk:
+                continue
             if len(calls) >= free_slots:
                 held.extend(chunk)
                 continue
+            if left is not None:
+                left -= len(chunk)
             for node_id in chunk:
                 hand_out(nodes[node_id], derived[node_id]["state"], now, lost=bool(derived[node_id].get("lost")))
             calls.append({
@@ -976,10 +994,25 @@ def handoff_unchecked(node: Mapping[str, Any]) -> bool:
     return bool(attempts) and isinstance(attempts[-1], Mapping) and attempts[-1].get("handoff_checked") is False
 
 
+def _require_oneshot_room(added: Sequence[Mapping[str, Any]], remaining: int | None, what: str) -> None:
+    if remaining is not None and len(added) > remaining:
+        raise DagRefusal(
+            "oneshot_budget_exceeded",
+            f"This one-shot session can start {remaining} more "
+            f"{'child' if remaining == 1 else 'children'} (delegation.oneshot_max_children), and the {what} adds "
+            f"{len(added)} {'node' if len(added) == 1 else 'nodes'}. Add {remaining} or fewer, or do the work in this "
+            "session yourself and report what is open.",
+        )
+
+
 def repair(
-    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, raw_nodes: object, now: float
+    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], node_id: str, raw_nodes: object, now: float,
+    *, oneshot_remaining: int | None = None,
 ) -> list[str]:
-    """Add a group of repair nodes for a failed or blocked node. Returns the new ids."""
+    """Add a group of repair nodes for a failed or blocked node. Returns the new ids.
+
+    ``oneshot_remaining``: the children a one-shot session can still start; a group larger than that is refused.
+    """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     if node_id not in nodes:
         raise DagRefusal("unknown_node", f"Node {node_id} is not in run {record['run']}.")
@@ -1016,6 +1049,7 @@ def repair(
     every = {str(node["id"]): node["depends_on"] for node in record["nodes"]}
     below = {key: sorted(group) for key in every if root in ancestors(key, every)}
     _require_graph(list(record["nodes"]) + added, editable=group | runnable, before=below)
+    _require_oneshot_room(added, oneshot_remaining, "repair")
     record["nodes"].extend(added)
     groups.append([str(node["id"]) for node in added])
     record["topology"] = topology(record["nodes"])
@@ -1029,7 +1063,8 @@ def extend_rounds_left(record: Mapping[str, Any]) -> int:
 
 
 def extend(
-    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], raw_nodes: object, found_by: object, now: float
+    record: dict[str, Any], derived: Mapping[str, Mapping[str, Any]], raw_nodes: object, found_by: object, now: float,
+    *, oneshot_remaining: int | None = None,
 ) -> list[str]:
     """Add a round of nodes to a run whose every node passed but whose goal check found work missing.
 
@@ -1039,7 +1074,8 @@ def extend(
     without an edge with any node of the run, finished ones included (a
     superseded repair node excepted). ``found_by`` names the node whose check
     found the gap; without it, the run's last accepted verification node.
-    Returns the new ids.
+    ``oneshot_remaining``: the children a one-shot session can still start;
+    a round larger than that is refused. Returns the new ids.
     """
     nodes = {str(node["id"]): node for node in record["nodes"]}
     if record.get("cancelled_at") is not None:
@@ -1083,6 +1119,7 @@ def extend(
                 f"Node {node['id']} may depend only on accepted nodes or on this round's own, not {', '.join(outside)}.",
             )
         node.update(origin=f"extend:{len(rounds) + 1}", found_by=origin)
+    _require_oneshot_room(added, oneshot_remaining, "extend round")
     record["nodes"].extend(added)
     rounds.append([str(node["id"]) for node in added])
     record["topology"] = topology(record["nodes"])
