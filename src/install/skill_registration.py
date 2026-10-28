@@ -31,7 +31,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import os
-from pathlib import Path, PurePath
+from pathlib import Path
 import sys
 
 from .config_adapter import (
@@ -205,8 +205,8 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     expands it (`expand_external_dir_entry`), so a spelling through `${VAR}`
     is the same entry too. A relative entry is never one: Hermes anchors it at
     its own home, so it names a directory there, not under the managed root,
-    whatever directory this command runs from (`_hermes_reads_as_absolute`).
-    Config order is kept.
+    whatever directory this command runs from (`_names_a_root`). Config order
+    is kept.
     """
     if current is None:
         return []
@@ -214,24 +214,28 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     entries: list[str] = []
     for entry in external_dirs(config_text):
         normalized = os.path.normpath(expand_external_dir_entry(entry))
-        if not _hermes_reads_as_absolute(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
+        if not _names_a_root(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
             continue
         if _real_key(os.path.dirname(os.path.dirname(normalized))) == generations:
             entries.append(entry)
     return entries
 
 
-def _hermes_reads_as_absolute(entry: str, flavour: type[PurePath] = PurePath) -> bool:
-    """Whether Hermes anchors `entry` as written rather than at its own home.
+def _names_a_root(entry: str) -> bool:
+    """Whether Hermes reads `entry` from a root rather than from under its own home.
 
-    Hermes asks `Path.is_absolute()`, which on Windows needs a drive and a
-    root on every Python version, so it anchors a rooted entry with no drive
-    (`\\omh\\generations\\<id>\\skills`) at its home. `os.path.isabs` called
-    that absolute through 3.12 and relative from 3.13, so asking it made the
-    answer depend on the interpreter. `flavour` is the native pure path; the
-    tests pass the other one.
+    Hermes joins a non-absolute entry onto its home, and on Windows a join
+    with a rooted entry keeps only the home's drive: `\\omh\\generations\\<id>\\skills`
+    names `<home drive>:\\omh\\...`, not a directory under the home. So the
+    question is whether the part after the drive starts at a root, which
+    `os.path.splitdrive` answers alike on every Python version;
+    `os.path.isabs` called that entry absolute through 3.12 and relative from
+    3.13. Only a drive-relative entry (`C:omh\\...`) or a bare relative one is
+    under Hermes' home. No reader here knows that home, so a drive-less entry
+    is resolved on this command's drive, as before.
     """
-    return flavour(entry).is_absolute()
+    tail = os.path.splitdrive(entry)[1]
+    return tail[:1] in {os.path.sep, os.path.altsep or os.path.sep}
 
 
 def _real_key(path: str | Path) -> str:

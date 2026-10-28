@@ -2893,8 +2893,10 @@ a home naming only one is migrated to the pointer rather than read as the
 opt-out; `omh uninstall --registration-only` removes them too. Only
 absolute entries under the pointer's own managed root match: a `skills`
 directory under some other `generations/` directory, and any relative
-entry (Hermes anchors those at its own home, and on Windows that includes
-one rooted without a drive, such as `\omh\...`), stay.
+entry (Hermes anchors those at its own home), stay. On Windows an entry
+rooted without a drive, such as `\omh\...`, is not relative: Hermes loads it
+from its home's drive, and it matches. Entries are expanded in the running
+command's environment, which a Hermes service may not share.
 `omh doctor` reports a home that still names two managed directories on
 disk, an older generation's pack beside the pointer included, as
 `external_dir_ambiguity` (one row per affected profile) and

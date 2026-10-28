@@ -13,9 +13,12 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 import json
+import ntpath
 import os
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PureWindowsPath
+import posixpath
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -229,28 +232,65 @@ class GenerationPackEntriesTests(unittest.TestCase):
             self.assertEqual((migration.retired, migration.registration), ([spelled], "migrated"))
             self.assertEqual(external_dirs(migration.text), [pointer.as_posix(), unset])
 
-    def test_a_rooted_entry_without_a_drive_is_relative_to_hermes_on_every_python(self) -> None:
-        # Hermes asks `Path.is_absolute()`, which on Windows needs a drive and
-        # a root and anchors `\omh\...` at its own home. `ntpath.isabs`
-        # answered True through 3.12 and False from 3.13, so the check must
-        # not ask it. Pure paths of both flavours, so POSIX runners pin the
-        # Windows answer too.
+    def test_a_rooted_entry_without_a_drive_names_a_root_on_every_python(self) -> None:
+        # Hermes joins a non-absolute entry onto its home, and a Windows join
+        # with a rooted entry keeps only the home's drive: `\\omh\\...` names
+        # `C:\\omh\\...`, never a directory under the home. Only a
+        # drive-relative or a bare relative entry lands under it.
+        # `ntpath.isabs` called the rooted one absolute through 3.12 and
+        # relative from 3.13, so the check must not ask it. Run through
+        # `ntpath` and `posixpath` so POSIX runners pin the Windows answer.
+        home = PureWindowsPath("C:\\Users\\u\\.hermes")
+        self.assertEqual(home / "\\omh\\generations\\abc\\skills", PureWindowsPath("C:\\omh\\generations\\abc\\skills"))
+        self.assertEqual(home / "C:omh\\x", home / "omh" / "x")
         windows = {
-            "\\omh\\generations\\20261025\\skills": False,
-            "/omh/generations/20261025/skills": False,
-            "C:omh\\generations\\20261025\\skills": False,
-            "generations\\20261025\\skills": False,
-            "C:\\omh\\generations\\20261025\\skills": True,
-            "C:/omh/generations/20261025/skills": True,
-            "\\\\server\\share\\omh\\generations\\20261025\\skills": True,
+            "\\omh\\generations\\abc\\skills": True,
+            "/omh/generations/abc/skills": True,
+            "C:\\omh\\generations\\abc\\skills": True,
+            "C:/omh/generations/abc/skills": True,
+            "\\\\server\\share\\omh\\generations\\abc\\skills": True,
+            "C:omh\\generations\\abc\\skills": False,
+            "generations\\abc\\skills": False,
         }
-        for entry, absolute in windows.items():
-            with self.subTest(entry):
-                self.assertIs(_registration_module._hermes_reads_as_absolute(entry, PureWindowsPath), absolute)
-        posix = {"/omh/generations/20261025/skills": True, "generations/20261025/skills": False}
-        for entry, absolute in posix.items():
-            with self.subTest(entry):
-                self.assertIs(_registration_module._hermes_reads_as_absolute(entry, PurePosixPath), absolute)
+        with mock.patch.object(_registration_module, "os", SimpleNamespace(path=ntpath)):
+            for entry, rooted in windows.items():
+                with self.subTest(entry):
+                    self.assertIs(_registration_module._names_a_root(entry), rooted)
+        posix = {"/omh/generations/abc/skills": True, "generations/abc/skills": False}
+        with mock.patch.object(_registration_module, "os", SimpleNamespace(path=posixpath)):
+            for entry, rooted in posix.items():
+                with self.subTest(entry):
+                    self.assertIs(_registration_module._names_a_root(entry), rooted)
+
+    def test_on_windows_a_rooted_pack_without_a_drive_is_named_and_retired(self) -> None:
+        # Hermes loads `\\omh\\generations\\abc\\skills` from its home's drive,
+        # so beside the pointer it is the #1857 ambiguity once the pointer
+        # moves. This module's path functions as a Windows host whose
+        # command runs on C: sees them; a pack on another drive and a
+        # drive-relative entry are not the managed root.
+        pointer = PureWindowsPath("C:\\omh\\current\\skills")
+        rooted = "\\omh\\generations\\abc\\skills"
+        text = (
+            "skills:\n  external_dirs:\n"
+            f"    - {pointer}\n    - {rooted}\n"
+            "    - C:omh\\generations\\abc\\skills\n    - D:\\omh\\generations\\abc\\skills\n"
+        )
+
+        def realpath(path: str, *, strict: bool = False) -> str:
+            return ntpath.normpath(ntpath.join("C:\\", path))
+
+        with (
+            mock.patch.object(_registration_module, "os", SimpleNamespace(path=ntpath)),
+            mock.patch.object(ntpath, "realpath", realpath),
+        ):
+            self.assertEqual(generation_pack_entries(text, pointer), [rooted])
+            migration = migrate_managed_registration(text, str(pointer), [], current=pointer)
+
+        self.assertEqual((migration.added, migration.retired), (False, [rooted]))
+        self.assertEqual(
+            external_dirs(migration.text),
+            [str(pointer), "C:omh\\generations\\abc\\skills", "D:\\omh\\generations\\abc\\skills"],
+        )
 
     def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:
         # Including the pack the pointer resolves to today: it is the same

@@ -227,14 +227,25 @@ class ExternalDirRegistrationTests(unittest.TestCase):
     def test_an_entry_is_expanded_the_way_hermes_expands_it(self) -> None:
         # Hermes expands `${VAR}` and then `~` before it resolves an entry,
         # so this spelling is the pointer to it; an unset variable stays as
-        # written there and names nothing of OMH's.
+        # written there and names nothing of OMH's. The order is pinned by a
+        # value that starts with `~`: expanded the other way round, the `~`
+        # it brings in would stay literal.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "current" / "skills").mkdir(parents=True)
-            with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": root.as_posix()}):
+            pointer = root / "managed" / "current" / "skills"
+            pointer.mkdir(parents=True)
+            # USERPROFILE beside HOME: ntpath.expanduser ignores HOME.
+            environment = {
+                "HOME": str(root),
+                "USERPROFILE": str(root),
+                "OMH_TEST_MANAGED_ROOT": (root / "managed").as_posix(),
+                "OMH_TEST_TILDE_ROOT": "~/managed",
+            }
+            with mock.patch.dict(os.environ, environment):
                 os.environ.pop("OMH_TEST_UNSET_ROOT", None)
-                self.assertTrue(external_dir_registered(["${OMH_TEST_MANAGED_ROOT}/current/skills"], root / "current" / "skills"))
-                self.assertFalse(external_dir_registered(["${OMH_TEST_UNSET_ROOT}/current/skills"], root / "current" / "skills"))
+                self.assertTrue(external_dir_registered(["${OMH_TEST_MANAGED_ROOT}/current/skills"], pointer))
+                self.assertTrue(external_dir_registered(["${OMH_TEST_TILDE_ROOT}/current/skills"], pointer))
+                self.assertFalse(external_dir_registered(["${OMH_TEST_UNSET_ROOT}/current/skills"], pointer))
 
     def test_a_textual_match_needs_no_directory_on_disk(self) -> None:
         self.assertTrue(external_dir_registered(["/nowhere/skills"], "/nowhere/skills"))

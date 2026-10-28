@@ -53,8 +53,10 @@ All notable changes will be documented here.
   neither retired nor reported and the home lost every OMH skill once the
   pointer moved. Such entries are now expanded first; one whose variable is
   unset is left untouched, as Hermes leaves it. A Windows entry rooted
-  without a drive (`\omh\...`) is read as relative on every Python version,
-  as Hermes reads it, instead of as absolute through 3.12 only.
+  without a drive (`\omh\...`), which Hermes loads from its home's drive, is
+  matched on every Python version instead of through 3.12 only. Uninstall's
+  check for a store another Hermes home still names, and the installed-skill
+  weight advisory, expand entries the same way.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'
   shared gateway (Hermes v0.22) refuses `/compress` as a typed command, so
   the TUI said Hermes could not run it in a TUI session. The gateway child

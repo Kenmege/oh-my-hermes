@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import assert_never
 
-from ..config_adapter import external_dirs, read_config
+from ..config_adapter import expand_external_dir_entry, external_dirs, read_config
 from ..paths import OmhPaths
 from .hermes_readiness_catalog import (
     HERMES_AGENT_READINESS_SCHEMA_VERSION,
@@ -99,7 +98,7 @@ def _registered_skill_surface(paths: OmhPaths, configured_dirs: list[str]) -> Na
 
 def _path_registered(path: Path, configured_dirs: list[str]) -> bool:
     target = path.expanduser().resolve()
-    return any(Path(os.path.expandvars(value)).expanduser().resolve() == target for value in configured_dirs)
+    return any(Path(expand_external_dir_entry(value)).resolve() == target for value in configured_dirs)
 
 
 def _summary(surfaces: list[NativeSurface], reinforcement: list[ReinforcementSurface]) -> ReadinessSummary:
