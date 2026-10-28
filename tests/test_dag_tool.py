@@ -1075,7 +1075,9 @@ class OneShotBudgetTests(unittest.TestCase):
         self.assertNotIn("held_for_slots", left)
         self.assertIn("yourself", left["say"])
         self.assertIn("delegation.oneshot_max_children is 3", left["say"])
-        self.assertIn(dag_run.node_handoff(record, home.omh, "a"), left["say"])
+        # The tail only: Windows may spell the temp home in 8.3 short form on one side and long on the other.
+        expected = Path(dag_run.node_handoff(record, home.omh, "a"))
+        self.assertIn(str(Path(expected.parent.parent.name, expected.parent.name, expected.name)), left["say"])
         self.assertEqual(done["state"], "done", done)
         self.assertEqual(record["nodes"][0]["attempts"][-1]["lane"], "parent")
 
