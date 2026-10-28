@@ -47,6 +47,23 @@ def _config_naming(*dirs: Path | str) -> str:
     return f"skills:\n  external_dirs:\n{items}"
 
 
+def _windows_path(realpath=None) -> SimpleNamespace:
+    """`os.path` as a Windows host on Python 3.13+ answers it, for POSIX runners.
+
+    `isabs` is pathlib's answer, which 3.13+ `ntpath.isabs` shares. On 3.11,
+    which CI runs, `ntpath.isabs` and the root rule agree on every input
+    (measured over drive-less rooted, UNC, device and drive-relative
+    spellings), so only this stub makes a reintroduced `os.path.isabs` fail
+    on every interpreter. `realpath`, when given, stands in for a resolve
+    on the command's drive.
+    """
+    module = {name: getattr(ntpath, name) for name in dir(ntpath) if not name.startswith("__")}
+    module["isabs"] = lambda path: PureWindowsPath(path).is_absolute()
+    if realpath is not None:
+        module["realpath"] = realpath
+    return SimpleNamespace(**module)
+
+
 def _managed_paths(root: Path, generation: Path) -> OmhPaths:
     """The primary home as a managed command install resolves it: skills_dir redirected."""
     return OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes", managed_skills_dir=generation)
@@ -238,8 +255,9 @@ class GenerationPackEntriesTests(unittest.TestCase):
         # with a rooted entry keeps only the home's drive: `\\omh\\...` names
         # `C:\\omh\\...`, never a directory under the home. Only a
         # drive-relative or a bare relative entry lands under it.
-        # `ntpath.isabs` called the rooted one absolute through 3.12 and
-        # relative from 3.13, so the check must not ask it. Run through
+        # A UNC share is a root of its own. `ntpath.isabs` called the
+        # drive-less rooted entry absolute through 3.12 and relative from
+        # 3.13, so the check must not ask it (`_windows_path`). Run through
         # `ntpath` and `posixpath` so POSIX runners pin the Windows answer.
         home = PureWindowsPath("C:\\Users\\u\\.hermes")
         self.assertEqual(home / "\\omh\\generations\\abc\\skills", PureWindowsPath("C:\\omh\\generations\\abc\\skills"))
@@ -250,10 +268,13 @@ class GenerationPackEntriesTests(unittest.TestCase):
             "C:\\omh\\generations\\abc\\skills": True,
             "C:/omh/generations/abc/skills": True,
             "\\\\server\\share\\omh\\generations\\abc\\skills": True,
+            "\\\\server\\share": True,
+            "\\\\.\\pipe": True,
             "C:omh\\generations\\abc\\skills": False,
             "generations\\abc\\skills": False,
         }
-        with mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=ntpath)):
+        self.assertTrue(PureWindowsPath("\\\\server\\share").root)
+        with mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=_windows_path())):
             for entry, rooted in windows.items():
                 with self.subTest(entry):
                     self.assertIs(_config_adapter_module.external_dir_names_a_root(entry), rooted)
@@ -280,10 +301,10 @@ class GenerationPackEntriesTests(unittest.TestCase):
         def realpath(path: str, *, strict: bool = False) -> str:
             return ntpath.normpath(ntpath.join("C:\\", path))
 
+        windows = _windows_path(realpath)
         with (
-            mock.patch.object(_registration_module, "os", SimpleNamespace(path=ntpath)),
-            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=ntpath)),
-            mock.patch.object(ntpath, "realpath", realpath),
+            mock.patch.object(_registration_module, "os", SimpleNamespace(path=windows)),
+            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
         ):
             self.assertEqual(generation_pack_entries(text, pointer), [rooted])
             migration = migrate_managed_registration(text, str(pointer), [], current=pointer)

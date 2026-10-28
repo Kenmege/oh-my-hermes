@@ -199,6 +199,27 @@ class SharedStoreUninstallTests(_Fixture):
 
         self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
 
+    def test_a_skills_reference_relative_to_its_home_still_protects_a_shared_store(self) -> None:
+        # Hermes anchors a relative entry at its own home, so `../omh/skills`
+        # in the primary names this store whatever directory uninstall runs
+        # from. Resolved against an unrelated cwd it named nothing.
+        bot = self.hermes / "profiles" / "bot"
+        self._profile_binding(bot, self.omh)
+        self._profile_binding(self.hermes, self.root / "primary-runtime")
+        config_path = self.hermes / "config.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"skills:\n  external_dirs:\n    - ../omh/skills\n")
+        paths = OmhPaths(omh_home=self.omh, hermes_home=bot)
+
+        with TemporaryDirectory() as unrelated:
+            cwd = os.getcwd()
+            os.chdir(unrelated)
+            try:
+                plan = store_removal_plan(paths, remove_profiles=False)
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual((plan["status"], plan["homes"]), ("kept", [str(self.hermes)]))
+
     def test_shared_store_dry_run_does_not_delete_or_rewrite_files(self) -> None:
         """Mutation control, independently of whether the proposed plan is safe."""
         bot = self.hermes / "profiles" / "bot"

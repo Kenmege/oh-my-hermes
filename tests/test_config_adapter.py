@@ -10,6 +10,7 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.config_adapter import (
+    anchor_external_dir_entry,
     display_key_named_twice,
     display_skin_selection,
     external_dir_registered,
@@ -265,6 +266,13 @@ class ExternalDirRegistrationTests(unittest.TestCase):
                 self.assertTrue(external_dir_registered([pointer.as_posix()], pointer))
             finally:
                 os.chdir(cwd)
+
+    def test_an_entry_is_anchored_at_the_home_the_way_hermes_anchors_it(self) -> None:
+        home = Path("/hermes-home")
+        with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": "/managed"}):
+            self.assertEqual(anchor_external_dir_entry("${OMH_TEST_MANAGED_ROOT}/skills", home), Path("/managed/skills"))
+        self.assertEqual(anchor_external_dir_entry("/managed/skills", home), Path("/managed/skills"))
+        self.assertEqual(anchor_external_dir_entry("skills", home), home / "skills")
 
     def test_a_textual_match_needs_no_directory_on_disk(self) -> None:
         self.assertTrue(external_dir_registered(["/nowhere/skills"], "/nowhere/skills"))
