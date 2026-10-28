@@ -88,8 +88,12 @@ class ShedPlanHintTests(unittest.TestCase):
         (shed,) = plan_rows(width=60, max_rows=1, fold_key="ctrl+p")
         self.assertTrue(shed.startswith("[Plan] Plan │ 5/7 ▸ Full"), shed)
         self.assertNotIn("ctrl+p", shed)
-        (folded,) = plan_rows(width=80, max_rows=1, fold_key="ctrl+p", plan_folded=True)
+        (folded,) = plan_rows(width=80, max_rows=4, fold_key="ctrl+p", plan_folded=True)
         self.assertTrue(folded.endswith("ctrl+p expand"), folded)
+        # #2349 follow-up: folded where the rows would collapse it anyway, the key could not expand it either.
+        (both,) = plan_rows(width=80, max_rows=1, fold_key="ctrl+p", plan_folded=True)
+        self.assertTrue(both.startswith("[Plan] Plan │ 5/7 ▸ Full"), both)
+        self.assertNotIn("ctrl+p", both)
 
 
 class FoldKeyTests(unittest.TestCase):
@@ -122,6 +126,20 @@ class FoldKeyTests(unittest.TestCase):
         drawn(app)
         app._on_input(Key(CHAR, "p", ctrl=True))
         self.assertFalse(app.plan_folded)
+
+    def test_a_plan_collapsed_for_room_leaves_the_key_alone_so_the_header_never_says_expand(self) -> None:
+        # #2349 follow-up: on a short terminal Ctrl+P set the fold flag, the header then said `ctrl+p expand`, and
+        # pressing it only cleared the flag.
+        app, _client = make_app(rows=10, cols=60)
+        app.hud = HudSnapshot(app.stored_id, hud_payload(
+            [{"text": f"Task {n} xx", "state": "done" if n < 7 else "active" if n == 7 else "pending"}
+             for n in range(10)]), 0.0)
+        (header,) = self.plan(app)
+        self.assertTrue(header.startswith("[Plan] Plan │ 7/10 ▸ Task 7 xx"), header)
+        self.assertNotIn("ctrl+p", header)
+        app._on_input(Key(CHAR, "p", ctrl=True))
+        self.assertFalse(app.plan_folded)
+        self.assertEqual(self.plan(app), [header])
 
     def test_the_choice_holds_for_a_new_plan_and_without_a_plan_the_key_is_the_composer_s(self) -> None:
         app, _client = self.app(False)

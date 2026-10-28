@@ -88,6 +88,16 @@ All notable changes will be documented here.
   and current item (the header names the key). The working row keeps
   Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
   memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
+- **A command typed during a long `/compress` keeps its answer, and Ctrl+P
+  matches its hint.** Hermes' shared gateway holds a command sent while the
+  TUI's own `/compress` of that session runs until the compression ends; the
+  TUI gave it 120 s, so past that `/undo`'s draft or `/retry`'s resend was
+  dropped while Hermes still ran it. Such a command now waits for the
+  compression's time left plus 120 s, and the shared gateway's hold is named
+  under it. On a terminal too short for the plan, Ctrl+P no longer sets a
+  fold the screen cannot show, so the header never offers `ctrl+p expand`
+  for a plan the key cannot expand. A redraw while a pager is open sends
+  its erase in the pager's next synchronized frame.
 
 ## 4.0.3 - 2026-10-27
 

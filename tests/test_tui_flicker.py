@@ -20,7 +20,10 @@ import unittest
 
 from _tui_gateway_replay import Scenario, spans
 from test_tui_app import BOX_MARK, NO_TERMIOS, AppTestCase, Run, Step, startup_answers
+from test_tui_modes import make_app
 from omh.tui.app import RESIZE_SETTLE_SECONDS
+from omh.tui.pager import ALT_SCREEN_OFF, Pager
+from omh.tui.style import Span
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, SYNC_BEGIN, SYNC_END
 
 ERASE_SCREEN = "\x1b[2J"
@@ -210,6 +213,38 @@ class FlickerTests(AppTestCase):
         self.assert_clean_run(run)
         self.assertEqual(erases(terminal.writes[marks["before"] : marks["after"]]), 0)
         self.assert_session_as_before("before", "after")
+
+
+class PagerRedrawTests(unittest.TestCase):
+    """A full redraw while a pager is open (a gateway answer retaking the session: a catalog, a rewind, a resume)."""
+
+    def paging(self):
+        app, _client = make_app()
+        app._show_pager(Pager("details", [(Span(f"row {n}"),) for n in range(5)]))
+        app._render()
+        app.terminal.writes.clear()
+        return app
+
+    def test_the_erase_goes_out_in_the_pager_s_next_frame(self) -> None:
+        # #2346 review, LOW: the erase went out alone, so the alternate screen could show one blank frame.
+        app = self.paging()
+        app._full_redraw()
+        app._render()
+        (frame,) = app.terminal.writes
+        self.assertTrue(frame.startswith(SYNC_BEGIN + CLEAR_SCREEN_AND_SCROLLBACK) and frame.endswith(SYNC_END),
+                        frame[:40])
+        self.assertIn("row 4", frame)  # every row painted again after the erase
+        self.assertIn(" details · 1-5/5", app.terminal.screen.lines()[-1])
+        app._render()
+        self.assertEqual(sum(text.count(ERASE_SCREEN) for text in app.terminal.writes), 1, "the erase is owed once")
+
+    def test_left_before_that_frame_the_erase_goes_to_the_alternate_screen_it_was_for(self) -> None:
+        app = self.paging()
+        app._full_redraw()
+        app._leave_pager()
+        (left,) = app.terminal.writes
+        self.assertTrue(left.startswith(CLEAR_SCREEN_AND_SCROLLBACK + ALT_SCREEN_OFF), left[:40])
+        self.assertEqual(app.pager_lead, "")
 
 
 if __name__ == "__main__":

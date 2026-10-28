@@ -14,14 +14,16 @@ from test_tui_command_output import last, send
 from test_tui_modes import SID, answer, make_app, notices
 from omh.tui.app import (
     BRANCHED_NOTICE,
+    CALL_EXPIRED_NOTICE,
     COMPRESS_ANSWER_SECONDS,
     COMPRESS_STARTED_NOTICE,
     COMPRESS_UNANSWERED_NOTICE,
     COMPRESSION_BUSY_NOTICE,
+    COMPRESSION_HELD_NOTICE,
     REFUSAL_SENTENCES,
     SIDE_ANSWERS_LEFT_NOTICE,
 )
-from omh.tui.gateway import Event
+from omh.tui.gateway import Event, Response
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, CommandBlock
 
 BUSY = {"code": 4001, "message": "session_busy", "data": {"reason": "session_busy"}}
@@ -72,6 +74,55 @@ class CompressTests(unittest.TestCase):
         [call] = app.pending.values()
         self.assertEqual(call.expires_at, 100.0 + 120.0)
 
+    def test_a_command_sent_while_the_compress_is_out_is_waited_for_until_hermes_runs_it(self) -> None:
+        # Measured on Hermes bf0203a794's shared gateway: an /undo sent during a /compress is held until the
+        # compression commits, then runs. Given only 120 s, its draft was dropped while Hermes still undid the turn.
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app.shared_gateway = True
+        send(app, "/compress")
+        now[0] += 40.0
+        send(app, "/undo")
+        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "undo", "session_id": SID}))
+        undo = app.pending[2]
+        self.assertEqual(undo.expires_at, 100.0 + COMPRESS_ANSWER_SECONDS + 120.0)  # the compress's end, then 120 s
+        # Under /undo's echo, which waits below the open /compress echo.
+        self.assertEqual(undo.command.parts, [(COMPRESSION_HELD_NOTICE.format(name="undo"), NOTICE_INFO)])
+        now[0] += 300.0  # past the 120 s a command alone gets
+        app._expire_calls()
+        self.assertEqual(sorted(app.pending), [1, 2])
+        app._on_response(Response(1, {"type": "exec", "output": "✓ Compressed: 12 → 10 messages"}, None))
+        app._on_response(Response(2, {"type": "prefill", "message": "hello number 6", "notice": "↶ Undid 1 turn."},
+                                  None))
+        self.assertEqual(app.composer.text, "hello number 6")
+        self.assertEqual(notices(app, NOTICE_WARN), [])
+
+    def test_a_held_command_unanswered_past_its_budget_says_how_long_it_was_waited_for(self) -> None:
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        send(app, "/compress")
+        send(app, "/retry")
+        self.assertEqual(app.pending[2].command.parts, [])  # the stdio entry refuses it as busy, holding nothing
+        now[0] += COMPRESS_ANSWER_SECONDS + 120.0
+        app._expire_calls()
+        self.assertIn(CALL_EXPIRED_NOTICE.format(method="slash.exec", seconds=COMPRESS_ANSWER_SECONDS + 120.0),
+                      notices(app, NOTICE_WARN))
+
+    def test_a_command_waits_as_usual_once_the_compress_settled_or_for_another_session(self) -> None:
+        for settle in ("answered", "preview", "other session"):
+            with self.subTest(settle=settle):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                app.shared_gateway = True
+                send(app, "/compress --preview" if settle == "preview" else "/compress")
+                if settle == "answered":
+                    answer(app, client, {"type": "exec", "output": "✓ Compressed: 12 → 10 messages"})
+                if settle == "other session":
+                    app.sid = "live-2"
+                send(app, "/undo")
+                undo = app.pending[2]
+                self.assertEqual((undo.expires_at, undo.command.parts), (100.0 + 120.0, []))
+
     def test_a_command_refused_while_hermes_compresses_says_so(self) -> None:
         for line, name in (("/undo", "undo"), ("/retry", "retry"), ("/compress", "compress")):
             with self.subTest(line=line):
@@ -119,7 +170,6 @@ class SideAnswerTests(unittest.TestCase):
         self.assertEqual(notices(app)[-3:], ["[bg bg_7b76c3] ## Done\nTests pass.",
                                              '[btw "what did I say first?"] hello number 0',
                                              "From session other-session: [btw] not this one"])
-
 
     def test_leaving_a_session_before_its_side_answer_says_it_will_not_show(self) -> None:
         # Measured on Hermes bf0203a794: once the view is closed (a switch, /new), the gateway sends a /bg answer

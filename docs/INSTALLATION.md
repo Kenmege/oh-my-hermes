@@ -1218,12 +1218,15 @@ skills for this session and the TUI reads its command list again, so a skill
 installed since the start, by `omh update` or `/skills install`, runs as
 `/<name>` without a restart). Claude Code's `/cost`, `/permissions` and
 `/compact` run Hermes' `/usage`, `/approvals` and `/compress` (`here [N]`, a
-focus topic, or `--preview`; Hermes refuses a compression while a turn
-runs, and the TUI says to run it again once the turn ends). Hermes' shared gateway, which a Hermes from v0.22 runs,
-does not take `/compress`, `/branch`, `/retry`, `/undo`, `/stop`, `/bg`,
-`/btw`, `/rollback`, `/reload`, `/reload-mcp`, `/tools`, bare `/plugins` or
-`/config` as a typed command. The TUI runs each one through the gateway call
-Hermes' own Ink TUI uses for it, and `/branch` then opens the new session.
+focus topic, or `--preview`; Hermes refuses a compression while a turn runs,
+and the TUI says to run it again once the turn ends). Hermes' shared gateway,
+which a Hermes from v0.22 runs, does not take `/compress`, `/branch`,
+`/retry`, `/undo`, `/stop`, `/bg`, `/btw`, `/rollback`, `/reload`,
+`/reload-mcp`, `/tools`, bare `/plugins` or `/config` as a typed command. The
+TUI runs each one through the gateway call Hermes' own Ink TUI uses for it,
+and `/branch` then opens the new session. The shared gateway holds a command
+typed while that session's `/compress` runs until the compression ends, and
+the TUI waits for its answer that long.
 Commands that only Hermes' classic CLI runs (`/handoff`, `/worktree`,
 `/snapshot`, `/import`, `/hatch`, `/palette`) are left out of completion, and
 `/help` names them on one line. Typed, they go to Hermes, which says where to
