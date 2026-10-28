@@ -88,6 +88,19 @@ All notable changes will be documented here.
   and current item (the header names the key). The working row keeps
   Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
   memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
+- **The `/sessions` picker reads as a table, and `/resume` is `/sessions`.**
+  Sessions sit under a muted heading for the day each started (Today,
+  Yesterday, Previous 7 days, Earlier), in Hermes' order inside a day; age
+  and message count are right-aligned in columns of their own; and a rule
+  sets the list off from its header and its filter row, in the `/rewind`
+  and `/model` pickers too. The arrows and Page keys move past the
+  headings, and a filter keeps only the headings of days with a match. The
+  `/` menu now offers an alias under its own name, so `/resu` completes to
+  `/resume` instead of `/res` highlighting Hermes' `/compress` and `/resu`
+  going to Hermes' own classic-only `/resume`. On Hermes' shared gateway,
+  which resumes ids only, `/sessions <title>` and `/resume <title>` were
+  refused `not_found`; a title it refuses is now looked up among the listed
+  sessions and resumed by that session's id.
 
 ## 4.0.3 - 2026-10-27
 

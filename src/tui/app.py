@@ -654,6 +654,9 @@ OSC52_COPY = "\x1b]52;c;{}\x07"
 # `omh-*` and `ulw-*` slugs) up to half the terminal; a name longer than that pushes only its own summary.
 MENU_NAME_CELLS = 16
 SESSION_LIST_LIMIT = 50
+# The owner's own refusal code (`attach/gateway_attach.py` REFUSED). Hermes' shared gateway answers it to a
+# `session.resume` of a title, which it does not resolve, so `/sessions <title>` looks the title up after it.
+RESUME_REFUSED = 4001
 # `complete.path` goes out once the `@` token has held still this long.
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
@@ -4496,7 +4499,7 @@ class App(ModesMixin, AgentViewMixin):
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         elif arg:
-            self._switch_session(arg)
+            self._switch_session(arg, by_title=True)
         else:
             self._request("session.list", {"limit": SESSION_LIST_LIMIT}, self._open_session_picker)
 
@@ -4518,9 +4521,10 @@ class App(ModesMixin, AgentViewMixin):
         if action.kind == PICK:
             self._switch_session(action.session_id)
 
-    def _switch_session(self, target: str, notice: str = "") -> None:
+    def _switch_session(self, target: str, notice: str = "", by_title: bool = False) -> None:
         """Resume `target` (a stored id or an exact title); the current session closes once that worked, and `notice`
-        is said on the redrawn screen."""
+        is said on the redrawn screen. `by_title`: the person typed `target`, so a refusal may be a title the gateway
+        does not resolve (`_on_resume_refused`)."""
         if target == self.stored_id:
             self.transcript.add_notice(f"Already in session {target}.")
             return
@@ -4528,7 +4532,7 @@ class App(ModesMixin, AgentViewMixin):
             "session.resume",
             {"session_id": target, "cols": self.size[0]},
             lambda result: self._on_session_resumed(target, result, notice),
-            lambda error: self._on_resume_refused(target, error),
+            lambda error: self._on_resume_refused(target, error, notice, by_title),
         )
 
     def _on_session_resumed(self, target: str, result: dict[str, Any], notice: str = "") -> None:
@@ -4552,12 +4556,30 @@ class App(ModesMixin, AgentViewMixin):
         self._redeliver(result.get("open_requests"))
         self._refresh_catalog()  # its workspace may hold project-local skills the last one did not
 
-    def _on_resume_refused(self, target: str, error: dict[str, Any]) -> bool:
+    def _on_resume_refused(self, target: str, error: dict[str, Any], notice: str = "", by_title: bool = False) -> bool:
+        """Say the refusal, and stay. A typed target the owner refused (`RESUME_REFUSED`) is first looked up as a
+        title: Hermes' shared gateway resumes ids only, where its stdio entry also took an exact title."""
+        if by_title and error.get("code") == RESUME_REFUSED:
+            self._request(
+                "session.list", {"limit": SESSION_LIST_LIMIT},
+                lambda result: self._resume_titled(target, error, result, notice),
+                lambda _listing: self._on_resume_refused(target, error),
+            )
+            return True
         message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
             f"Could not switch to {target} ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
         )
         return True
+
+    def _resume_titled(self, title: str, error: dict[str, Any], result: dict[str, Any], notice: str) -> None:
+        """Resume the listed session titled exactly `title` (the first, Hermes' most recently active); none says the
+        refusal of `title` itself."""
+        found = next((row.id for row in session_rows(result) if row.title == title and row.id != title), "")
+        if found:
+            self._switch_session(found, notice)
+        else:
+            self._on_resume_refused(title, error)
 
     # ── attachments ──
 

@@ -78,7 +78,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)", echo_bare=False),
     SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
     SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
-    SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker, or /sessions <id or title>)",
+    SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker; an id or exact title after it switches)",
                  ("switch", "session", "resume"), echo_bare=False),
     SlashCommand("redraw", LOCAL, "Repaint the screen", echo_bare=False),
     SlashCommand("history", LOCAL, "Page through this session's transcript", echo_bare=False),
@@ -240,15 +240,36 @@ class Completion:
     summary: str
 
 
+def _offered_name(command: SlashCommand, key: str) -> str:
+    """The name the menu offers `command` under for the lowercased `key`: its own, unless only an alias matches.
+
+    A name or alias that starts with `key` wins over one that only contains
+    it, the command's own name first in each, so `/resu` offers `/resume`
+    (which runs /sessions) and `/q` still offers `/queue`.
+    """
+    names = (command.name, *command.aliases)
+    return next((name for name in names if name.startswith(key)), "") or next(
+        (name for name in names if key in name), command.name
+    )
+
+
 def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> list[Completion]:
     """Commands starting with `prefix` (no slash), then the ones that only contain it.
 
     In each group the TUI's own come first, then the gateway catalog, so
     `/uml` still finds `omh-codebase-uml` after every name that starts with
-    it. Catalog entries the TUI routes to Hermes or drops are left out, so the
-    menu only offers what will run here. Case is ignored, as a typed name's is.
+    it. A TUI command whose name does not match is offered under an alias
+    that does (`_offered_name`), so an alias completes to itself and runs as
+    typed. Catalog entries the TUI routes to Hermes or drops are left out, so
+    the menu only offers what will run here. Case is ignored, as a typed
+    name's is.
     """
-    local = [Completion(command.name, command.summary) for command in COMMANDS if command.route in (LOCAL, RENAMED)]
+    key = prefix.lower()
+    local = [
+        Completion(_offered_name(command, key), command.summary)
+        for command in COMMANDS
+        if command.route in (LOCAL, RENAMED)
+    ]
     seen = {completion.name for completion in local}
     gateway: list[Completion] = []
     for raw_name, summary in catalog_pairs:
@@ -258,7 +279,6 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
         seen.add(name.lower())
         gateway.append(Completion(name, summary))
     offered = local + gateway
-    key = prefix.lower()
     leading = [completion for completion in offered if completion.name.lower().startswith(key)]
     inner = [
         completion for completion in offered if key in completion.name.lower() and not completion.name.lower().startswith(key)
@@ -271,12 +291,14 @@ _SLASH_TOKEN = re.compile(r"(?<!\S)/([A-Za-z0-9][\w.:-]*)(?!\S)")
 
 
 def known_names(catalog_pairs: Iterable[tuple[str, str]] = ()) -> frozenset[str]:
-    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands and the catalog's.
+    """Every name a typed `/name` resolves to here: what completion offers, the TUI's commands (their aliases too)
+    and the catalog's.
 
     Lowercased: a typed name is matched whatever its case, as Hermes matches
     its commands and skills (`slash.exec` lowercases the name before it routes).
     """
-    return frozenset(completion.name.lower() for completion in completions("", catalog_pairs))
+    aliases = {alias for command in COMMANDS if command.route in (LOCAL, RENAMED) for alias in command.aliases}
+    return frozenset(completion.name.lower() for completion in completions("", catalog_pairs)) | aliases
 
 
 def slash_token_ranges(text: str, known: frozenset[str]) -> list[tuple[int, int]]:

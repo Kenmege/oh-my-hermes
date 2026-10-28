@@ -1,15 +1,19 @@
 """The `/sessions` picker: Hermes' stored sessions in the slot, filtered as you type.
 
-`session.list` answers with the person's stored sessions, most recent first.
-The picker shows each as one row (its title, or the first prompt when it has
-no title, its age and its message count), marks the session this TUI is in,
-and returns the id the person picked. Its last row is the filter
+`session.list` answers with the person's stored sessions, most recently
+active first. The picker groups them under a muted heading for the local day
+each started (`DAY_GROUPS`: today, yesterday, the rest of the past week,
+earlier), keeping Hermes' order inside a group, and shows each as one row: its
+title, or the first prompt when it has no title, then its age and its message
+count, each right-aligned in a column of its own. It marks the session this
+TUI is in and returns the id the person picked. Its last row is the filter
 (`filter_line`), drawn where the composer is, which the app hides while a
 picker is open. It holds no IO: the app sends the list call, feeds keys in,
 and runs the switch with the id it gets back.
 
-Keys: Up/Down move one row, PageUp/PageDown one page; printable text filters
-(by title, first prompt or id, ignoring case) and Backspace takes a filter
+Keys: Up/Down move one session, PageUp/PageDown one page, past the headings;
+printable text filters (by title, first prompt or id, ignoring case), keeping
+the headings of the groups with a match, and Backspace takes a filter
 character back; Enter picks the highlighted row; Esc or Ctrl+C closes.
 """
 
@@ -17,8 +21,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import date
 
 from .composer import PROMPT
+from .frame import RULE
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .prompts import CHOICE_MARK
 from .style import Line, Span
@@ -32,6 +38,15 @@ CURRENT_MARK = "●"
 KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 FILTER_PROMPT = PROMPT  # the composer's mark, on the row that stands where the composer was
 FILTER_PLACEHOLDER = "type to filter"
+# The sessions' day groups, by the local calendar day a session started: today, yesterday, the five days before
+# (the past week), and everything older or of no known start.
+DAY_GROUPS = ("Today", "Yesterday", "Previous 7 days", "Earlier")
+# A picker draws a rule under its header and one over its filter row while it keeps at least this many list rows.
+RULED_MIN_ROWS = 3
+# Its rules are set in by one cell on each side, as its header is, so no row of it starts as the composer's rules do.
+RULE_INSET = " "
+# Between a session row's age column and its message-count column.
+COLUMN_GAP = "   "
 
 
 @dataclass(frozen=True)
@@ -81,6 +96,14 @@ def session_rows(result: Mapping[str, object]) -> list[SessionRow]:
     return rows
 
 
+def day_group(started_at: float, now: float) -> int:
+    """Which of `DAY_GROUPS` a session that started at `started_at` is in at `now`, by the local calendar."""
+    if started_at <= 0:
+        return len(DAY_GROUPS) - 1
+    days = (date.fromtimestamp(now) - date.fromtimestamp(started_at)).days
+    return 0 if days <= 0 else 1 if days == 1 else 2 if days < 7 else 3
+
+
 def age_text(started_at: float, now: float) -> str:
     """`just now`, `5m ago`, `3h ago`, `2d ago`; "" when the start time is unknown."""
     if started_at <= 0:
@@ -118,6 +141,12 @@ def picker_row(highlighted: bool, lead: str, label: str, meta: str, width: int, 
     return (head, Span(lead + label, name), Span(" " * (room - cell_width(label)) + meta, words))
 
 
+def picker_rule(width: int, theme: Theme) -> Line:
+    """A picker's rule: `RULE` across `width` but for `RULE_INSET` at either end, muted."""
+    inset = cell_width(RULE_INSET)
+    return (Span(RULE_INSET + RULE * max(width - 2 * inset, 0), theme.muted),)
+
+
 @dataclass(frozen=True)
 class PickerFrame:
     lines: list[Line]
@@ -141,8 +170,10 @@ def picker_frame(
     A header (`head`), the `count` list rows `row` draws scrolled so the
     highlighted `index` shows (`empty` when there are none), then the
     filter row, its caret at the end of what was typed so an IME pre-edit
-    shows there. With two rows or fewer the header goes first, so the
-    highlighted row stays.
+    shows there. A rule (`picker_rule`) sets the list off from the header
+    and from the filter row while `RULED_MIN_ROWS` list rows still fit;
+    with less room the rules go first. With two rows or fewer the
+    header goes too, so the highlighted row stays.
     """
     if max_rows <= 0:
         return PickerFrame([], None, 1)
@@ -152,15 +183,17 @@ def picker_frame(
         lines = [current(index), filter_line(query, width, theme)][:max_rows]
         return PickerFrame(lines, (1, caret) if max_rows == 2 else None, 1)
     header = truncate_line(head, width)
-    body = max_rows - 2
+    rules = [picker_rule(width, theme)] if max_rows - 4 >= RULED_MIN_ROWS else []
+    body = max_rows - 2 - 2 * len(rules)
     start = min(max(index - body + 1, 0), max(count - body, 0))
     rows = [current(number) for number in range(start, min(start + body, count))] if count else [current(0)]
-    lines = [header, *rows, filter_line(query, width, theme)]
+    lines = [header, *rules, *rows, *rules, filter_line(query, width, theme)]
     return PickerFrame(lines, (len(lines) - 1, caret), body)
 
 
-def _messages(count: int) -> str:
-    return f"{count} message{'' if count == 1 else 's'}"
+def _messages(count: int, digits: int) -> str:
+    """`12 messages`, the count right-aligned in `digits` cells and `1 message ` padded to the plural's width."""
+    return f"{count:>{digits}} message{' ' if count == 1 else 's'}"
 
 
 @dataclass
@@ -171,13 +204,13 @@ class SessionPicker:
     index: int = 0
     page: int = 1  # rows the last render showed; PageUp/PageDown move by this many
     caret: tuple[int, int] | None = None  # the last render's caret, at the end of its filter row
+    now: float = 0.0  # the last render's clock, which the day groups count from; 0 keeps the list order
 
     def visible(self) -> list[SessionRow]:
-        """The rows the filter keeps, in list order."""
+        """The rows the filter keeps, a day group after another (`day_group`), in list order inside each."""
         needle = self.query.casefold()
-        if not needle:
-            return list(self.rows)
-        return [row for row in self.rows if needle in f"{row.title}\n{row.preview}\n{row.id}".casefold()]
+        kept = [row for row in self.rows if not needle or needle in f"{row.title}\n{row.preview}\n{row.id}".casefold()]
+        return sorted(kept, key=lambda row: day_group(row.started_at, self.now)) if self.now > 0 else kept
 
     def handle_key(self, event: Key | Paste) -> PickerAction | None:
         """Apply one key; a `PickerAction` when the person picked a row or closed the picker."""
@@ -203,20 +236,38 @@ class SessionPicker:
         self.index = 0
 
     def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
-        """A header row, the filtered rows scrolled so the highlighted one shows, then the filter row
-        (`picker_frame`)."""
+        """A header row, the filtered rows under their day groups' headings scrolled so the highlighted one shows,
+        then the filter row (`picker_frame`)."""
+        self.now = now
         shown = self.visible()
         self.index = min(self.index, max(len(shown) - 1, 0))
+        entries: list[SessionRow | str] = []  # a session's row, or a day group's heading before its first
+        for row in shown:
+            group = DAY_GROUPS[day_group(row.started_at, now)]
+            if group not in entries:
+                entries.append(group)
+            entries.append(row)
+        ages = max((cell_width(age_text(row.started_at, now)) for row in shown), default=0)
+        digits = max((len(str(row.message_count)) for row in shown), default=1)
         title = f" Sessions ({len(shown)}/{len(self.rows)})" if self.query else f" Sessions ({len(self.rows)})"
+        highlighted = entries.index(shown[self.index]) if shown else 0
         frame = picker_frame(
-            (Span(title, theme.heading),), len(shown), self.index,
-            lambda number: self._row(shown[number], number == self.index, width, theme, now),
+            (Span(title, theme.heading),), len(entries), highlighted,
+            lambda number: self._entry(entries[number], number == highlighted, width, theme, now, ages, digits),
             " no session matches the filter", self.query, width, theme, max_rows,
         )
         self.page, self.caret = frame.page, frame.caret
         return frame.lines
 
-    def _row(self, row: SessionRow, highlighted: bool, width: int, theme: Theme, now: float) -> Line:
-        mark = CURRENT_MARK if row.id == self.current else " "
-        meta = " · ".join(part for part in (age_text(row.started_at, now), _messages(row.message_count)) if part)
-        return picker_row(highlighted, f"{mark} ", row.label, meta, width, theme)
+    def _entry(
+        self, entry: SessionRow | str, highlighted: bool, width: int, theme: Theme, now: float, ages: int, digits: int
+    ) -> Line:
+        """A day group's heading, muted where the rows' titles start, or a session's row: its age and message count
+        right-aligned in columns `ages` and `digits` wide."""
+        if isinstance(entry, str):
+            inset = cell_width(CHOICE_MARK) + cell_width(f"{CURRENT_MARK} ")
+            return (Span(" " * inset, theme.muted), Span(entry, theme.muted))
+        mark = CURRENT_MARK if entry.id == self.current else " "
+        age = f"{age_text(entry.started_at, now):>{ages}}{COLUMN_GAP}" if ages else ""
+        meta = age + _messages(entry.message_count, digits)
+        return picker_row(highlighted, f"{mark} ", entry.label, meta, width, theme)

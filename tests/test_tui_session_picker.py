@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import unittest
 
 from _tui_lines import line_text
+from omh.tui.frame import RULE
 from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
-from omh.tui.session_picker import CLOSE, PICK, PickerAction, SessionPicker, age_text, session_rows
+from omh.tui.session_picker import (
+    CLOSE, DAY_GROUPS, PICK, PickerAction, SessionPicker, SessionRow, age_text, day_group, session_rows,
+)
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
 
-NOW = 1_791_900_000.0
+# Local noon, so the fixture's day groups are the same in every time zone: its rows started 30 s and 2 h before
+# (today) and 3 days before (the previous 7 days).
+NOW = datetime(2026, 10, 13, 12, 0).timestamp()
 
 # The recorded `session.list` row shape (Hermes 6c61c3e27d), plus synthesized neighbours.
 LISTED = {
@@ -79,21 +85,81 @@ class KeyTests(unittest.TestCase):
 
 class LinesTests(unittest.TestCase):
     def test_a_header_then_one_row_per_session_with_the_current_one_marked(self) -> None:
-        lines = picker().lines(60, DEFAULT_THEME, 8, NOW)
-        self.assertTrue(line_text(lines[0]).startswith(" Sessions (3)"))
-        self.assertEqual(len(lines), 5)
-        self.assertEqual(line_text(lines[-1]), "❯ type to filter")  # the filter, where the composer was
-        current, other, old = (line_text(line) for line in lines[1:4])
+        lines = picker().lines(60, DEFAULT_THEME, 10, NOW)
+        texts = [line_text(line) for line in lines]
+        self.assertTrue(texts[0].startswith(" Sessions (3)"))
+        self.assertEqual(len(lines), 9)
+        self.assertEqual(texts[-1], "❯ type to filter")  # the filter, where the composer was
+        # A rule under the header and one over the filter row, set in so no row starts as the composer's rules do.
+        self.assertEqual((texts[1], texts[-2]), (" " + RULE * 58,) * 2)  # one cell short of either edge
+        self.assertEqual({lines[1][0].style, lines[-2][0].style}, {DEFAULT_THEME.muted})
+        self.assertEqual([text.strip() for text in (texts[2], texts[5])], ["Today", "Previous 7 days"])
+        current, other, old = texts[3], texts[4], texts[6]
         self.assertTrue(current.startswith("❯ ● Reply with ok"))  # the pointer, then the current session's mark
-        self.assertTrue(current.rstrip().endswith("just now · 14 messages"))
+        self.assertTrue(current.rstrip().endswith("just now   14 messages"))
         self.assertTrue(other.startswith("    Refactor the router"))
-        self.assertTrue(other.rstrip().endswith("2h ago · 1 message"))
-        self.assertTrue(old.rstrip().endswith("3d ago · 40 messages"))
+        self.assertTrue(other.rstrip().endswith("2h ago    1 message"))
+        self.assertTrue(old.rstrip().endswith("3d ago   40 messages"))
+        # The age and the count each right-aligned in a column of its own, so the rows read as a table.
+        self.assertEqual(len({text.index("ago") for text in (other, old)} | {current.index("now")}), 1)
+        self.assertEqual(len({text.index("message") for text in (current, other, old)}), 1)
         self.assertTrue(all(line_width(line) <= 60 for line in lines))
         # The highlighted name in the accent, the others in the terminal's foreground; no row has a fill.
-        self.assertEqual(next(span for span in lines[1] if "Reply" in span.text).style, DEFAULT_THEME.menu_current)
-        self.assertEqual(next(span for span in lines[2] if "Refactor" in span.text).style, DEFAULT_THEME.menu)
+        self.assertEqual(next(span for span in lines[3] if "Reply" in span.text).style, DEFAULT_THEME.menu_current)
+        self.assertEqual(next(span for span in lines[4] if "Refactor" in span.text).style, DEFAULT_THEME.menu)
+        self.assertEqual(lines[2][-1].style, DEFAULT_THEME.muted)  # a heading is muted, where the titles start
+        self.assertEqual(texts[2].index("Today"), current.index("Reply"))
         self.assertEqual({span.style.bg for line in lines for span in line}, {None})
+
+    def test_sessions_are_grouped_by_the_local_day_they_started_in_list_order_inside_a_group(self) -> None:
+        midnight = datetime.fromtimestamp(NOW).replace(hour=0, minute=0)
+        started = {  # id: start, listed most recently active first, as Hermes lists them
+            "old-but-active": midnight - timedelta(days=9),
+            "this-morning": midnight + timedelta(hours=1),
+            "last-night": midnight - timedelta(hours=1),
+            "six-days": midnight - timedelta(days=5, hours=12),
+            "a-week": midnight - timedelta(days=6, hours=1),
+            "unknown": None,
+            "just-now": datetime.fromtimestamp(NOW),
+        }
+        rows = [SessionRow(sid, sid, "", at.timestamp() if at else 0.0, 1) for sid, at in started.items()]
+        chooser = SessionPicker(rows, current="")
+        self.assertEqual([row.id for row in chooser.visible()], list(started))  # before a render: Hermes' order
+        texts = [line_text(line).strip() for line in chooser.lines(60, DEFAULT_THEME, 30, NOW)[2:-2]]
+        self.assertEqual([text.lstrip("❯ ").split()[0] for text in texts], [
+            "Today", "this-morning", "just-now", "Yesterday", "last-night", "Previous", "six-days",
+            "Earlier", "old-but-active", "a-week", "unknown",
+        ])
+        self.assertEqual([DAY_GROUPS[day_group(row.started_at, NOW)] for row in chooser.visible()],
+                         ["Today"] * 2 + ["Yesterday", "Previous 7 days"] + ["Earlier"] * 3)
+
+    def test_keys_move_from_session_to_session_past_the_headings(self) -> None:
+        chooser = picker()
+        chooser.lines(60, DEFAULT_THEME, 10, NOW)
+        picked = []
+        for key in (DOWN, DOWN, DOWN, UP, UP, PAGE_DOWN):
+            chooser.handle_key(Key(key))
+            picked.append(chooser.visible()[chooser.index].id)
+        self.assertEqual(picked, ["20261012_090000_aaaaaa", "20261001_090000_bbbbbb", "20261001_090000_bbbbbb",
+                                  "20261012_090000_aaaaaa", "20261013_115656_e709ea", "20261001_090000_bbbbbb"])
+        self.assertEqual(chooser.handle_key(Key(ENTER)), PickerAction(PICK, "20261001_090000_bbbbbb"))
+        lines = [line_text(line) for line in chooser.lines(60, DEFAULT_THEME, 10, NOW)]
+        self.assertTrue(lines[6].startswith("❯   Release notes"), lines)  # the pointer on the row, never a heading
+
+    def test_a_filter_keeps_only_the_headings_of_groups_with_a_match(self) -> None:
+        texts = [line_text(line).strip() for line in picker(query="release").lines(60, DEFAULT_THEME, 10, NOW)]
+        self.assertEqual(texts[0], "Sessions (1/3)")
+        self.assertEqual(texts[2], "Previous 7 days")
+        self.assertNotIn("Today", texts)
+        self.assertTrue(texts[3].startswith("❯   Release notes"))
+
+    def test_the_rules_go_first_when_the_list_would_get_short(self) -> None:
+        for max_rows, ruled in ((6, False), (7, True)):
+            with self.subTest(max_rows=max_rows):
+                lines = [line_text(line) for line in picker().lines(60, DEFAULT_THEME, max_rows, NOW)]
+                self.assertEqual(len(lines), max_rows)
+                self.assertEqual(sum(RULE in line for line in lines), 2 if ruled else 0)
+                self.assertEqual(lines[-1], "❯ type to filter")
 
     def test_rows_scroll_to_keep_the_highlighted_one_and_the_page_follows_the_room(self) -> None:
         chooser = picker(index=2)
