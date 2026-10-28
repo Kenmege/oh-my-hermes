@@ -159,7 +159,7 @@ _BACKFILL_NOTICE = (
 _BACKFILL_HEADER = "[Recent channel messages]"
 # A display name is one or two plain words: a name that reads as a sentence,
 # or that holds a bracket, a slash or a symbol, is not one the reader trusts.
-_BACKFILL_SENDER = re.compile(r"(\[unverified\] )?\[[^\W_]+(?:[ .'-][^\W_]+)?( \[bot\])?\] ")
+_BACKFILL_SENDER = re.compile(r"(\[unverified\] )?\[([^\W_]+(?:[ .'-][^\W_]+)?)( \[bot\])?\] ")
 _BACKFILL_SENTENCE = re.compile(r"(?:[^\W_]|[\s,.!])*")
 # An inert message is acknowledgement-only chatter: greetings, thanks, acks,
 # times of day and an address to the room ("hi all", "thank you", "morning
@@ -172,6 +172,15 @@ _BACKFILL_WORDS = frozenset({
     "haha", "hello", "hey", "hi", "lol", "morning", "nice", "night", "ok", "okay", "sure", "thank", "thanks",
     "thx", "ty", "yeah", "yep", "yes",
 })
+
+
+def _plain_display_name(name: str) -> bool:
+    # A word of digits or of two or more capitals reads as a log tag or a
+    # status ("[CI]", "[build 502]", "[DEPLOY FAILED]"), not a person's name.
+    return not any(
+        word.isdigit() or (word.isupper() and sum(char.isalpha() for char in word) >= 2)
+        for word in re.split(r"[ .'-]", name)
+    )
 
 
 def _inert_backfill_message(text: str) -> bool:
@@ -204,7 +213,7 @@ def backfill_is_inert(backfill: str) -> bool:
         sender = _BACKFILL_SENDER.match(line)
         # A line with no sender continues the message before it; a bracket
         # opening one is outside `_BACKFILL_SENTENCE`, so it refuses there.
-        if sender is None and index == 0:
+        if (sender is None and index == 0) or (sender is not None and not _plain_display_name(sender.group(2))):
             return False
         unverified = unverified or bool(sender and sender.group(1))
         if not _inert_backfill_message(line[sender.end():] if sender else line):

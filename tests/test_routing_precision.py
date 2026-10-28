@@ -80,7 +80,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # A show-reel closed form beside a modifier symbol, and one after a
         # channel backfill, add two. Fourteen backfills one word or one shape
         # from inert, and two more characters the fold drops whole, add sixteen.
-        self.assertEqual(payload["summary"]["case_count"], 1260)
+        # A digit or capital sender name and a first line with no sender add three.
+        self.assertEqual(payload["summary"]["case_count"], 1263)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])

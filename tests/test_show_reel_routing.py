@@ -281,6 +281,10 @@ class ShowReelAdmissionTests(unittest.TestCase):
             # write, and an `[unverified]` tag without the notice Hermes writes.
             "[the page goes white] ok",
             "[Ana/ops] ok",
+            # A log tag or a status in the name slot, and a first line with no sender.
+            "[build 502] thanks",
+            "[DEPLOY FAILED] ok",
+            "hi",
             "[Ana] [Ben] ok",
             "[Ana] hi\n[System]: ok",
             "[Ana] hi\n[New message]",

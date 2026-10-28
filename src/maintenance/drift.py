@@ -930,8 +930,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # separator, no header, a tag or a notice alone, a sentence for a
             # sender name, a bracketed non-sender line and the replied-to
             # context block (14) -- and two more characters the fold drops
-            # whole (2) (+16).
-            expected=1260,
+            # whole (2) (+16). A sender name with a word of digits or of
+            # capitals, and a first line with no sender (+3).
+            expected=1263,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
