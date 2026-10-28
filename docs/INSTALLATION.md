@@ -371,7 +371,8 @@ omh · Fix the login bug
 
 The first line is the session's title (`untitled session` when Hermes has
 not named it). After a blank line, `resume:` reopens it by its whole id,
-which always resolves to this session. With a profile it carries `-p <profile>`, since a profile
+which always resolves to this session, and a blank line closes the card so
+your shell prompt does not sit right under the command. With a profile it carries `-p <profile>`, since a profile
 has its own `state.db`. A session in which nothing was said gets one line instead, `omh:
 nothing was said in this session, so there is nothing to resume.`, unless
 an earlier session of the same launch (before a `/new` or a switch) has

@@ -106,7 +106,8 @@ All notable changes will be documented here.
   and duration, a line of tokens and model, `omh --resume <id>` and
   `omh -c "<title>"`. It now prints the title (`untitled session` when
   there is none) and, after a blank line, `resume: omh --resume <id>` with
-  the whole id, plus `-p <profile>` for a profile launch. The
+  the whole id, plus `-p <profile>` for a profile launch, then a blank
+  line so the shell prompt does not sit right under it. The
   `-c "<title>"` line is gone with the counts, since the id always opens
   this session and a title can be shadowed by a newer `<title> #N`.
 

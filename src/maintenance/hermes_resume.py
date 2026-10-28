@@ -237,8 +237,9 @@ def exit_card_lines(db_path: str | Path | None, session_id: str, profile: str | 
     """What `omh` prints for `session_id` as the TUI closes: the card, `NOTHING_SAID_LINE`, or nothing.
 
     The card is the session's title and, after a blank line, the `omh` way
-    back: `resume: omh --resume <id>`, with the id whole so it can be copied.
-    The id always resolves, where a title lookup can land on another session.
+    back: `resume: omh --resume <id>`, with the id whole so it can be copied,
+    then a blank line so the shell prompt does not sit right under it. The id
+    always resolves, where a title lookup can land on another session.
 
     A session with no row is one nothing was said in: Hermes stores the row
     with the first prompt. A database that cannot be read prints nothing,
@@ -256,4 +257,5 @@ def exit_card_lines(db_path: str | Path | None, session_id: str, profile: str | 
         f"omh · {title if title and title.isprintable() else UNTITLED}",
         "",
         "  resume: " + resume_command_line(session_id, profile),
+        "",
     ]
