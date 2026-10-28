@@ -924,7 +924,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # scene and two everyday "three"/"scene" lines stay out of frontend (+4).
             # A closed show-reel form beside a modifier symbol that folding
             # drops (1), and one after a channel backfill of a fault (1) (+2).
-            expected=1244,
+            # show-reel backfill content: six backfills one word or one shape
+            # from inert (6), and two more characters the fold drops whole (2) (+8).
+            expected=1252,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -1462,7 +1464,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # sprite-forge adds one game character sprite sheet request (+1).
             # The rendered-scene lane: four scene requests and one scene-polish
             # request dispatch frontend (+5).
-            expected=1174,
+            # A show-reel closed form after an inert channel backfill, plain and
+            # under the Discord trigger note (+2).
+            expected=1176,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

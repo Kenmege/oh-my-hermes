@@ -88,6 +88,19 @@ All notable changes will be documented here.
   and current item (the header names the key). The working row keeps
   Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
   memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
+- **A promo or demo video asked for in a shared channel reaches
+  `show-reel` when the channel's backfill says nothing it could be
+  recording.** On Discord, Hermes puts the messages others posted since
+  the bot's last turn before `[New message]`, and any such backfill made a
+  closed request ("Make a demo video for the app") ask instead. Now each
+  backfilled message is read: when every one is in the adapter's
+  `[<name>] <text>` shape and uses only words from a closed list that
+  names no state (no negation, nothing broken, slow, missing or old, no
+  "again" or "same"), with no question, link, code, quote, emoji or
+  leading verb, the request routes as it would without the backfill. Any
+  other backfill, a reply pointer or an attachment note still makes it
+  ask. A closed request beside a character that folding removes entirely
+  (U+2017, U+203E, a bare combining mark) is no longer admitted.
 
 ## 4.0.3 - 2026-10-27
 

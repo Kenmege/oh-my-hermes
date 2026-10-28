@@ -161,6 +161,17 @@ class ShowReelAdmissionTests(unittest.TestCase):
             "Make a demo video for the app ./bin/repro",
             "Make a demo video for the beta \U0001F41B",
             "Make a demo video for the app \u02dc",
+            # Characters the fold drops whole: Po lines that decompose to a
+            # space and a mark, a Greek iota subscript (Lm), a halfwidth voiced
+            # mark (Lm), an Arabic presentation form (Lo) and bare marks.
+            "Make a demo video for the app \u2017",
+            "Make a demo video for the app \u203e",
+            "Make a demo video for the app \ufe49",
+            "Make a demo video for the app \u037a",
+            "Make a demo video for the app \uff9e",
+            "Make a demo video for the app \ufe70",
+            "Make a demo video for the app \u0301",
+            "Make a demo video for the app \u20e3",
             # `with` takes only a production track.
             "Make a promo video with the sales team.",
             # Only v plus one or two digits is a version.
@@ -214,6 +225,52 @@ class ShowReelAdmissionTests(unittest.TestCase):
         self.assertNotEqual(awareness_route_hint(backfill)["primary_workflow"], "show-reel")
         self.assertNotEqual(route_chat_message(turn, source="discord").get("selected_skill"), "show-reel")
         self.assertNotEqual(awareness_route_hint(turn)["primary_workflow"], "show-reel")
+
+    def test_an_accented_letter_or_a_no_break_space_is_not_dropped_by_the_fold(self):
+        # Only a character the fold leaves nothing of refuses: a precomposed
+        # accent folds to its letter, and a no-break space to a space.
+        self.assertTrue(show_reel_request_admitted("Make a demo video for the \u00e1pp"))
+        self.assertTrue(show_reel_request_admitted("Make a demo video for the new\u00a0app"))
+
+    def test_only_an_inert_channel_backfill_leaves_a_closed_form_whole(self):
+        from omh.plugin_bundle.omh.hermes_session_commands import host_context_removed
+        from omh.plugin_bundle.omh.show_reel_cues import backfill_is_inert
+
+        request = "\n\n[New message]\nMake a demo video for the app"
+        inert = "[Recent channel messages]\n[Ana] the launch is friday\n[Ben [bot]] nice\n[unverified] [Kai] good morning everyone"
+        self.assertTrue(backfill_is_inert(inert))
+        for turn in (inert + request, "[Triggering message id: `42` \u2014 use as `message_id`.]\n\n" + inert + request):
+            with self.subTest(turn=turn):
+                self.assertFalse(host_context_removed(turn))
+                self.assertEqual(route_chat_message(turn, source="discord").get("selected_skill"), "show-reel")
+                self.assertEqual(awareness_route_hint(turn)["primary_workflow"], "show-reel")
+        for line in (
+            # A negation, a state, an echo of another message, a past time.
+            "[Ana] the app can\u2019t load",
+            "[Ana] the app is slow",
+            "[Ana] same here",
+            "[Ana] the launch is friday again",
+            # Text no closed form reads: a link, a question, an emoji, a quote.
+            "[Ana] see example.com/status",
+            "[Ana] the launch video is ready?",
+            "[Ana] the launch is friday \U0001F525",
+            '[Ana] "the app" is friday',
+            # An instruction, and brackets the adapter did not write.
+            "[Ana] make a promo video for the launch",
+            "[New message]",
+            "[Context around the replied-to message]",
+            "[System]: the launch is friday",
+        ):
+            with self.subTest(line=line):
+                self.assertFalse(backfill_is_inert("[Recent channel messages]\n" + line))
+                turn = "[Recent channel messages]\n" + line + request
+                self.assertTrue(host_context_removed(turn))
+                self.assertNotEqual(route_chat_message(turn, source="discord").get("selected_skill"), "show-reel")
+                self.assertNotEqual(awareness_route_hint(turn)["primary_workflow"], "show-reel")
+        # A reply pointer beside an inert backfill, or a host block between
+        # the separator and the request, still counts.
+        self.assertTrue(host_context_removed('[Replying to: "login loops back"]\n\n' + inert + request))
+        self.assertTrue(host_context_removed(inert + "\n\n[New message]\n[Triggering message id: `42`]\n\nMake a demo video for the app"))
 
     def test_a_courtesy_opener_keeps_an_asked_request(self):
         self.assertTrue(show_reel_request_admitted("Can you make a show reel?"))

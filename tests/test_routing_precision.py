@@ -78,8 +78,9 @@ class RoutingPrecisionTests(unittest.TestCase):
         # sprite-forge adds CSS pixel, soda brand and spreadsheet-sheet controls.
         # The rendered-scene lane adds four negatives.
         # A show-reel closed form beside a modifier symbol, and one after a
-        # channel backfill, add two.
-        self.assertEqual(payload["summary"]["case_count"], 1244)
+        # channel backfill, add two. Six backfills one word or one shape from
+        # inert, and two more characters the fold drops whole, add eight.
+        self.assertEqual(payload["summary"]["case_count"], 1252)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -213,7 +214,8 @@ class RoutingPrecisionTests(unittest.TestCase):
         # closes on the compared metric.
         # sprite-forge adds one game character sprite sheet request.
         # The rendered-scene lane adds five frontend interventions.
-        self.assertEqual(payload["summary"]["intervention_case_count"], 1174)
+        # Two show-reel closed forms after an inert channel backfill.
+        self.assertEqual(payload["summary"]["intervention_case_count"], 1176)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

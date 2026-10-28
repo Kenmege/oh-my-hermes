@@ -444,6 +444,19 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # A closed form after the channel backfill a gateway puts before
     # `[New message]` may be showing the fault the backfill reports.
     RoutingPrecisionCase("show-reel-backfill-fault", "A closed form after a channel backfill of a fault is a recording", "Mia: the invoice PDF comes out blank since this morning\nTeo: same on staging\n\n[New message]\nMake a demo video for the app", "answer_clarification", "", "show-reel"),
+    # A backfill counts only when a message in it is not inert
+    # (`show_reel_cues.backfill_is_inert`): each of these is one word or one
+    # shape away from the inert backfill the intervention corpus admits.
+    RoutingPrecisionCase("show-reel-backfill-negation", "A backfilled message with a negation may report the fault", "[Recent channel messages]\n[Ana] the app is not ready\n\n[New message]\nMake a demo video for the app", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-backfill-state-word", "A backfilled message naming a state may report the fault", "[Recent channel messages]\n[Ana] the new dashboard is blank\n[Ben] yeah\n\n[New message]\nMake a demo video for the dashboard", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-backfill-echo", "A backfilled echo of another message may confirm a fault", "[Recent channel messages]\n[Ana] the beta is live\n[Ben] same here\n\n[New message]\nCreate a teaser video for the beta", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-backfill-question", "A backfilled question may be what the request answers", "[Recent channel messages]\n[Ana] the launch video is ready?\n\n[New message]\nMake a demo video for the app", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-backfill-instruction", "A backfilled instruction competes with the request", "[Recent channel messages]\n[Ana] make a promo video for the launch\n\n[New message]\nMake a demo video for the app", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-backfill-second-separator", "A second separator inside the backfill is not the host's shape", "[Recent channel messages]\n[Ana] hi\n\n[New message]\n[Ana] the app is down\n\n[New message]\nMake a demo video for the app", "answer_clarification", "", "show-reel"),
+    # Characters the fold drops whole: a Po line that decomposes to a space
+    # and a combining mark, and a bare combining mark.
+    RoutingPrecisionCase("show-reel-folded-low-line-tail", "A double low line folding drops is unread text", "Make a launch video for the app \u2017", "answer_clarification", "", "show-reel"),
+    RoutingPrecisionCase("show-reel-combining-mark-tail", "A bare combining mark folding drops is unread text", "Make a demo video for the beta \u0301", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-with-customers", "A promo video with customers is a meeting, not a track", "Create a promo video with our customers.", "answer_clarification", "", "show-reel"),
     RoutingPrecisionCase("show-reel-with-marketing-team", "A launch video with a team is a meeting, not a track", "Make a launch video with the marketing team.", "answer_clarification", "", "show-reel"),
     # Engine-entry approvals (#1638). Accepting something is the most common
@@ -9294,6 +9307,10 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase("show-reel-with-subtitles", "A production adjunct closes a promo video brief", "Make a promo video for the beta with subtitles.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-launch-trailer", "A launch trailer is a film", "Make a launch trailer for the game.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-promo-video-of-board", "A promo video about a named surface is still the film", "Make a HyperFrames promo video of the agent board.", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    # A channel backfill that holds only inert messages leaves a closed form
+    # whole (`show_reel_cues.backfill_is_inert`).
+    RoutingInterventionCase("show-reel-inert-backfill", "A closed form after an inert channel backfill is production", "[Recent channel messages]\n[Ana] the launch is friday\n[Ben] nice\n\n[New message]\nMake a promo video for the launch", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
+    RoutingInterventionCase("show-reel-inert-backfill-trigger-note", "An inert backfill after the Discord trigger note keeps the closed form", "[Triggering message id: `1290001` \u2014 use as `message_id` for reply/react/pin via the discord tools.]\n\n[Recent channel messages]\n[unverified] [Kai] good morning everyone\n\n[New message]\nMake a demo video for the app", "dispatch", "show-reel", "prepare_show_reel", "show_reel"),
     RoutingInterventionCase("show-reel-reference-for-static-owner", "A motion source does not take the static output owner", "Use this product showcase video as a reference for a static infographic.", "dispatch", "img-summary", "prepare_visual_prompt_card", "img_summary"),
     RoutingInterventionCase("show-reel-transcript-owner", "An existing launch film transcript stays with media input", "Summarize this launch film transcript for the weekly report.", "dispatch", "media-input-operator", "prepare_media_input_card", "media_input"),
     # A film named inside another skill's request keeps that skill. Each of
