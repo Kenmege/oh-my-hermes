@@ -434,6 +434,30 @@ class RegisteredManagedEntriesTests(unittest.TestCase):
             )
             self.assertEqual(entries, [pointer.as_posix()])
 
+    def test_a_relative_entry_is_never_matched_from_the_managed_root(self) -> None:
+        # Hermes reads `skills` as `$HERMES_HOME/skills`, its own directory.
+        # Run from the managed root, the same text resolves to the managed
+        # `<root>/skills`; neither the migration nor the ambiguity reader may
+        # take it for that, or update retires the person's entry and doctor
+        # reports an ambiguity Hermes never sees.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            older = root / "skills"
+            for directory in (pointer, older, root / "mine" / "x"):
+                directory.mkdir(parents=True)
+            candidates = [pointer, older]
+            text = _config_naming(pointer) + "    - skills\n    - mine/x\n"
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                migration = migrate_managed_registration(text, pointer, candidates, current=pointer)
+                entries = registered_managed_entries(text, candidates, current=pointer)
+            finally:
+                os.chdir(cwd)
+            self.assertEqual((migration.text, migration.retired, migration.registration), (text, [], "unchanged"))
+            self.assertEqual(entries, [pointer.as_posix()])
+
     def test_a_foreign_directory_is_never_a_managed_entry(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

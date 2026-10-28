@@ -2872,7 +2872,8 @@ skill present in both failed to load by name in that bot. `omh setup` and
 the same config write that registers the pointer: the older OMH-managed
 entry is retired, matched by real path the way Hermes resolves entries (a
 spelling through `${VAR}`, `~`, a trailing slash or a symlink is the same
-directory; an unset variable stays as written, as it does in Hermes),
+directory; an unset variable stays as written, as it does in Hermes, and a
+relative entry, which Hermes reads under its own home, never matches),
 the home ends up naming exactly one managed directory, and the update
 prints the move (`Bot profile <name>: registration migrated from <old> to
 <new>.`; `Hermes registration migrated ...` for the primary home). Only

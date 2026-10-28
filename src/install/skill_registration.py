@@ -155,8 +155,11 @@ def migrate_managed_registration(
     older entry spelled through `~`, a trailing slash or a symlink is
     retired too -- Hermes expands and resolves every entry, and a spelling
     the migration could not match would be reported as an ambiguity that
-    `omh update` can never clear. An entry resolving to `registered_dir`
-    itself is one directory to Hermes and stays. Whether a home should be
+    `omh update` can never clear. A relative entry is never matched: Hermes
+    anchors it at its own home, so resolving it against this command's
+    working directory would name a directory Hermes never reads
+    (`_names_a_root`). An entry resolving to `registered_dir` itself is one
+    directory to Hermes and stays. Whether a home should be
     registered at all, and whether this command may retire anything, are the
     caller's questions: this function always writes today's path, the
     opt-out rule (a home naming no managed directory is left alone) is
@@ -179,7 +182,7 @@ def migrate_managed_registration(
     to_retire = [
         entry
         for entry in external_dirs(change.text)
-        if _real_key(expand_external_dir_entry(entry)) in candidate_reals or entry in packs
+        if entry in packs or _rooted_real_key(entry) in candidate_reals
     ]
     removal = remove_external_dir_entries(change.text, to_retire)
     retired = list(to_retire) if removal.changed else []
@@ -238,6 +241,18 @@ def _names_a_root(entry: str) -> bool:
     return tail[:1] in {os.path.sep, os.path.altsep or os.path.sep}
 
 
+def _rooted_real_key(entry: str) -> str | None:
+    """The real-path key of an entry Hermes reads from a root, else None.
+
+    A relative entry names a directory under Hermes' home, which no reader
+    here is given; resolved against this command's working directory it
+    could be taken for a managed directory when OMH runs from the managed
+    root.
+    """
+    expanded = expand_external_dir_entry(entry)
+    return _real_key(expanded) if _names_a_root(expanded) else None
+
+
 def _real_key(path: str | Path) -> str:
     expanded = os.path.expanduser(str(path))
     try:
@@ -257,8 +272,10 @@ def registered_managed_entries(
     once; two that resolve to different directories are the ambiguity. An
     entry whose directory is not on disk is not counted at all: Hermes skips
     a missing external directory when it collects skills, so nothing can be
-    ambiguous through it. Config order is kept so a message names them the
-    way the file does.
+    ambiguous through it. A relative entry is not counted either: Hermes
+    reads it under its own home, never under this command's working
+    directory (`_rooted_real_key`). Config order is kept so a message names
+    them the way the file does.
 
     With `current`, the shared pointer, an entry naming one generation's own
     pack is managed too (`generation_pack_entries`): beside the pointer it
@@ -271,11 +288,10 @@ def registered_managed_entries(
     seen: set[str] = set()
     entries: list[str] = []
     for entry in external_dirs(config_text):
-        expanded = expand_external_dir_entry(entry)
-        real = _real_key(expanded)
-        if external_dir_key(entry) not in keys and real not in reals:
+        real = _rooted_real_key(entry)
+        if real is None or (external_dir_key(entry) not in keys and real not in reals):
             continue
-        if not os.path.isdir(expanded):
+        if not os.path.isdir(expand_external_dir_entry(entry)):
             continue
         if real in seen:
             continue
