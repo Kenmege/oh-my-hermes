@@ -290,11 +290,16 @@ class GenerationPackEntriesTests(unittest.TestCase):
         # moves. This module's path functions as a Windows host whose
         # command runs on C: sees them; a pack on another drive and a
         # drive-relative entry are not the managed root.
-        pointer = PureWindowsPath("C:\\omh\\current\\skills")
+        # The pointer is spelled the way registration writes it, with POSIX
+        # separators (`_normalize`): `ensure_external_dir` compares text, and
+        # on a Windows host `C:\\omh\\...` would not equal what it writes, so
+        # it would add the pointer a second time.
+        written = "C:/omh/current/skills"
+        pointer = PureWindowsPath(written)
         rooted = "\\omh\\generations\\abc\\skills"
         text = (
             "skills:\n  external_dirs:\n"
-            f"    - {pointer}\n    - {rooted}\n"
+            f"    - {written}\n    - {rooted}\n"
             "    - C:omh\\generations\\abc\\skills\n    - D:\\omh\\generations\\abc\\skills\n"
         )
 
@@ -307,12 +312,12 @@ class GenerationPackEntriesTests(unittest.TestCase):
             mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=windows)),
         ):
             self.assertEqual(generation_pack_entries(text, pointer), [rooted])
-            migration = migrate_managed_registration(text, str(pointer), [], current=pointer)
+            migration = migrate_managed_registration(text, written, [], current=pointer)
 
         self.assertEqual((migration.added, migration.retired), (False, [rooted]))
         self.assertEqual(
             external_dirs(migration.text),
-            [str(pointer), "C:omh\\generations\\abc\\skills", "D:\\omh\\generations\\abc\\skills"],
+            [written, "C:omh\\generations\\abc\\skills", "D:\\omh\\generations\\abc\\skills"],
         )
 
     def test_the_migration_retires_them_only_when_told_the_pointer(self) -> None:
