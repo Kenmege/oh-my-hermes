@@ -119,9 +119,13 @@ def homes() -> Iterator[Homes]:
     ):
         delegation_ledger._roots.clear()
         delegation_ledger._titles.clear()
+        delegation_ledger._spawned.clear()
+        delegation_ledger._spawned_ids.clear()
         yield Homes(Path(tmp))
         delegation_ledger._roots.clear()
         delegation_ledger._titles.clear()
+        delegation_ledger._spawned.clear()
+        delegation_ledger._spawned_ids.clear()
 
 
 def start(homes: Homes, child: str, subagent_id: str, goal: str, *, parent: str = PARENT, turn: str = "turn-3",

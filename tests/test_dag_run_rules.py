@@ -701,6 +701,31 @@ class ProviderErrorTests(unittest.TestCase):
         self.assertEqual(other["reason"], "invalid_provider_error")
 
 
+class TaskBudgetTests(unittest.TestCase):
+    def test_calls_carry_no_more_tasks_than_the_budget_and_hold_the_rest(self) -> None:
+        with homes() as home:
+            raw = [node("a"), node("b"), node("c", category="writing"), node("d", category="writing")]
+            record = dag_run.new_record(PARENT, "feat", None, None, raw, 100.0)
+            derived = dag_run.derive(record, [], 100.0)
+            calls, held = dag_run.calls_for(record, derived, free_slots=10, per_call=10, omh_home=home.omh,
+                                            now=100.0, task_budget=3)
+        self.assertEqual(sum(len(item["tasks"]) for item in calls), 3)
+        self.assertEqual([item["nodes"] for item in calls], [["a", "b"], ["c"]])
+        self.assertEqual(held, ["d"])
+        attempts = {str(item["id"]): len(item.get("attempts") or []) for item in record["nodes"]}
+        self.assertEqual(attempts, {"a": 1, "b": 1, "c": 1, "d": 0})
+
+    def test_no_budget_is_the_slot_rule_alone(self) -> None:
+        with homes() as home:
+            record = dag_run.new_record(PARENT, "feat", None, None, [node("a"), node("b"), node("c")], 100.0)
+            derived = dag_run.derive(record, [], 100.0)
+            calls, held = dag_run.calls_for(record, derived, free_slots=1, per_call=2, omh_home=home.omh, now=100.0)
+            empty, all_held = dag_run.calls_for(record, dag_run.derive(record, [], 100.0), free_slots=10,
+                                                per_call=10, omh_home=home.omh, now=100.0, task_budget=0)
+        self.assertEqual(([item["nodes"] for item in calls], held), ([["a", "b"]], ["c"]))
+        self.assertEqual((empty, all_held), ([], ["c"]))
+
+
 class RecordStorageTests(unittest.TestCase):
     def test_the_record_is_private_from_its_first_byte(self) -> None:
         with homes() as home:
