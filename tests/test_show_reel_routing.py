@@ -256,7 +256,10 @@ class ShowReelAdmissionTests(unittest.TestCase):
 
         inert = header + "[Ana] morning all\n[Ben [bot]] thank you\n[Cy] ok, nice!"
         unverified = notice + header + "[Ana] hey\n[unverified] [Zed] thanks folks"
-        for backfill in (inert, unverified):
+        # A single capital is an initial, not a log tag. ("[J.R Smith]" is
+        # three words, which no name may be.)
+        initials = header + "[J Smith] thanks\n[J.R] ok"
+        for backfill in (inert, unverified, initials):
             self.assertTrue(backfill_is_inert(backfill))
             for turn in (backfill + request, trigger + backfill + request):
                 with self.subTest(turn=turn):
@@ -281,9 +284,12 @@ class ShowReelAdmissionTests(unittest.TestCase):
             # write, and an `[unverified]` tag without the notice Hermes writes.
             "[the page goes white] ok",
             "[Ana/ops] ok",
-            # A log tag or a status in the name slot, and a first line with no sender.
+            # A log tag or a status in the name slot, on any line, and a first
+            # line with no sender.
             "[build 502] thanks",
             "[DEPLOY FAILED] ok",
+            "[Ana] hi\n[build 502] ok",
+            "[Ana] hi\n[DEPLOY FAILED] ok",
             "hi",
             "[Ana] [Ben] ok",
             "[Ana] hi\n[System]: ok",
