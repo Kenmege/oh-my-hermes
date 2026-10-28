@@ -548,62 +548,76 @@ Results describe this pinned corpus, OMH version, Hermes version, provider,
 model id and conditions only. They do not establish universal model
 superiority.
 
-### 2026-10-27 edit surface: builtin `patch` vs hash-anchored `hashline_edit`
+### 2026-10-28 edit surface: builtin `patch` vs hash-anchored `hashline_edit` (supersedes 2026-10-27)
 
 One question, from oh-my-pi's hashline result (Grok Code Fast 1 6.7% -> 68.3%
 on its own corpus): does addressing lines by a content hash instead of
-retyping old text raise edit pass rates for the models OMH routes to? The
-answer on this corpus is no, so the hashline tools were not merged; their
-code stays on branch `omh/hashline-edit-arm` (`b381de1e2`).
+retyping old text raise edit pass rates for the models OMH routes to? On this
+corpus it does not, and weak models get worse, so the hashline tools are not
+merged. Their code, with the not-found recovery below, stays on branch
+`feature/hashline-edit` (`e29c341be`).
+
+**The 2026-10-27 table that stood here was invalid.** Its patch arm ran in a
+profile that also enabled the hashline gate, so `--toolsets file,terminal`
+exposed `hashline_read`/`hashline_edit` too: gpt-4o-mini called them in 4 of 6
+patch sessions and grok-4-1-fast in 3 of 6. The table below replaces it.
 
 The setup:
 
 - The pinned evaluation corpus, `--templates E-RENAME,E-BUGFIX` only (3 seeds
-  each, 6 instances per arm).
-- `hermes_current_session` through a dedicated `hashbench` profile on
-  OpenGateway (`og`), effort `medium`, `--edit-directive` on both arms: the
-  same sentence names `read_file`/`patch` or `hashline_read`/`hashline_edit`
-  and forbids editing through the shell. Without it the first smoke made 7
-  `terminal` calls and zero edit-tool calls on either arm.
-- `patch` arm: `--toolsets file,terminal`. `hashline` arm:
-  `--toolsets omh-hashline,terminal`, so builtin `patch` is not exposed.
-  `tools.tool_search` was off in the profile so both arms' edit tools are
-  directly visible (plugin tools are otherwise deferred behind tool search).
-- omh at `0608e17a6` plus the branch above; Hermes Agent v0.22.5 · stable ·
-  local bf0203a794a0.
+  each, 6 instances per arm), effort `medium`, OpenGateway (`og`).
+- `--edit-directive` on both arms: one sentence names `read_file`/`patch` or
+  `hashline_read`/`hashline_edit` and forbids editing through the shell.
+  Without it the first smoke made 7 `terminal` calls and no edit-tool call.
+- Two profiles that differ only in the hashline gate and OMH home:
+  `patch` arm `--toolsets file,terminal` with the gate off; `hashline` arm
+  `--toolsets omh-hashline,terminal` with the gate on. `tools.tool_search` is
+  off in both, so plugin tools are not deferred behind tool search.
+- Contamination check: 0 hashline calls across the 48 patch-arm sessions.
+- The hashline arm carries the not-found recovery (`similar_files`, a
+  root-relative fallback for absolute paths, and a repeat hint).
+- omh `feature/hashline-edit` on origin/main `bbf278ab3`; Hermes Agent
+  v0.22.5 · stable · local bf0203a794a0.
 
 | Model | patch | hashline | patch tokens (median) | hashline tokens (median) |
 | --- | ---: | ---: | ---: | ---: |
-| `deepseek/deepseek-v4.1-flash-ultrafast` | 6 / 6 | 6 / 6 | 260,312 | 229,212 |
-| `z-ai/glm-5.3` | 5 / 6 | 6 / 6 | 214,652 | 179,143 |
-| `moonshotai/kimi-k3.1-pro` | 6 / 6 | 4 / 6 | 181,744 | 193,267 |
-| `minimax/MiniMax-M3` | 5 / 6 | 5 / 6 | 435,569 | 688,740 |
-| `x-ai/grok-4-1-fast` | 6 / 6 | 6 / 6 | 320,375 | 248,528 |
-| `qwen/qwen-flash` | 2 / 6 | 0 / 6 | 481,378 | 360,441 |
-| `openai/gpt-4o-mini` | 1 / 6 | 0 / 6 | 229,979 | 14,602,312 (1 run) |
-| `openai/gpt-4.1-nano` | 0 / 6 | 0 / 6 | 71,231 | 58,319 |
-| **Total** | **31 / 48** | **27 / 48** | | |
+| `z-ai/glm-5.3` | 6 / 6 | 6 / 6 | 187,545 | 144,394 |
+| `x-ai/grok-4-1-fast` | 6 / 6 | 6 / 6 | 319,764 | 281,736 |
+| `deepseek/deepseek-v4.1-flash-ultrafast` | 6 / 6 | 5 / 6 | 226,100 | 244,568 |
+| `moonshotai/kimi-k3.1-pro` | 6 / 6 | 4 / 6 | 176,586 | 149,377 |
+| `minimax/MiniMax-M3` | 4 / 6 | 5 / 6 | 515,527 | 701,143 |
+| `qwen/qwen-flash` | 5 / 6 | 0 / 6 | 164,094 | 405,057 |
+| `openai/gpt-4o-mini` | 3 / 6 | 0 / 6 | 137,174 | 1,382,215 |
+| `openai/gpt-4.1-nano` | 0 / 6 | 0 / 6 | 97,254 | 175,894 |
+| **Total** | **36 / 48** | **26 / 48** | 13.1M total | 22.8M total |
+
+The merge gate, fixed before the run, fails on every clause:
+
+- Weak models (grok, qwen, gpt-4o-mini, gpt-4.1-nano), hashline must be at
+  least patch: 6 vs 14.
+- Strong models (deepseek, glm, kimi, minimax), hashline must be at least
+  patch - 1: 20 vs 22.
+- No hashline run over 3x its patch pair's median tokens: six were over, four
+  from gpt-4o-mini (3.8x to 39.9x, worst 5.47M against 137k) and two from
+  qwen-flash (3.2x and 3.6x).
 
 What it shows:
 
-- **No pass gain.** Strong models already pass with `patch`; the arm has no
-  failures for hashline to remove. Every strong-model failure on both arms is
-  `mutation_outside_scope` on BUGFIX (an extra or wrong test file touched),
-  not a failed edit: on DeepSeek, GLM, Kimi and MiniMax `hashline_edit`
-  returned an error on 1 of 79 calls, `patch` on 2 of 39.
-- **Weak models get worse.** `gpt-4o-mini` looped on `hashline_read` (over
-  5,000 calls), mostly on invented paths such as
-  `path/to/your/source_file.py`; five of its six hashline runs ended
-  `failed` and the one with a usage record spent 14.6M tokens. `qwen-flash`
-  lost its two RENAME passes. A hashline arm worth re-measuring needs a
-  recoverable not-found answer, not a bare error.
+- **No gain where patch already works.** Strong-model hashline failures are
+  all BUGFIX `mutation_outside_scope`, not failed edits.
+- **The not-found recovery fires but does not stop the loop.** gpt-4o-mini made
+  647 `hashline_edit` calls in six runs and got 131 not-found and 74 repeat
+  answers. It ignores "Stop retrying this path".
+- **qwen-flash fails differently.** Its `hashline_edit` calls touched only the
+  task files, yet all six runs scored `mutation_outside_scope`, and it made 5x
+  the terminal calls of its patch arm. The extra files likely came from the
+  shell, but the cause is not established.
 - **Not a reproduction of oh-my-pi's number.** Their corpus and harness
-  differ; Grok 4.1 Fast passes 6 / 6 with `patch` here.
-- n = 6 per arm: single-instance differences (GLM +1, Kimi -2) are noise.
+  differ, and Grok 4.1 Fast passes 6 / 6 with `patch` here.
+- n = 6 per arm, so single-instance differences are noise.
 
-Tool-call counts per arm come from the profile's session DB, attributed by
-which surface-only tool a session called; sessions with only `terminal`
-calls are not attributed. Pass counts come from the run records.
+Pass counts come from the run records. Tool-call counts come from each
+profile's session DB.
 
 ### 2026-10-27 `gpt-6.1-terra` vs `gpt-6.1-sol` (GPT-6.1 Terra onboarding)
 

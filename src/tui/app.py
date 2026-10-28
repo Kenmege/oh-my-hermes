@@ -176,7 +176,16 @@ from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows, typed_switch_value
 from . import dag_block
 from .dag_tree import TreeState
-from .panels import HudPoller, HudSnapshot, dag_page_lines, hud_chips, panel_lines, plan_state, plan_text
+from .panels import (
+    HudPoller,
+    HudSnapshot,
+    dag_page_lines,
+    hud_chips,
+    panel_lines,
+    plan_room_collapsed,
+    plan_state,
+    plan_text,
+)
 from .dag_pager import DagPager
 from .bot_board import BoardReader, BotBoard
 from .prompts import CLOSED_CHOICES, Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
@@ -432,6 +441,9 @@ COMPRESS_STARTED_NOTICE = "Compressing: Hermes summarizes the older turns with a
 # How long a `/compress` is waited for: Hermes' own budget for it (`hermes_cli/gateway_client.py` COMPRESS_RPC_TIMEOUT,
 # the compression ceiling plus slack), in place of `CALL_ANSWER_SECONDS`.
 COMPRESS_ANSWER_SECONDS = 660.0
+# The longest any call is waited for while a `/compress` is out (`App._compression_left`): the compression's whole
+# budget, then the usual one, so no call waits on it without end.
+HELD_ANSWER_SECONDS = COMPRESS_ANSWER_SECONDS + 120.0
 # Past that the compression may still commit, so running /compress again could compress twice.
 COMPRESS_UNANSWERED_NOTICE = (
     "Hermes has not answered /compress in {seconds:g} s; the OMH TUI stopped waiting, but the compression may still "
@@ -440,6 +452,9 @@ COMPRESS_UNANSWERED_NOTICE = (
 # A command Hermes refused because a compression of this session is still running (`data.field`, as Ink reads it).
 COMPRESSION_BUSY_NOTICE = "Hermes is compressing this session's context: run /{name} again once that ends."
 COMPRESSION_FIELD = "compression"
+# A command typed while a `/compress` this TUI sent is out: Hermes' shared gateway holds it until the compression
+# commits, then runs it.
+COMPRESSION_HELD_NOTICE = "Hermes runs /{name} once this session's compression ends."
 # A `/bg` or `/btw` answer for a session other than the one shown: one started there before a switch.
 SIDE_ANSWER_ELSEWHERE = "From session {session}: {line}"
 # Leaving a session closes this connection's view of it, and the gateway sends a side answer to that view only.
@@ -764,6 +779,10 @@ class _Pending:
     command: CommandBlock | None = None
     on_expiry: Callable[[], None] | None = None  # what an answer that never came settles; None: a notice says so
     steer: SteerBlock | None = None  # the steer row it settles, given back at once if the gateway exits first
+    seconds: float = CALL_ANSWER_SECONDS  # how long it is waited for, as its expiry notice says
+    # A `/compress` call: Hermes' shared gateway serves this connection's calls one at a time, so every call sent
+    # while it is out waits until the compression ends.
+    compressing: bool = False
 
 
 class QueuedLine(NamedTuple):
@@ -1486,6 +1505,7 @@ class App(ModesMixin, AgentViewMixin):
         self.menu_under: list[Line] = []  # the menu's rows as `_slot_lines` last made them, while it is drawn under
         self.panel_shown = False  # the plan panel was in the slot `_slot_lines` last made: it gets its blank rows
         self.plan_folded = False  # Ctrl+P: the plan is its header alone, for the rest of the session
+        self.plan_room_collapsed = False  # the plan the slot drew last was its header alone for want of rows
         self.tail_spacer = False  # `_tail` put a blank row above the working row, the first row to give way
         self.badge_cache: tuple[object, Line] = (None, ())  # `_badge_line`'s last row and what it was drawn from
         self.pager: Pager | None = None
@@ -1494,7 +1514,7 @@ class App(ModesMixin, AgentViewMixin):
         # and paused while the board is closed, so a read stuck on a stalled file system never adds a thread.
         self.board_reader: BoardReader | None = None
         self.make_board_reader: Callable[..., BoardReader] = BoardReader
-        self.resized_while_paging = False
+        self.redraw_after_pager = False  # a full redraw the main screen is owed once the pager is left
         self.hud: HudSnapshot | None = None
         self.goal: Mapping[str, Any] | None = None  # Hermes' standing /goal, as its last `session.control.update` said
         self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
@@ -2042,6 +2062,9 @@ class App(ModesMixin, AgentViewMixin):
                 self.pager = None
                 self._stop_board_reader()
                 self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+                if self.redraw_after_pager:  # owed while it showed: what is left is the session as it now stands
+                    self.redraw_after_pager = False
+                    self._full_redraw()
             cols = self.size[0]
             try:
                 stable = self.transcript.take_stable_lines(cols, self.theme)
@@ -2134,6 +2157,7 @@ class App(ModesMixin, AgentViewMixin):
         on_expiry: Callable[[], None] | None = None,
         steer: SteerBlock | None = None,
         seconds: float | None = None,
+        compressing: bool = False,
     ) -> None:
         try:
             request_id = self.client.request(method, params)
@@ -2143,9 +2167,13 @@ class App(ModesMixin, AgentViewMixin):
         except ValueError as error:  # the gateway contract refused the call (`contract.call_problem`): nothing went out
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
-        expires_at = self.clock() + (seconds or CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS))
+        seconds = seconds or CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
+        held = self._compression_left()
+        if held is not None:  # it waits behind the compression, then gets its own budget, never past HELD_ANSWER_SECONDS
+            seconds = min(held + seconds, HELD_ANSWER_SECONDS)
         self.pending[request_id] = _Pending(
-            method, on_result, on_error, expires_at, self.transcript.command, on_expiry, steer
+            method, on_result, on_error, self.clock() + seconds, self.transcript.command, on_expiry, steer, seconds,
+            compressing,
         )
 
     def _expire_calls(self) -> None:
@@ -2163,8 +2191,7 @@ class App(ModesMixin, AgentViewMixin):
             if call.on_expiry is not None:
                 call.on_expiry()
             elif call.method not in QUIET_EXPIRY_METHODS:
-                seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
-                notice = CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds)
+                notice = CALL_EXPIRED_NOTICE.format(method=call.method, seconds=call.seconds)
                 if call.command is None:
                     self.transcript.add_aside(NoticeBlock(notice, NOTICE_WARN))  # never closes what runs
                 else:
@@ -2959,11 +2986,14 @@ class App(ModesMixin, AgentViewMixin):
 
     def _plan_fold_key(self, event: Key | Paste) -> bool:
         """Ctrl+P folds the plan to its header or expands it, for the rest of the session (a new plan keeps the
-        choice); a key that does nothing is the composer's while no plan shows."""
+        choice); a key that does nothing is the composer's while no plan shows, and while the plan is its header
+        alone for want of rows, where neither folding nor expanding it changes what shows (its header offers no key)."""
         if not isinstance(event, Key) or event != Key(CHAR, "p", ctrl=True):
             return False
         payload = self.hud.payload if self.hud is not None else None
         if plan_state(payload) != "open" or not self.panel_shown:  # a menu over the plan: nothing to fold where seen
+            return False
+        if self.plan_room_collapsed:
             return False
         self.plan_folded = not self.plan_folded
         self.dirty = True
@@ -4200,6 +4230,9 @@ class App(ModesMixin, AgentViewMixin):
             preview = bool(COMPRESS_PREVIEW_FLAGS & {word.lower() for word in invocation.arg.split()})
             if compressing and not preview and not self._busy():
                 self.transcript.add_notice(COMPRESS_STARTED_NOTICE)  # under the echo, until Hermes' report
+            held = not compressing and self._compression_left() is not None
+            if held and self.shared_gateway:  # the stdio entry refuses a turn-back as busy instead
+                self.transcript.add_notice(COMPRESSION_HELD_NOTICE.format(name=invocation.name))
             echo = self.transcript.command
             self._request(
                 "slash.exec",
@@ -4208,7 +4241,20 @@ class App(ModesMixin, AgentViewMixin):
                 lambda error: self._on_slash_refused(invocation, error, depth),
                 (lambda: self._compress_unanswered(echo)) if compressing else None,
                 seconds=COMPRESS_ANSWER_SECONDS if compressing else None,
+                compressing=compressing and not preview,
             )
+
+    def _compression_left(self) -> float | None:
+        """The seconds left on the latest `/compress` this TUI sent and still waits on; None when none is out.
+
+        Hermes' shared gateway serves a connection's calls one at a time and
+        runs `/compress` inline, so a call sent meanwhile (a command, its
+        `command.dispatch` fallback, a prompt, an interrupt) is answered only
+        once the compression ends: it gets this much more, and an answer that
+        still comes (/undo's draft, /retry's prompt) is shown rather than
+        dropped while Hermes acts on it anyway."""
+        ends = [call.expires_at for call in self.pending.values() if call.compressing]
+        return float(math.ceil(max(0.0, max(ends) - self.clock()))) if ends else None
 
     def _compress_unanswered(self, echo: CommandBlock | None) -> None:
         """A `/compress` unanswered in its budget: said under its echo, and nothing is sent again."""
@@ -5036,8 +5082,8 @@ class App(ModesMixin, AgentViewMixin):
         self.log_agent = ""
         self._stop_board_reader()
         self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
-        if self.resized_while_paging:
-            self.resized_while_paging = False
+        if self.redraw_after_pager:
+            self.redraw_after_pager = False
             self._full_redraw()
 
     # ── drawing ──
@@ -5057,7 +5103,7 @@ class App(ModesMixin, AgentViewMixin):
         self.size = self.terminal.size()
         self.dirty = True
         if self.pager is not None:
-            self.resized_while_paging = True
+            self.redraw_after_pager = True
             return
         self.redraw_at = self.clock() + RESIZE_SETTLE_SECONDS
 
@@ -5079,15 +5125,15 @@ class App(ModesMixin, AgentViewMixin):
         no more than that. Scrollback from before the TUI started is erased
         with it.
         """
+        if self.pager is not None:
+            # Erasing from the alternate screen leaves the main screen's rows (and, on some terminals, its scrollback)
+            # in place, so the session printed again under them would show twice: the main screen is redrawn once
+            # the pager is left instead, and the pager stays as it is.
+            self.redraw_after_pager = True
+            return
         # The clear homes the cursor, so the next first frame starts on the screen's top row; it goes out in that
-        # frame's synchronized update, so the blank screen never shows. Unless a pager is open, when it clears the
-        # alternate screen now and the main screen's cursor is where it was.
-        if self.pager is None:
-            self.region = LiveRegion(self.terminal.write, at_top=True, lead=CLEAR_SCREEN_AND_SCROLLBACK)
-        else:
-            self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
-            self.region = LiveRegion(self.terminal.write)
-            self.pager.invalidate()  # the clear took its rows too
+        # frame's synchronized update, so the blank screen never shows.
+        self.region = LiveRegion(self.terminal.write, at_top=True, lead=CLEAR_SCREEN_AND_SCROLLBACK)
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
         if self.banner_record is not None:
             self.banner_facts = dict(self.banner_record)
@@ -5628,16 +5674,18 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         if payload is None:
             return []
+        show_plan = not self.retired_plan or plan_text(payload) != self.retired_plan
         lines = panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
             show_agents=False, show_graph=False,  # the agent view under the info line draws them
-            show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
+            show_plan=show_plan,
             motion=self.motion,
             color_depth=self.color_depth,
             plan_folded=self.plan_folded,
             fold_key=PLAN_FOLD_KEY,
         )
         self.panel_shown = bool(lines)
+        self.plan_room_collapsed = show_plan and plan_room_collapsed(payload, cap)
         return lines
 
     def _context_style(self) -> Style:
