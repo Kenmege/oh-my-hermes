@@ -56,8 +56,9 @@ All notable changes will be documented here.
   without a drive (`\omh\...`), which Hermes loads from its home's drive, is
   matched on every Python version instead of through 3.12 only. A relative
   entry, which Hermes reads under its own home, is no longer resolved
-  against the directory `omh` runs from, so update cannot retire it and
-  doctor cannot count it as a second managed directory. Uninstall's
+  against the directory `omh` runs from, so update cannot retire it or read
+  the home as registered through it, and doctor cannot count it as a second
+  managed directory. Uninstall's
   check for a store another Hermes home still names, and the installed-skill
   weight advisory, expand entries the same way.
 - **`/compress` works in the OMH TUI, and `/compact` runs it.** Hermes'

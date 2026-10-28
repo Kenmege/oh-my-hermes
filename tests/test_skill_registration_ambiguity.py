@@ -26,6 +26,7 @@ from _platform_support import requires_symlinks
 
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs, write_config
+from omh.install import config_adapter as _config_adapter_module
 from omh.install import skill_registration as _registration_module
 from omh.install.skill_registration import (
     ambiguous_registration_message,
@@ -252,15 +253,15 @@ class GenerationPackEntriesTests(unittest.TestCase):
             "C:omh\\generations\\abc\\skills": False,
             "generations\\abc\\skills": False,
         }
-        with mock.patch.object(_registration_module, "os", SimpleNamespace(path=ntpath)):
+        with mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=ntpath)):
             for entry, rooted in windows.items():
                 with self.subTest(entry):
-                    self.assertIs(_registration_module._names_a_root(entry), rooted)
+                    self.assertIs(_config_adapter_module.external_dir_names_a_root(entry), rooted)
         posix = {"/omh/generations/abc/skills": True, "generations/abc/skills": False}
-        with mock.patch.object(_registration_module, "os", SimpleNamespace(path=posixpath)):
+        with mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=posixpath)):
             for entry, rooted in posix.items():
                 with self.subTest(entry):
-                    self.assertIs(_registration_module._names_a_root(entry), rooted)
+                    self.assertIs(_config_adapter_module.external_dir_names_a_root(entry), rooted)
 
     def test_on_windows_a_rooted_pack_without_a_drive_is_named_and_retired(self) -> None:
         # Hermes loads `\\omh\\generations\\abc\\skills` from its home's drive,
@@ -281,6 +282,7 @@ class GenerationPackEntriesTests(unittest.TestCase):
 
         with (
             mock.patch.object(_registration_module, "os", SimpleNamespace(path=ntpath)),
+            mock.patch.object(_config_adapter_module, "os", SimpleNamespace(path=ntpath)),
             mock.patch.object(ntpath, "realpath", realpath),
         ):
             self.assertEqual(generation_pack_entries(text, pointer), [rooted])

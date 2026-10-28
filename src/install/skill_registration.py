@@ -37,6 +37,7 @@ import sys
 from .config_adapter import (
     ensure_external_dir,
     expand_external_dir_entry,
+    external_dir_names_a_root,
     external_dirs,
     remove_external_dir_entries,
 )
@@ -158,8 +159,8 @@ def migrate_managed_registration(
     `omh update` can never clear. A relative entry is never matched: Hermes
     anchors it at its own home, so resolving it against this command's
     working directory would name a directory Hermes never reads
-    (`_names_a_root`). An entry resolving to `registered_dir` itself is one
-    directory to Hermes and stays. Whether a home should be
+    (`external_dir_names_a_root`). An entry resolving to `registered_dir`
+    itself is one directory to Hermes and stays. Whether a home should be
     registered at all, and whether this command may retire anything, are the
     caller's questions: this function always writes today's path, the
     opt-out rule (a home naming no managed directory is left alone) is
@@ -208,8 +209,8 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     expands it (`expand_external_dir_entry`), so a spelling through `${VAR}`
     is the same entry too. A relative entry is never one: Hermes anchors it at
     its own home, so it names a directory there, not under the managed root,
-    whatever directory this command runs from (`_names_a_root`). Config order
-    is kept.
+    whatever directory this command runs from (`external_dir_names_a_root`).
+    Config order is kept.
     """
     if current is None:
         return []
@@ -217,28 +218,11 @@ def generation_pack_entries(config_text: str, current: Path | None) -> list[str]
     entries: list[str] = []
     for entry in external_dirs(config_text):
         normalized = os.path.normpath(expand_external_dir_entry(entry))
-        if not _names_a_root(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
+        if not external_dir_names_a_root(normalized) or os.path.normcase(os.path.basename(normalized)) != "skills":
             continue
         if _real_key(os.path.dirname(os.path.dirname(normalized))) == generations:
             entries.append(entry)
     return entries
-
-
-def _names_a_root(entry: str) -> bool:
-    """Whether Hermes reads `entry` from a root rather than from under its own home.
-
-    Hermes joins a non-absolute entry onto its home, and on Windows a join
-    with a rooted entry keeps only the home's drive: `\\omh\\generations\\<id>\\skills`
-    names `<home drive>:\\omh\\...`, not a directory under the home. So the
-    question is whether the part after the drive starts at a root, which
-    `os.path.splitdrive` answers alike on every Python version;
-    `os.path.isabs` called that entry absolute through 3.12 and relative from
-    3.13. Only a drive-relative entry (`C:omh\\...`) or a bare relative one is
-    under Hermes' home. No reader here knows that home, so a drive-less entry
-    is resolved on this command's drive, as before.
-    """
-    tail = os.path.splitdrive(entry)[1]
-    return tail[:1] in {os.path.sep, os.path.altsep or os.path.sep}
 
 
 def _rooted_real_key(entry: str) -> str | None:
@@ -250,7 +234,7 @@ def _rooted_real_key(entry: str) -> str | None:
     root.
     """
     expanded = expand_external_dir_entry(entry)
-    return _real_key(expanded) if _names_a_root(expanded) else None
+    return _real_key(expanded) if external_dir_names_a_root(expanded) else None
 
 
 def _real_key(path: str | Path) -> str:

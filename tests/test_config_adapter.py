@@ -247,6 +247,25 @@ class ExternalDirRegistrationTests(unittest.TestCase):
                 self.assertTrue(external_dir_registered(["${OMH_TEST_TILDE_ROOT}/current/skills"], pointer))
                 self.assertFalse(external_dir_registered(["${OMH_TEST_UNSET_ROOT}/current/skills"], pointer))
 
+    def test_a_relative_entry_is_never_resolved_against_the_working_directory(self) -> None:
+        # Hermes reads `current/skills` as `$HERMES_HOME/current/skills`. Run
+        # from the managed root, the same text resolves to the pointer; it
+        # must not make a home read as registered there, or a home that names
+        # no managed directory is refreshed instead of left as the opt-out.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pointer = root / "current" / "skills"
+            pointer.mkdir(parents=True)
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                self.assertTrue(Path("current/skills").resolve().samefile(pointer))
+                self.assertFalse(external_dir_registered(["current/skills"], pointer))
+                self.assertFalse(external_dir_registered(["./current/skills/"], pointer))
+                self.assertTrue(external_dir_registered([pointer.as_posix()], pointer))
+            finally:
+                os.chdir(cwd)
+
     def test_a_textual_match_needs_no_directory_on_disk(self) -> None:
         self.assertTrue(external_dir_registered(["/nowhere/skills"], "/nowhere/skills"))
         self.assertFalse(external_dir_registered(["/nowhere/skills"], "/elsewhere/skills"))

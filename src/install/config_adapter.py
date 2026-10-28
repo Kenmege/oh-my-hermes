@@ -1869,6 +1869,24 @@ def expand_external_dir_entry(entry: str) -> str:
     return os.path.expanduser(os.path.expandvars(entry))
 
 
+def external_dir_names_a_root(entry: str) -> bool:
+    """Whether Hermes reads `entry` from a root rather than from under its own home.
+
+    Hermes joins a non-absolute entry onto its home, and on Windows a join
+    with a rooted entry keeps only the home's drive: `\\omh\\generations\\<id>\\skills`
+    names `<home drive>:\\omh\\...`, not a directory under the home. So the
+    question is whether the part after the drive starts at a root, which
+    `os.path.splitdrive` answers alike on every Python version;
+    `os.path.isabs` called that entry absolute through 3.12 and relative from
+    3.13. Only a drive-relative entry (`C:omh\\...`) or a bare relative one is
+    under Hermes' home, and no external_dirs reader resolves one against this
+    command's working directory. No reader knows that home, so a drive-less
+    entry is resolved on this command's drive.
+    """
+    tail = os.path.splitdrive(entry)[1]
+    return tail[:1] in {os.path.sep, os.path.altsep or os.path.sep}
+
+
 def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     """Whether one registered entry names `skill_dir`, by text or by real path.
 
@@ -1876,7 +1894,10 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     entry survives generation switches, while a running command resolves its
     own generation directory. Comparing the two as strings reported every
     staged-update install as unregistered; the directories are the same one.
-    An entry is expanded the way Hermes expands it (`expand_external_dir_entry`).
+    An entry is expanded the way Hermes expands it (`expand_external_dir_entry`),
+    and a relative one is never resolved: Hermes reads it under its own home,
+    so against this command's working directory it could read as the pointer
+    (`external_dir_names_a_root`).
     """
     wanted_text = _normalize(skill_dir)
     if wanted_text in dirs:
@@ -1886,8 +1907,11 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     except OSError:
         return False
     for entry in dirs:
+        expanded = expand_external_dir_entry(entry)
+        if not external_dir_names_a_root(expanded):
+            continue
         try:
-            if os.path.realpath(expand_external_dir_entry(entry)) == wanted_real:
+            if os.path.realpath(expanded) == wanted_real:
                 return True
         except OSError:
             continue
