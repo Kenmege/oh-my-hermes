@@ -20,9 +20,11 @@ from omh.tui.app import (
     COMPRESS_UNANSWERED_NOTICE,
     COMPRESSION_BUSY_NOTICE,
     COMPRESSION_HELD_NOTICE,
+    HELD_ANSWER_SECONDS,
     REFUSAL_SENTENCES,
     SIDE_ANSWERS_LEFT_NOTICE,
 )
+from omh.tui import gateway_contract as contract
 from omh.tui.gateway import Event, Response
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, CommandBlock
 
@@ -108,8 +110,8 @@ class CompressTests(unittest.TestCase):
         self.assertIn(CALL_EXPIRED_NOTICE.format(method="slash.exec", seconds=COMPRESS_ANSWER_SECONDS + 120.0),
                       notices(app, NOTICE_WARN))
 
-    def test_a_command_waits_as_usual_once_the_compress_settled_or_for_another_session(self) -> None:
-        for settle in ("answered", "preview", "other session"):
+    def test_a_command_waits_as_usual_once_the_compress_settled_or_for_a_preview(self) -> None:
+        for settle in ("answered", "preview"):
             with self.subTest(settle=settle):
                 now = [100.0]
                 app, client = make_app(clock=lambda: now[0])
@@ -117,11 +119,39 @@ class CompressTests(unittest.TestCase):
                 send(app, "/compress --preview" if settle == "preview" else "/compress")
                 if settle == "answered":
                     answer(app, client, {"type": "exec", "output": "✓ Compressed: 12 → 10 messages"})
-                if settle == "other session":
-                    app.sid = "live-2"
                 send(app, "/undo")
                 undo = app.pending[2]
                 self.assertEqual((undo.expires_at, undo.command.parts), (100.0 + 120.0, []))
+
+    def test_every_call_sent_while_the_compress_is_out_waits_behind_it(self) -> None:
+        # #2352 review: Hermes' shared gateway serves a connection's calls one at a time (bf0203a794
+        # `tui_gateway/ws.py`) and awaits /compress inline; a /usage and a plain prompt were held live too.
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app.shared_gateway = True
+        send(app, "/compress")
+        now[0] += 10.0
+        send(app, "plain prompt please")
+        self.assertEqual(client.calls[-1][0], "prompt.submit")
+        self.assertEqual(app.pending[2].expires_at, 100.0 + COMPRESS_ANSWER_SECONDS + 120.0)
+        send(app, "/myskill do it")  # a skill: slash.exec refuses it with 4018 and command.dispatch runs it
+        app._on_response(Response(3, None, {"code": contract.NOT_MINE, "message": "skill command"}))
+        self.assertEqual(client.calls[-1][0], "command.dispatch")
+        self.assertEqual(app.pending[4].expires_at, 100.0 + COMPRESS_ANSWER_SECONDS + 120.0)
+
+    def test_a_second_compress_waits_behind_the_first_but_never_past_the_cap(self) -> None:
+        now = [100.0]
+        app, _client = make_app(clock=lambda: now[0])
+        app.shared_gateway = True
+        send(app, "/compress")
+        now[0] += 300.0
+        send(app, "/compress")
+        second = app.pending[2]
+        self.assertEqual(second.expires_at, 400.0 + HELD_ANSWER_SECONDS)  # 360 s left + 660 s, cut to 780 s
+        self.assertEqual(second.command.parts, [(COMPRESS_STARTED_NOTICE, NOTICE_INFO)])  # no held notice of its own
+        now[0] += 1.0
+        send(app, "/usage")
+        self.assertEqual(app.pending[3].expires_at, 401.0 + HELD_ANSWER_SECONDS)  # behind the later of the two
 
     def test_a_command_refused_while_hermes_compresses_says_so(self) -> None:
         for line, name in (("/undo", "undo"), ("/retry", "retry"), ("/compress", "compress")):

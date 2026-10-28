@@ -89,15 +89,18 @@ All notable changes will be documented here.
   Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
   memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
 - **A command typed during a long `/compress` keeps its answer, and Ctrl+P
-  matches its hint.** Hermes' shared gateway holds a command sent while the
-  TUI's own `/compress` of that session runs until the compression ends; the
-  TUI gave it 120 s, so past that `/undo`'s draft or `/retry`'s resend was
-  dropped while Hermes still ran it. Such a command now waits for the
-  compression's time left plus 120 s, and the shared gateway's hold is named
-  under it. On a terminal too short for the plan, Ctrl+P no longer sets a
-  fold the screen cannot show, so the header never offers `ctrl+p expand`
-  for a plan the key cannot expand. A redraw while a pager is open sends
-  its erase in the pager's next synchronized frame.
+  matches its hint.** Hermes' shared gateway answers a connection's calls one
+  at a time, so while a `/compress` this TUI sent runs, every call sent
+  meanwhile waits for it; the TUI gave each 120 s, so past that `/undo`'s
+  draft or `/retry`'s resend was dropped while Hermes still ran it. Every
+  call sent then (a command, its `command.dispatch` fallback, a prompt, an
+  interrupt) now waits for the compression's time left plus its own budget,
+  at most 780 s, and a typed command says Hermes runs it once the compression
+  ends. On a terminal too short for the plan, Ctrl+P no longer sets a fold
+  the screen cannot show, so the header never offers `ctrl+p expand` for a
+  plan the key cannot expand. A redraw due while a pager is open (a catalog,
+  rewind or resume answer) waits until the pager closes, so the session is
+  no longer left twice in scrollback.
 
 ## 4.0.3 - 2026-10-27
 

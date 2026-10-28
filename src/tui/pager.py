@@ -98,11 +98,10 @@ class Pager:
         position = f"{self.top + 1 if self.lines else 0}-{last}/{len(self.lines)}"
         return list(self.lines[self.top : self.top + body]), position
 
-    def frame(self, cols: int, rows: int, theme: Theme, lead: str = "") -> str:
+    def frame(self, cols: int, rows: int, theme: Theme) -> str:
         """The alternate screen's rows for the current page that differ from the last frame, footer on the last row.
 
-        "" when no row changed. `lead` (an erase the screen is owed) goes
-        first, in the same synchronized update as the rows painted after it.
+        "" when no row changed.
         """
         if self._size != (cols, rows):
             self.invalidate()
@@ -116,7 +115,7 @@ class Pager:
         for at, line in enumerate(footer):
             if rows - len(footer) + at >= 0:  # a screen shorter than the footer keeps its last rows, over the page
                 self._paint(rows - len(footer) + at, line, cols, parts)
-        return SYNC_BEGIN + lead + HIDE_CURSOR + "".join(parts) + SYNC_END if parts or lead else ""
+        return SYNC_BEGIN + HIDE_CURSOR + "".join(parts) + SYNC_END if parts else ""
 
     def footer(self, position: str, theme: Theme) -> list[Line]:
         """The `FOOTER_ROWS` rows under the page: the title, where the page is, and the keys."""

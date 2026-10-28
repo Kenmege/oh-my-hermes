@@ -22,7 +22,7 @@ from _tui_gateway_replay import Scenario, spans
 from test_tui_app import BOX_MARK, NO_TERMIOS, AppTestCase, Run, Step, startup_answers
 from test_tui_modes import make_app
 from omh.tui.app import RESIZE_SETTLE_SECONDS
-from omh.tui.pager import ALT_SCREEN_OFF, Pager
+from omh.tui.pager import Pager
 from omh.tui.style import Span
 from omh.tui.screen import CLEAR_SCREEN_AND_SCROLLBACK, SYNC_BEGIN, SYNC_END
 
@@ -218,33 +218,60 @@ class FlickerTests(AppTestCase):
 class PagerRedrawTests(unittest.TestCase):
     """A full redraw while a pager is open (a gateway answer retaking the session: a catalog, a rewind, a resume)."""
 
-    def paging(self):
-        app, _client = make_app()
-        app._show_pager(Pager("details", [(Span(f"row {n}"),) for n in range(5)]))
+    def session_then_pager(self):
+        app, _client = make_app(rows=12, cols=60)
+        for n in range(14):
+            app.transcript.add_notice(f"notice number {n}")
+            app._render()
+        app._show_pager(Pager("details", [(Span(f"pager row {n}"),) for n in range(30)]))
         app._render()
-        app.terminal.writes.clear()
         return app
 
-    def test_the_erase_goes_out_in_the_pager_s_next_frame(self) -> None:
-        # #2346 review, LOW: the erase went out alone, so the alternate screen could show one blank frame.
-        app = self.paging()
-        app._full_redraw()
-        app._render()
-        (frame,) = app.terminal.writes
-        self.assertTrue(frame.startswith(SYNC_BEGIN + CLEAR_SCREEN_AND_SCROLLBACK) and frame.endswith(SYNC_END),
-                        frame[:40])
-        self.assertIn("row 4", frame)  # every row painted again after the erase
-        self.assertIn(" details · 1-5/5", app.terminal.screen.lines()[-1])
-        app._render()
-        self.assertEqual(sum(text.count(ERASE_SCREEN) for text in app.terminal.writes), 1, "the erase is owed once")
+    def everything(self, app) -> list[str]:
+        return app.terminal.screen.scrollback + app.terminal.screen.lines()
 
-    def test_left_before_that_frame_the_erase_goes_to_the_alternate_screen_it_was_for(self) -> None:
-        app = self.paging()
+    def test_it_waits_for_the_pager_to_close_and_leaves_the_session_once(self) -> None:
+        # #2352 review, MEDIUM (on origin/main too): the erase went to the alternate screen, so leaving the pager
+        # printed the session again under the main screen's rows: twice in scrollback.
+        for frame_first in (True, False):
+            with self.subTest(frame_first=frame_first):
+                app = self.session_then_pager()
+                app.terminal.writes.clear()
+                app._full_redraw()
+                if frame_first:
+                    app._render()
+                self.assertEqual(erases(app.terminal.writes), 0, "nothing erased while the pager shows")
+                self.assertIn("pager row 0", app.terminal.screen.lines()[0])
+                app._leave_pager()
+                app._render()
+                rows = self.everything(app)
+                for n in range(14):
+                    self.assertEqual(sum(row.strip() == f"· notice number {n}" for row in rows), 1, (n, rows))
+                (redraw,) = [text for text in app.terminal.writes if ERASE_SCREEN in text]
+                self.assertTrue(redraw.startswith(SYNC_BEGIN + CLEAR_SCREEN_AND_SCROLLBACK), redraw[:40])
+
+    def test_an_answer_and_a_resize_while_paging_owe_one_redraw(self) -> None:
+        app = self.session_then_pager()
+        app.terminal.writes.clear()
+        app._full_redraw()
         app._full_redraw()
         app._leave_pager()
-        (left,) = app.terminal.writes
-        self.assertTrue(left.startswith(CLEAR_SCREEN_AND_SCROLLBACK + ALT_SCREEN_OFF), left[:40])
-        self.assertEqual(app.pager_lead, "")
+        app._render()
+        self.assertEqual(sum(text.count(ERASE_SCREEN) for text in app.terminal.writes), 1)
+        self.assertFalse(app.redraw_after_pager)
+
+    def test_quitting_from_the_pager_with_a_redraw_owed_leaves_the_session_once(self) -> None:
+        # #2352 review, LOW: an exit from the pager dropped what a redraw owed the main screen.
+        app = self.session_then_pager()
+        app.transcript.add_notice("answered while paging")
+        app._full_redraw()
+        app.terminal.writes.clear()
+        app._shutdown()
+        rows = self.everything(app)
+        for text in [f"· notice number {n}" for n in range(14)] + ["· answered while paging"]:
+            self.assertEqual(sum(row.strip() == text for row in rows), 1, (text, rows))
+        (redraw,) = [text for text in app.terminal.writes if ERASE_SCREEN in text]
+        self.assertTrue(redraw.startswith(SYNC_BEGIN + CLEAR_SCREEN_AND_SCROLLBACK), redraw[:40])
 
 
 if __name__ == "__main__":

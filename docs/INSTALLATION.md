@@ -1224,9 +1224,10 @@ which a Hermes from v0.22 runs, does not take `/compress`, `/branch`,
 `/retry`, `/undo`, `/stop`, `/bg`, `/btw`, `/rollback`, `/reload`,
 `/reload-mcp`, `/tools`, bare `/plugins` or `/config` as a typed command. The
 TUI runs each one through the gateway call Hermes' own Ink TUI uses for it,
-and `/branch` then opens the new session. The shared gateway holds a command
-typed while that session's `/compress` runs until the compression ends, and
-the TUI waits for its answer that long.
+and `/branch` then opens the new session. The shared gateway answers one call
+at a time, so while a `/compress` this TUI sent runs, a command, prompt or
+interrupt sent meanwhile waits until the compression ends; the TUI waits for
+its answer that long, at most 780 s in all.
 Commands that only Hermes' classic CLI runs (`/handoff`, `/worktree`,
 `/snapshot`, `/import`, `/hatch`, `/palette`) are left out of completion, and
 `/help` names them on one line. Typed, they go to Hermes, which says where to
