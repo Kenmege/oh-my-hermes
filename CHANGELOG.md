@@ -6,6 +6,17 @@ All notable changes will be documented here.
 
 ![Sprite Forge patch notes](https://raw.githubusercontent.com/rlaope/oh-my-hermes/main/assets/omh-sprite-forge-patch-notes.png)
 
+- **The answer-first plan line stops repeating its whole rule.** While a
+  plan is open, every turn a person opens carried the 445-character
+  `TODO_ANSWER_FIRST_RULE`, and Hermes keeps each turn's injection in history
+  until compaction (11,125 characters over 25 turns in one owner's three
+  days). The rule now spends the reconciliation rule's turn budget: whole on
+  the three turns after any plan write, then `TODO_ANSWER_FIRST_RULE_SHORT`
+  (253 characters), which keeps the precedence, both incident guards and the
+  record-first resume. A live A/B over five models, a checkable claim in a
+  person's turn after 20 quiet plan turns, counted unchecked agreement or
+  deferral in 1 of 119 turns with the short line, 2 of 120 with the full rule
+  and 4 of 48 with the pre-#1705 drive.
 - **Character sprite sheets become aligned game frames (`sprite-forge`).**
   An image model draws a character sheet whose frames differ in scale and
   foot position, so the character swells and bobs in game. The new
