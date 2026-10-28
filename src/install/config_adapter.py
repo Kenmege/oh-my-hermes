@@ -1859,6 +1859,16 @@ def _scalar_value(value: str) -> str:
     return stripped
 
 
+def expand_external_dir_entry(entry: str) -> str:
+    """One `skills.external_dirs` entry with `${VAR}` and then `~` expanded, as Hermes reads it.
+
+    Hermes expands both before it resolves an entry (`_expand_path` in
+    `agent/skill_utils.py`), so `${XDG_DATA_HOME}/omh/current/skills` is the
+    pointer to Hermes. An unset variable stays as written, as it does there.
+    """
+    return os.path.expanduser(os.path.expandvars(entry))
+
+
 def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     """Whether one registered entry names `skill_dir`, by text or by real path.
 
@@ -1866,6 +1876,7 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
     entry survives generation switches, while a running command resolves its
     own generation directory. Comparing the two as strings reported every
     staged-update install as unregistered; the directories are the same one.
+    An entry is expanded the way Hermes expands it (`expand_external_dir_entry`).
     """
     wanted_text = _normalize(skill_dir)
     if wanted_text in dirs:
@@ -1876,7 +1887,7 @@ def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:
         return False
     for entry in dirs:
         try:
-            if os.path.realpath(os.path.expanduser(entry)) == wanted_real:
+            if os.path.realpath(expand_external_dir_entry(entry)) == wanted_real:
                 return True
         except OSError:
             continue

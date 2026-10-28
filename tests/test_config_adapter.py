@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -222,6 +223,18 @@ class ExternalDirRegistrationTests(unittest.TestCase):
             self.assertTrue(external_dir_registered(dirs, root / "current" / "skills"))
             self.assertFalse(external_dir_registered(dirs, root / "generations" / "g2" / "skills"))
             self.assertFalse(external_dir_registered([], generation / "skills"))
+
+    def test_an_entry_is_expanded_the_way_hermes_expands_it(self) -> None:
+        # Hermes expands `${VAR}` and then `~` before it resolves an entry,
+        # so this spelling is the pointer to it; an unset variable stays as
+        # written there and names nothing of OMH's.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "current" / "skills").mkdir(parents=True)
+            with mock.patch.dict(os.environ, {"OMH_TEST_MANAGED_ROOT": root.as_posix()}):
+                os.environ.pop("OMH_TEST_UNSET_ROOT", None)
+                self.assertTrue(external_dir_registered(["${OMH_TEST_MANAGED_ROOT}/current/skills"], root / "current" / "skills"))
+                self.assertFalse(external_dir_registered(["${OMH_TEST_UNSET_ROOT}/current/skills"], root / "current" / "skills"))
 
     def test_a_textual_match_needs_no_directory_on_disk(self) -> None:
         self.assertTrue(external_dir_registered(["/nowhere/skills"], "/nowhere/skills"))
