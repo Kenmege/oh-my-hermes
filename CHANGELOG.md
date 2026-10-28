@@ -17,6 +17,13 @@ All notable changes will be documented here.
   person's turn after 20 quiet plan turns, counted unchecked agreement or
   deferral in 1 of 119 turns with the short line, 2 of 120 with the full rule
   and 4 of 48 with the pre-#1705 drive.
+- **A routed session carries the route hint's boundary sentence once.** Every
+  `[OMH Route Hint]` closed on the same 197-character `Boundary:` line, and
+  Hermes replays each hint, so a session routed on several turns held one copy
+  per turn (3,090 characters over 15 hints in one owner's three days). A later
+  hint now drops the line when the host-injected part of history already
+  carries it; a first hint, an unreadable history, or a person quoting the
+  line keeps it, and the route fingerprint is still taken from the whole hint.
 - **Character sprite sheets become aligned game frames (`sprite-forge`).**
   An image model draws a character sheet whose frames differ in scale and
   foot position, so the character swells and bobs in game. The new
