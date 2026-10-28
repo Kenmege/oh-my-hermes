@@ -1422,6 +1422,37 @@ def _height(layout: _Layout, plan: _Plan | None, agents: _Agents | None) -> int:
     return height
 
 
+def _fit(plan: _Plan | None, agents: _Agents | None, dag_on: bool, natural: int, max_rows: int,
+         folded: bool) -> _Layout:
+    """The rows each block gets within `max_rows`, the least valuable shed first; `folded` starts the plan collapsed
+    (the person folded it)."""
+    start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
+    layout = _Layout(
+        plan_on=plan is not None,
+        plan_start=start,
+        plan_end=end,
+        plan_collapsed=folded,
+        agents_on=agents is not None,
+        rows_shown=agents.wanted if agents is not None else 0,
+        dag_on=dag_on,
+        dag_budget=natural,
+    )
+    while _height(layout, plan, agents) > max_rows and _shed(layout, plan, agents):
+        pass
+    return layout
+
+
+def plan_room_collapsed(payload: Any, max_rows: int) -> bool:
+    """Whether the plan drawn alone (as the app's slot draws it, with no agents or delegation tree) is its header
+    alone in `max_rows` for want of rows, whatever the person's fold: there its fold key can change nothing."""
+    if max_rows <= 0 or not isinstance(payload, Mapping) or payload.get("error"):
+        return False
+    plan = _plan_view(payload) if payload.get("privacy") == "metadata_only" else None
+    if plan is None or plan.status != "established":
+        return False
+    return _fit(plan, None, False, 0, max_rows, False).plan_collapsed
+
+
 def _shed(layout: _Layout, plan: _Plan | None, agents: _Agents | None) -> bool:
     """Take away the least valuable row; False when nothing is left to take.
 
@@ -1559,19 +1590,10 @@ def panel_lines(
     dag = _delegation_graph(payload) if show_graph else None
     # A finished run is its one summary line (`dag_run_summary`), else its tree at full height.
     natural = (1 if dag_run_summary(dag) else len(_dag_view(dag, columns, None).lines)) if dag is not None else 0
-    start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
-    layout = _Layout(
-        plan_on=plan is not None,
-        plan_start=start,
-        plan_end=end,
-        plan_collapsed=plan_folded,
-        agents_on=agents is not None,
-        rows_shown=agents.wanted if agents is not None else 0,
-        dag_on=dag is not None and natural > 0,
-        dag_budget=natural,
-    )
-    while _height(layout, plan, agents) > max_rows and _shed(layout, plan, agents):
-        pass
+    dag_on = dag is not None and natural > 0
+    layout = _fit(plan, agents, dag_on, natural, max_rows, plan_folded)
+    # Expanding a plan the rows would collapse anyway shows nothing more: its header offers no `expand` there.
+    expandable = plan_folded and not _fit(plan, agents, dag_on, natural, max_rows, False).plan_collapsed
     extra = max(0.0, now - received_at) if received_at is not None and _finite(now) and _finite(received_at) else 0.0
     lines: list[Line] = []
     if agents is not None and layout.agents_on:
@@ -1583,6 +1605,6 @@ def panel_lines(
     if plan is not None and layout.plan_on:
         lines += _plan_lines(
             plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme, motion, fold_key,
-            plan_folded,
+            expandable,
         )
     return [truncate_line(line, width) for line in lines[:max_rows]]
