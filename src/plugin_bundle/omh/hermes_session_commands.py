@@ -549,9 +549,10 @@ def host_context_removed(message: str) -> bool:
 
     Routing reads only the person's words; a reader that must prove the request
     whole (a closed show-reel form) treats removed context like masked text.
-    A backfill in which every message is inert (`backfill_is_inert`), after
-    the Discord trigger note Hermes writes before it, is not counted: it holds
-    nothing such a request could be pointing at.
+    An inert backfill (`backfill_is_inert`: the Discord adapter's shape, with
+    acknowledgement-only messages), after the trigger note Hermes writes
+    before it, is not counted: it holds nothing such a request could be
+    pointing at.
     """
     text = _after_gateway_material(message)
     removed = message[: len(message) - len(text)] if message.endswith(text) else message

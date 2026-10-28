@@ -89,17 +89,20 @@ All notable changes will be documented here.
   Hermes' spinner verb and shows a status such as `🧠 OMH — recalled 4
   memories` after its facts, dim. Each reply opens with `⚚ Hermes · <model>`.
 - **A promo or demo video asked for in a shared channel reaches
-  `show-reel` when the channel's backfill says nothing it could be
-  recording.** On Discord, Hermes puts the messages others posted since
-  the bot's last turn before `[New message]`, and any such backfill made a
-  closed request ("Make a demo video for the app") ask instead. Now each
-  backfilled message is read: when every one is in the adapter's
-  `[<name>] <text>` shape and uses only words from a closed list that
-  names no state (no negation, nothing broken, slow, missing or old, no
-  "again" or "same"), with no question, link, code, quote, emoji or
-  leading verb, the request routes as it would without the backfill. Any
-  other backfill, a reply pointer or an attachment note still makes it
-  ask. A closed request beside a character that folding removes entirely
+  `show-reel` when the channel's backfill is only greetings and thanks.**
+  On Discord, Hermes puts the messages others posted since the bot's last
+  turn before `[New message]`, and any such backfill made a closed request
+  ("Make a demo video for the app") ask instead. The request now routes as
+  it would without the backfill when the backfill is the Discord adapter's
+  own shape -- the `[Recent channel messages]` header, the `[unverified]`
+  notice exactly when a sender is tagged, and `[<name>] <text>` lines with
+  a one- or two-word name -- and every message is acknowledgement-only
+  chatter: greetings, thanks, acks, times of day and "all", "everyone"
+  or "folks" ("morning all", "thank you", "ok, nice!"), with no noun,
+  verb, number, question mark, link, code or emoji and no pronoun but the
+  "you" of "thank you". Any other
+  backfill, a reply pointer or an attachment note still makes it ask. A
+  closed request beside a character that folding removes entirely
   (U+2017, U+203E, a bare combining mark) is no longer admitted.
 
 ## 4.0.3 - 2026-10-27
