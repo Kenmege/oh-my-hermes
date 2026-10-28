@@ -119,6 +119,22 @@ All notable changes will be documented here.
   plan the key cannot expand. A redraw due while a pager is open (a catalog,
   rewind or resume answer) waits until the pager closes, so the session is
   no longer left twice in scrollback.
+- **A promo or demo video asked for in a shared channel reaches
+  `show-reel` when the channel's backfill is only greetings and thanks.**
+  On Discord, Hermes puts the messages others posted since the bot's last
+  turn before `[New message]`, and any such backfill made a closed request
+  ("Make a demo video for the app") ask instead. The request now routes as
+  it would without the backfill when the backfill is the Discord adapter's
+  own shape -- the `[Recent channel messages]` header, the `[unverified]`
+  notice exactly when a sender is tagged, and `[<name>] <text>` lines with
+  a one- or two-word name -- and every message is acknowledgement-only
+  chatter: greetings, thanks, acks, times of day and "all", "everyone"
+  or "folks" ("morning all", "thank you", "ok, nice!"), with no noun,
+  verb, number, question mark, link, code or emoji and no pronoun but the
+  "you" of "thank you". Any other
+  backfill, a reply pointer or an attachment note still makes it ask. A
+  closed request beside a character that folding removes entirely
+  (U+2017, U+203E, a bare combining mark) is no longer admitted.
 
 ## 4.0.3 - 2026-10-27
 
